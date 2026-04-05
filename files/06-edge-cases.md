@@ -280,20 +280,87 @@
 
 ---
 
-## 6.6 Additional Edge Cases
+## 6.6 Turn Timer & Inactivity
 
-### 6.6.1 Room reaches 1 active player (all others forfeited)
+### 6.6.1 Connected player does not act within the turn timer
+
+**Scenario:** Player A is connected but does not play a card, draw, or pass within 30 seconds.
+
+**Expected behavior:**
+- The turn timer expires. The Room aggregate emits `TurnTimedOut { playerId: A, autoAction: draw_and_pass }`.
+- The system automatically draws a card for A (if A hasn't drawn this turn) and passes the turn. The drawn card is added to A's hand but never revealed to other players or spectators (only `CardDrawn { newCardCount }` is emitted publicly).
+- Turn advances to the next player. The turn timer resets for the new current player.
+- Repeated timeouts are not penalized beyond the auto-pass — a player who times out multiple times is not forfeited (they are still connected). However, per-user rate-limit monitoring may flag patterns of intentional stalling for admin review.
+- **In tournament rooms**, repeated timeouts may use a stricter policy (e.g., 3 consecutive timeouts trigger forfeit). This is configurable per tournament — see Open Questions.
+
+---
+
+### 6.6.2 Turn timer interacts with challenge window
+
+**Scenario:** Player B is the next player. A challenge window is open for Player A (5s). B's turn timer has not started yet because B's turn hasn't officially begun.
+
+**Expected behavior:**
+- The turn timer for the next player **does not start until the challenge window closes** (or until the next player actively begins their turn, which also closes the challenge window).
+- If B plays a card during the challenge window (closing it early), B's turn timer was never relevant — B acted proactively.
+- If the challenge window times out (5s), B's turn timer starts at that point.
+
+---
+
+## 6.7 Action Card Edge Cases
+
+### 6.7.1 Reverse card in a 2-player game
+
+**Scenario:** Player A plays a Reverse card in a 2-player game (A vs. B).
+
+**Expected behavior:**
+- In a 2-player game, Reverse acts as **Skip** — the direction reversal causes the turn to return to Player A instead of advancing to B.
+- Events emitted: `CardPlayed`, `DirectionReversed`, `TurnSkipped { skippedPlayerId: B, reason: reverse_2p }`.
+- Player A takes another turn immediately.
+- This is consistent with official UNO rules for 2-player games.
+
+---
+
+### 6.7.2 Draw Two / Wild Draw Four when deck is nearly empty
+
+**Scenario:** Player A plays a Draw Two, but the deck has only 1 card remaining. Player B must draw 2 cards.
+
+**Expected behavior:**
+- B draws the 1 remaining card from the deck.
+- The deck is exhausted → `DeckRecycled` event fires: the discard pile (except the top card) is shuffled with a new seed and becomes the new deck.
+- B draws the second card from the recycled deck.
+- All three events (`ForcedDraw`, `DeckRecycled`, continuation of draw) are processed atomically within a single command processing cycle.
+- B's turn is still skipped after the forced draw completes.
+
+---
+
+### 6.7.3 Initial discard card is an action card
+
+**Scenario:** After dealing, the first card placed on the discard pile is a Draw Two.
+
+**Expected behavior (per First Card Rule):**
+- **Draw Two:** First player draws 2 cards and their turn is skipped. `ForcedDraw` + `TurnSkipped { reason: first_card_effect }` emitted at game start.
+- **Skip:** First player's turn is skipped. `TurnSkipped { reason: first_card_effect }` emitted.
+- **Reverse:** Direction is set to counter-clockwise. In 2-player, first player is skipped. `DirectionReversed` emitted.
+- **Wild:** First player chooses the active color (their turn timer applies). No other effect.
+- **Wild Draw Four:** This card is **buried** back into the deck and a new initial discard is drawn. This prevents the first player from suffering an unfair 4-card penalty before any gameplay. If the replacement card is also a Wild Draw Four, it is buried again (repeat until a non-WD4 card appears).
+
+---
+
+## 6.8 Additional Edge Cases
+
+### 6.8.1 Room reaches 1 active player (all others forfeited)
 
 **Expected behavior:**
 - The last remaining player wins the current game by default.
 - `GameCompleted` emitted with finishing order based on forfeit timestamps.
-- If this is mid-match (e.g., game 1 of 3): the match ends immediately — the last player wins the match.
-- Elo: if all forfeits were due to disconnection, this is **not** an abandoned game (one player remained and "won"). Elo is updated normally.
+- In a **casual room** (single game): `RoomCompleted` is emitted immediately.
+- In a **tournament room** mid-match (e.g., game 1 of 3): the match ends immediately — the last active player wins the match. `MatchCompleted` + `RoomCompleted` emitted. Remaining games are not played.
+- Elo (casual only): if all forfeits were due to disconnection, this is **not** an abandoned game (one player remained and "won"). Elo is updated normally.
 - An abandoned game is specifically when **all** remaining players forfeit — meaning zero players are left.
 
 ---
 
-### 6.6.2 Deck exhaustion during heavy draw phase
+### 6.8.2 Deck exhaustion during heavy draw phase
 
 **Scenario:** Multiple Draw Two / Wild Draw Four cards chain, and the deck runs out mid-draw.
 
@@ -305,7 +372,7 @@
 
 ---
 
-### 6.6.3 Tournament tiebreaker: all values identical
+### 6.8.3 Tournament tiebreaker: all values identical
 
 **Scenario:** Two players have identical match wins, identical cumulative card-point totals, and identical final-game completion times (down to the millisecond).
 
@@ -316,7 +383,7 @@
 
 ---
 
-### 6.6.4 Player plays Wild Draw Four illegally (has a matching color card)
+### 6.8.4 Player plays Wild Draw Four illegally (has a matching color card)
 
 **Scenario:** Under official Uno rules, a Wild Draw Four may only be played when the player has no cards matching the current color. An opponent may challenge this.
 
@@ -326,7 +393,7 @@
 
 ---
 
-### 6.6.5 Player joins a room but never starts a game
+### 6.8.5 Player joins a room but never starts a game
 
 **Scenario:** A room stays in `Waiting` state indefinitely because no one starts the game.
 

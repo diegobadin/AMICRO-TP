@@ -44,8 +44,9 @@ The Room is the **central consistency boundary** of the entire platform. All gam
 | `status` | `RoomStatus` | `Waiting`, `InProgress`, `Completed` |
 | `players` | `List<RoomPlayer>` | Seated players with connection status |
 | `currentGame` | `Game?` | Active game entity (null in Waiting/between games) |
-| `matchScores` | `Map<PlayerId, MatchScore>` | Wins, losses, cumulative card-points per player across games in the match |
-| `gamesPlayed` | `int` | Number of completed games in the best-of-3 |
+| `matchScores` | `Map<PlayerId, MatchScore>?` | Tournament rooms only: wins, losses, cumulative card-points per player across games. Null for casual rooms (single game). |
+| `gamesPlayed` | `int` | Number of completed games in this room |
+| `maxGames` | `int` | Maximum games: 1 for Casual, 3 for Tournament (derived from `roomType`) |
 | `sequenceNumber` | `int` | Monotonically increasing; incremented on every accepted mutation |
 | `gameLog` | `GameLog` | Append-only log of all state changes |
 | `createdAt` | `Timestamp` | Room creation time |
@@ -57,11 +58,15 @@ The Room is the **central consistency boundary** of the entire platform. All gam
 3. **Play legality:** A card can only be played if it matches the top discard card's color or face, or is a Wild.
 4. **Uno call requirement:** If a player plays their second-to-last card without calling Uno, they are vulnerable to a valid challenge within the 5-second window.
 5. **Challenge window exclusivity:** Only one challenge window is open at a time. It closes on: 5-second timeout, next turn start, or challenge resolution.
-6. **Best-of-three boundary:** No more than 3 games per room. Match ends when a player reaches 2 wins or 3 games are played.
+6. **Game count boundary:** Casual rooms play exactly 1 game. Tournament rooms play up to 3 games (match). A tournament match ends when all 3 games are played or when the remaining games provably cannot change the advancement outcome (e.g., one player already has 3 wins).
 7. **Player count:** 2 ≤ players ≤ 10 at room start. A room with fewer than 2 active players (after forfeits) ends the current game immediately; the last remaining player wins.
 8. **Disconnection timer:** Each disconnected player has an independent 60-second timer. Turns are skipped while disconnected. Expiry triggers forfeit.
 9. **Immutable log:** The GameLog is append-only. No entry may be modified or deleted.
 10. **Single active game:** At most one Game is active within a Room at any time.
+11. **Action card effects:** When an action card (Skip, Reverse, Draw Two, Wild Draw Four) is played, its effect is applied atomically within the same command processing. Skip → next player loses their turn. Reverse → direction toggles (in a 2-player game, acts as Skip — the player retains the turn). Draw Two → next player draws 2 cards and loses their turn. Wild Draw Four → next player draws 4 cards and loses their turn. These effects are not separate commands; they are enforced by the aggregate as part of `PlayCard` processing.
+12. **Wild color declaration:** When a Wild or Wild Draw Four is played, the `chosenColor` field in the `PlayCard` command is **mandatory**. A `PlayCard` for a Wild without a declared color is rejected. The active color is set to the declared color immediately.
+13. **Turn timer:** Connected players have a configurable time limit to act on their turn (default: 30 seconds). If the timer expires, the system automatically draws a card for the player (if they haven't drawn this turn) and passes their turn. Emits `TurnTimedOut`.
+14. **First card rule:** At game start, the initial discard card's effect is applied before the first player acts: Skip → first player is skipped; Reverse → direction set to counter-clockwise (2-player: first player skipped); Draw Two → first player draws 2 and is skipped; Wild → first player must choose the active color; Wild Draw Four → card is buried in the deck and a new initial discard is drawn.
 
 ---
 
@@ -76,12 +81,11 @@ The Room is the **central consistency boundary** of the entire platform. All gam
 | `deck` | `Deck` | Remaining draw pile |
 | `discardPile` | `DiscardPile` | Played cards stack |
 | `hands` | `Map<PlayerId, Hand>` | Each player's private hand |
-| `turnOrder` | `TurnOrder` | Circular player sequence |
-| `currentPlayerIndex` | `int` | Index into turn order |
-| `direction` | `Direction` | `Clockwise` or `CounterClockwise` |
+| `turnOrder` | `TurnOrder` | Circular player sequence with current index and direction (see §3.2.8) |
 | `challengeWindow` | `ChallengeWindow?` | Open challenge, if any |
 | `activeColor` | `Color` | Current color in play (may differ from top discard if Wild was played) |
 | `finishingOrder` | `List<PlayerId>` | Players in order of elimination/game end |
+| `turnTimerDeadline` | `Timestamp?` | Deadline for the current player to act (null if not their turn or game paused) |
 | `completedAt` | `Timestamp?` | When the game ended |
 
 ---
@@ -148,7 +152,26 @@ Each `GameLogEntry`:
 
 ---
 
-### 3.2.8 ChallengeWindow (Value Object)
+### 3.2.8 TurnOrder (Entity, within Game)
+
+**Identity:** Contextual within a Game (one per game).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `activePlayers` | `List<PlayerId>` | Ordered circular ring of active (non-forfeited) players in seating order |
+| `currentIndex` | `int` | Index of the current player within `activePlayers` |
+| `direction` | `Direction` | `Clockwise` (+1) or `CounterClockwise` (-1) |
+
+**Invariants:**
+
+- When a player forfeits, they are removed from `activePlayers` without changing the relative order of remaining players. The `currentIndex` is adjusted to remain valid.
+- The next player is determined by `(currentIndex + direction) mod activePlayers.length`.
+- When a **Reverse** card is played, `direction` toggles. In a **2-player game**, since reversing direction points back to the current player, the effect is equivalent to a Skip (the current player retains the turn).
+- When a **Skip** card (or Draw Two / Wild Draw Four) is played, the next player in sequence is skipped and the turn advances to the player after them.
+
+---
+
+### 3.2.9 ChallengeWindow (Value Object)
 
 | Field | Type |
 |-------|------|
@@ -284,6 +307,7 @@ Each `GameLogEntry`:
 | `RoomResult` | Tournament | `{ advancingPlayers, cardPointTotals, completionTimes }`. |
 | `RatingChange` | Ranking | `{ gameId, oldRating, newRating, delta, timestamp }`. |
 | `EloCalculation` | Ranking | Pure function: `(playerRatings, finishingOrder) → Map<PlayerId, EloDelta>`. |
+| `TurnTimerConfig` | Room Gameplay | `{ durationSeconds: int }`. Default 30s. Configurable per tournament. |
 | `Seed` | Room Gameplay | Opaque RNG seed value used for deck shuffling. |
 | `Signature` | Room Gameplay | HMAC-based integrity signature for game log entries. |
 | `SignedToken` | Identity | JWT or equivalent containing playerId, sessionId, expiry, signature. |

@@ -24,11 +24,14 @@ These assumptions were made to complete the domain model. They should be validat
 | ID | Assumption | Rationale |
 |----|-----------|-----------|
 | **GR-1** | A standard 108-card Uno deck is used (no custom or expansion cards). | Assignment references standard Uno rules. |
-| **GR-2** | The initial discard card determines the starting play constraint. If the first card is an action card (Skip, Reverse, Draw Two) or Wild, its effect applies to the first player. If Wild Draw Four, it is buried and a new card is drawn (standard Uno rule). | Standard Uno dealing rule. Prevents unfair first-turn penalties. |
+| **GR-2** | The initial discard card determines the starting play constraint. If the first card is an action card (Skip, Reverse, Draw Two) or Wild, its effect applies to the first player. If Wild Draw Four, it is buried and a new card is drawn (standard Uno rule). This is formalized as the **First Card Rule** in the glossary (§1.1) and as invariant 14 of the Room aggregate. | Standard Uno dealing rule. Prevents unfair first-turn penalties. |
 | **GR-3** | "Stacking" Draw Two on Draw Two (or Wild Draw Four on Wild Draw Four) is **not** allowed. Each draw card affects only the next player. | The assignment does not mention stacking; we default to official UNO rules where stacking is not permitted. |
 | **GR-4** | A player who draws a card and can play it **may** play it immediately on the same turn (optional). If they cannot or choose not to play, they pass. | Standard Uno rule. |
 | **GR-5** | When a player goes out (plays their last card), the game ends immediately. Card-point totals are calculated from remaining players' hands. | Standard scoring variant. |
 | **GR-6** | The Uno call can be bundled with the `PlayCard` command (via a `callingUno` flag) or sent as a separate `CallUno` command within the challenge window. Both are valid. | Improves UX by allowing atomic play-and-call in a single request, while also supporting a separate call for edge cases. |
+| **GR-7** | Casual rooms play a **single game**. The best-of-three match structure applies only to tournament rooms. The assignment specifies best-of-three under "Round-Based Tournament Progression Rules" and does not mention multi-game series for casual play. | Simplest interpretation; keeps casual rooms lightweight. |
+| **GR-8** | When a Wild or Wild Draw Four is played, the active color **must** be declared in the same `PlayCard` command (the `chosenColor` field is mandatory for Wilds). There is no separate "choose color" step. | Avoids an intermediate game state where a Wild is on the discard pile but no active color is set. Makes the play-and-choose action atomic. |
+| **GR-9** | In a 2-player game, Reverse acts as Skip (the playing player takes another turn), consistent with official UNO 2-player rules. | Standard UNO rule variant for 2 players. |
 
 ### 8.1.3 Tournament Assumptions
 
@@ -87,6 +90,13 @@ These assumptions were made to complete the domain model. They should be validat
 | **OQ-9** | What K-factor should the Elo calculation use? Should it vary by player experience (higher K for new players)? | A) Fixed K (e.g., 32). B) Variable K (e.g., 40 for first 30 games, then 20). | Variable K helps new players reach their true rating faster. |
 | **OQ-10** | How is tournament placement rating calculated? | A) Based on final placement (champion gets most points). B) Based on round reached (later rounds = more points). C) Hybrid. | Affects player motivation and tournament value perception. |
 | **OQ-11** | Should Elo changes be visible to players in real-time after each game? | A) Yes, immediately. B) Yes, after a short delay (eventual consistency). C) Only visible on profile page. | Option A requires the Ranking context to update faster. Option C is simplest. |
+
+### Turn Timer & Inactivity
+
+| ID | Question | Options | Impact |
+|----|----------|---------|--------|
+| **OQ-17** | What should the default turn timer duration be? | A) 15 seconds (fast-paced). B) 30 seconds (current assumption). C) 60 seconds (relaxed). D) Configurable per room/tournament. | Affects game pace and player experience. Too short penalizes thoughtful play; too long allows stalling. |
+| **OQ-18** | Should repeated turn timeouts in tournament rooms trigger an automatic forfeit? | A) Yes, after N consecutive timeouts (e.g., 3). B) No, only the 60-second disconnection window triggers forfeit. | Option A prevents "AFK griefing" in tournaments; option B is simpler but allows a connected player to stall by letting every turn time out. |
 
 ### Platform & UX
 

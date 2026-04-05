@@ -66,11 +66,14 @@
 
 **Events that drive Spectator View updates:**
 
-- `CardPlayed` → updates discard pile, card count, current turn
+- `CardPlayed` → updates discard pile, card count, current turn, active color
 - `CardDrawn` → increments card count (card identity withheld)
+- `ForcedDraw` → increments target player's card count (from Draw Two / Wild Draw Four effects)
+- `DirectionReversed` → updates direction indicator
+- `TurnSkipped` → advances current turn indicator (reasons: disconnection, skip card, draw two, wild draw four, reverse in 2-player)
+- `TurnTimedOut` → shows player timed out, advances turn
 - `UnoCallMade` → updates Uno status
 - `UnoChallengeIssued` / `UnoChallengeResolved` → updates challenge state and card counts
-- `TurnSkipped` → advances current turn indicator
 - `GameStarted` / `GameCompleted` → resets or finalizes view
 - `PlayerDisconnected` / `PlayerReconnected` → updates player status indicator
 - `PlayerForfeited` → removes player from active display

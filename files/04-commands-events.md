@@ -10,13 +10,12 @@
 |---------|--------|-------------------|---------------|-------------|------------|
 | `CreateRoom` | Player | Room | Player authenticated; not in another active room | Idempotent by `idempotencyKey` | `roomType`, `maxPlayers`, `idempotencyKey` |
 | `JoinRoom` | Player | Room | Room in `Waiting`; player count < max; player not already joined | Idempotent (re-joining same room = no-op) | `roomId`, `playerId` |
-| `StartGame` | System / Host | Room | Room in `Waiting` or between games; ≥ 2 players; match not complete | Idempotent by game number | `roomId` |
-| `PlayCard` | Player | Room | Player's turn; card in hand; card is legal play; correct `sequenceNumber` | Rejected on duplicate seq (409) | `roomId`, `playerId`, `card`, `chosenColor?`, `sequenceNumber`, `callingUno` |
+| `StartGame` | System / Host | Room | Room in `Waiting` or between games (tournament only); ≥ 2 active players; `gamesPlayed < maxGames` | Idempotent by game number | `roomId` |
+| `PlayCard` | Player | Room | Player's turn; card in hand; card is legal play; correct `sequenceNumber`; if Wild/WildDrawFour then `chosenColor` is **required** | Rejected on duplicate seq (409) | `roomId`, `playerId`, `card`, `chosenColor?` (mandatory for Wilds), `sequenceNumber`, `callingUno` |
 | `DrawCard` | Player | Room | Player's turn; correct `sequenceNumber` | Rejected on duplicate seq (409) | `roomId`, `playerId`, `sequenceNumber` |
 | `PassTurn` | Player | Room | Player's turn; player has drawn this turn and cannot/chooses not to play; correct `sequenceNumber` | Rejected on duplicate seq (409) | `roomId`, `playerId`, `sequenceNumber` |
 | `CallUno` | Player | Room | Player has exactly 2 cards and is about to play one, OR just played to 1 card | Can be sent with `PlayCard` or separately within window | `roomId`, `playerId` |
 | `ChallengeUno` | Any opponent | Room | Challenge window is open for target player | Idempotent (first valid challenge wins; subsequent ones no-op) | `roomId`, `challengerId`, `targetPlayerId` |
-| `ChooseColor` | Player | Room | Player just played a Wild; color not yet chosen | Idempotent (once chosen, re-sends are no-ops) | `roomId`, `playerId`, `color` |
 | `ReconnectPlayer` | Player | Room | Player is in `Disconnected` status; within 60s window; valid session | Idempotent (reconnecting when already connected = no-op) | `roomId`, `playerId`, `sessionToken` |
 | `ForfeitPlayer` | System (timer) or Player | Room | Player is in the room; game is in progress | Idempotent by player status | `roomId`, `playerId`, `reason` |
 
@@ -27,23 +26,25 @@
 | `RoomCreated` | Room | `CreateRoom` accepted | `roomId`, `roomType`, `creatorId` | Analytics |
 | `PlayerJoined` | Room | `JoinRoom` accepted | `roomId`, `playerId`, `playerCount` | Spectator View |
 | `GameStarted` | Room | `StartGame` | `roomId`, `gameNumber`, `playerOrder`, `initialDiscardCard` (public), initial card counts | Spectator View, Analytics |
-| `CardPlayed` | Room | `PlayCard` accepted | `roomId`, `playerId`, `card`, `newDiscardTop`, `playerCardCount`, `chosenColor?`, `nextPlayerId` | Spectator View, Analytics |
+| `CardPlayed` | Room | `PlayCard` accepted | `roomId`, `playerId`, `card`, `newDiscardTop`, `playerCardCount`, `chosenColor?` (present for Wilds), `nextPlayerId` | Spectator View, Analytics |
 | `CardDrawn` | Room | `DrawCard` accepted | `roomId`, `playerId`, `newCardCount` (card identity NOT included in public payload) | Spectator View |
 | `TurnPassed` | Room | `PassTurn` accepted | `roomId`, `playerId`, `nextPlayerId` | Spectator View |
-| `ColorChosen` | Room | `ChooseColor` accepted | `roomId`, `playerId`, `color` | Spectator View |
+| `ForcedDraw` | Room | Draw Two or Wild Draw Four effect applied | `roomId`, `targetPlayerId`, `cardCount` (2 or 4), `newHandSize`, `reason: draw_two \| wild_draw_four` | Spectator View |
+| `DirectionReversed` | Room | Reverse card played | `roomId`, `newDirection` | Spectator View |
+| `TurnTimedOut` | Room | Connected player's turn timer expired | `roomId`, `playerId`, `autoAction: draw_and_pass \| pass` | Spectator View |
 | `UnoCallMade` | Room | `CallUno` or `PlayCard` with `callingUno=true` | `roomId`, `playerId` | Spectator View |
 | `ChallengeWindowOpened` | Room | Card played leaving player with 1 card | `roomId`, `targetPlayerId`, `expiresAt` | Spectator View |
 | `ChallengeWindowClosed` | Room | 5s timeout or next turn starts | `roomId`, `targetPlayerId`, `reason` | Spectator View |
 | `UnoChallengeIssued` | Room | `ChallengeUno` accepted | `roomId`, `challengerId`, `targetPlayerId` | Spectator View |
 | `UnoChallengeResolved` | Room | Challenge evaluated | `roomId`, `challengerId`, `targetPlayerId`, `challengeSucceeded`, `penaltyPlayerId`, `penaltyCardCount` | Spectator View |
-| `TurnSkipped` | Room | Disconnected player's turn arrives | `roomId`, `skippedPlayerId`, `nextPlayerId`, `reason: disconnection` | Spectator View |
+| `TurnSkipped` | Room | Player's turn is skipped | `roomId`, `skippedPlayerId`, `nextPlayerId`, `reason: disconnection \| skip_card \| draw_two \| wild_draw_four \| reverse_2p \| first_card_effect` | Spectator View |
 | `DeckRecycled` | Room | Draw pile exhausted | `roomId`, `newDeckSize` (no card order exposed) | Spectator View |
 | `PlayerDisconnected` | Room | Connection lost detected | `roomId`, `playerId`, `reconnectionDeadline` | Spectator View |
 | `PlayerReconnected` | Room | `ReconnectPlayer` accepted | `roomId`, `playerId` | Spectator View |
 | `PlayerForfeited` | Room | Forfeit triggered | `roomId`, `playerId`, `reason`, `isTournament` | Spectator View, Tournament Orch. |
 | `GameCompleted` | Room | Last card played or last active player standing | `roomId`, `gameNumber`, `finishingOrder`, `cardPointTotals`, `completedAt`, `isAbandoned` | Ranking (if casual + not abandoned), Tournament Orch., Analytics |
-| `MatchCompleted` | Room | Best-of-3 resolved or all games played | `roomId`, `matchResults: Map<PlayerId, MatchScore>`, `advancingPlayers` (if tournament) | Tournament Orch., Analytics |
-| `RoomCompleted` | Room | Match ends | `roomId`, `finalResults` | Tournament Orch., Analytics |
+| `MatchCompleted` | Room | Tournament room: best-of-3 resolved or all 3 games played | `roomId`, `matchResults: Map<PlayerId, MatchScore>`, `advancingPlayers` | Tournament Orch., Analytics |
+| `RoomCompleted` | Room | Casual: single game ends. Tournament: match ends. | `roomId`, `finalResults`, `roomType` | Tournament Orch., Analytics |
 | `StaleCommandRejected` | Room | Command with wrong seq number | `roomId`, `playerId`, `expectedSeq`, `receivedSeq` | (Client via HTTP 409; not propagated to other contexts) |
 | `GameLogEntryAppended` | Room | Every state change | `roomId`, `entry` (signed) | Audit (internal) |
 
@@ -119,15 +120,40 @@
 
 ---
 
-## 4.5 Causality Map (Event Chains)
+## 4.5 Spectator View Context
+
+### Commands
+
+| Command | Issuer | Target | Preconditions | Idempotency |
+|---------|--------|--------|---------------|-------------|
+| `JoinAsSpectator` | User | SpectatorRoomView | Room exists; user authenticated; spectator cap not reached (if configured) | Idempotent (re-joining same room = no-op) |
+| `LeaveAsSpectator` | User | SpectatorRoomView | User is currently spectating the room | Idempotent (leaving when not spectating = no-op) |
+
+### Domain Events
+
+| Event | Triggered After | Key Payload | Downstream Consumers |
+|-------|-----------------|-------------|---------------------|
+| `SpectatorJoined` | `JoinAsSpectator` accepted | `roomId`, `spectatorId`, `spectatorCount` | Analytics |
+| `SpectatorLeft` | `LeaveAsSpectator` accepted | `roomId`, `spectatorId`, `spectatorCount` | Analytics |
+
+> Spectator commands are handled by the Spectator View context directly. They do **not** affect game state in the Room Gameplay context. The Spectator View context maintains its own count of connected spectators per room.
+
+---
+
+## 4.6 Causality Map (Event Chains)
 
 ```
 Player sends PlayCard
   → Room accepts → CardPlayed 🟠
+      → if card is Reverse → DirectionReversed 🟠
+          → if 2-player game → TurnSkipped { reason: reverse_2p } 🟠
+      → if card is Skip → TurnSkipped { reason: skip_card } 🟠
+      → if card is Draw Two → ForcedDraw { count: 2 } 🟠 → TurnSkipped { reason: draw_two } 🟠
+      → if card is Wild Draw Four → ForcedDraw { count: 4 } 🟠 → TurnSkipped { reason: wild_draw_four } 🟠
       → if player has 1 card left → ChallengeWindowOpened 🟠
       → if player has 0 cards → GameCompleted 🟠
-          → 🟡 Policy: Is this game 2 or 3, or does a player have 2 wins?
-              → Yes → MatchCompleted 🟠
+          → 🟡 Policy: Is this the last game (casual: always; tournament: game 3 or outcome decided)?
+              → Yes → MatchCompleted 🟠 (tournament only)
                   → 🟡 Policy: RoomCompleted 🟠
                       → if tournament room:
                           → 🟡 RecordRoomResult → RoomResultRecorded 🟠
@@ -135,13 +161,19 @@ Player sends PlayCard
                                   → 🟡 ≤ 10 players? → FinalRoomCreated 🟠
                                   → 🟡 > 10 players? → RoundStarted 🟠 (next round)
                       → if casual room:
-                          → 🟡 UpdateElo → EloUpdated 🟠 (for each non-abandoned game)
-              → No → StartGame (next game in match)
+                          → RoomCompleted 🟠
+                          → 🟡 UpdateElo → EloUpdated 🟠 (if not abandoned)
+              → No (tournament, more games left) → StartGame (next game in match)
+
+Turn timer expires (connected player inactive for 30s)
+  → TurnTimedOut 🟠
+      → 🟡 Auto-draw if player hasn't drawn → CardDrawn 🟠
+      → 🟡 Auto-pass → TurnPassed 🟠
 
 Player disconnects
   → PlayerDisconnected 🟠
       → 🟡 60s timer starts
-      → On each turn: TurnSkipped 🟠
+      → On each turn: TurnSkipped { reason: disconnection } 🟠
       → Timer expires → ForfeitPlayer → PlayerForfeited 🟠
           → if last player standing → GameCompleted 🟠 (chain continues above)
 
@@ -155,7 +187,7 @@ ChallengeWindowOpened 🟠
 
 ---
 
-## 4.6 Idempotency Strategy Summary
+## 4.7 Idempotency Strategy Summary
 
 | Mechanism | Applied To | How It Works |
 |-----------|-----------|--------------|

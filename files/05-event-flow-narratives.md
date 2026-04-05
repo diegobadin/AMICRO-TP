@@ -76,6 +76,20 @@ Player A ──► 🔵 PlayCard { card: Red 7, seq: 5 }
 
   ... (many turns) ...
 
+Player A ──► 🔵 PlayCard { card: Red Draw Two, seq: 35 }
+                │
+                ▼ (synchronous)
+           🟣 Validate play ✓
+           🟣 Draw Two effect: B must draw 2 cards, B's turn is skipped
+           🟣 seq → 36
+                │
+                ▼
+           🟠 CardPlayed { playerId: A, card: Red Draw Two, cardCount: 5, nextPlayer: C }
+           🟠 ForcedDraw { targetPlayerId: B, cardCount: 2, newHandSize: 9, reason: draw_two }
+           🟠 TurnSkipped { skippedPlayerId: B, nextPlayer: C, reason: draw_two }
+
+  ... (several turns later) ...
+
 Player B ──► 🔵 PlayCard { card: Blue Skip, seq: 42, callingUno: true }
                 │
                 ▼ (synchronous)
@@ -87,6 +101,7 @@ Player B ──► 🔵 PlayCard { card: Blue Skip, seq: 42, callingUno: true }
                 │
                 ▼
            🟠 CardPlayed { playerId: B, card: Blue Skip, cardCount: 1, nextPlayer: A }
+           🟠 TurnSkipped { skippedPlayerId: C, nextPlayer: A, reason: skip_card }
            🟠 UnoCallMade { playerId: B }
            🟠 ChallengeWindowOpened { targetPlayerId: B, expiresAt: T+5s }
 
@@ -126,15 +141,17 @@ Player B ──► 🔵 PlayCard { card: Blue 3, seq: 50 }
                 └──► Analytics: records game result
 
 
-PHASE 4: Match Resolution (after up to 3 games)
+PHASE 4: Room Completion (casual = single game)
 ════════════════════════════════════════════════
 
-  (Assuming B wins 2 games)
+  Since this is a casual room, the single game's completion ends the room:
 
-           🟠 MatchCompleted { roomId: R1, matchResults: {B: {wins:2}, A: {wins:1}, C: {wins:0}} }
            🟠 RoomCompleted { roomId: R1, status: Completed }
                 │
-                └──► Analytics: records match/room completion
+                └──► Analytics: records room completion
+
+  Note: casual rooms do NOT produce a MatchCompleted event — the match
+  concept applies only to tournament rooms (best-of-three).
 ```
 
 ---
@@ -258,6 +275,32 @@ PHASE 4: Final Room
                       └──► Analytics: final bracket + stats
 ```
 
+### Scale Analysis: 1,000,000 Players
+
+At maximum capacity, the domain model behaves as follows:
+
+| Round | Players | Rooms (10/room) | RoomCreationRequested Events | Concurrent Matches |
+|-------|---------|------------------|------------------------------|--------------------|
+| 1 | 1,000,000 | 100,000 | 100,000 (burst) | up to 100,000 |
+| 2 | 300,000 | 30,000 | 30,000 | up to 30,000 |
+| 3 | 90,000 | 9,000 | 9,000 | up to 9,000 |
+| 4 | 27,000 | 2,700 | 2,700 | up to 2,700 |
+| 5 | 8,100 | 810 | 810 | up to 810 |
+| 6 | 2,430 | 243 | 243 | up to 243 |
+| 7 | 729 | 73 | 73 | up to 73 |
+| 8 | 219 | 22 | 22 | up to 22 |
+| 9 | 66 | 7 | 7 | up to 7 |
+| 10 | 21 | 3 | 3 | up to 3 |
+| 11 | 9 | 1 (final) | 1 | 1 |
+
+**Key domain observations at this scale:**
+
+- **Round 1 surge:** The Tournament aggregate emits 100,000 `RoomCreationRequested` events in a burst. Each is an independent command to Room Gameplay — no cross-room coordination needed. The Room Gameplay context must absorb this creation spike without blocking tournament progression.
+- **Convergence:** The tournament converges from 1M to a single final room in approximately 11 rounds (log₃ formula, since top 3 advance per room of 10). Each round reduces the player count by ~⅔.
+- **Round gate invariant:** The Tournament aggregate blocks round advancement until all rooms report `RoomCompleted`. In Round 1, this means waiting for the slowest of 100,000 rooms. Long-running rooms (due to close matches or disconnections) gate the entire round — this is a domain-level constraint that cannot be relaxed without compromising fairness.
+- **Event volume:** At peak (Round 1), with ~100,000 concurrent rooms each playing up to 3 games of ~50–100 turns, the system produces on the order of 15–30 million game-state events per round. Downstream consumers (Spectator View, Analytics, Brackets) must absorb this eventual-consistency load without affecting gameplay latency.
+- **Room aggregate isolation:** Each Room aggregate is fully independent — no shared state between rooms. This makes horizontal distribution natural at the domain level: room R1's game logic never needs to coordinate with R2's.
+
 ---
 
 ## 5.3 Elo/Ranking Updates After Game Completion
@@ -270,7 +313,7 @@ Timeline ───────────────────────�
   Room Gameplay emits:
   🟠 GameCompleted {
        roomId: R1,
-       gameNumber: 2,
+       gameNumber: 1,
        roomType: Casual,
        finishingOrder: [D=1st, A=2nd, B=3rd, C=4th],
        cardPointTotals: {A: 15, B: 42, C: 68},
@@ -284,7 +327,7 @@ Timeline ───────────────────────�
   🟡 Policy: "When GameCompleted AND roomType=Casual AND isAbandoned=false → UpdateElo"
 
   Step 1: Deduplication check
-     Has gameId (R1-G2) been processed before? → No ✓
+     Has gameId (R1-G1) been processed before? → No ✓
 
   Step 2: Load player ratings
      🟣 PlayerRating[D]: Elo = 1350
@@ -300,33 +343,43 @@ Timeline ───────────────────────�
        C (4th, rated 1400) vs field → severely underperformed → -18
 
   Step 4: Apply updates (one aggregate command per player)
-     🔵 UpdateElo { playerId: D, gameId: R1-G2, delta: +8 }
+     🔵 UpdateElo { playerId: D, gameId: R1-G1, delta: +8 }
          → 🟣 PlayerRating[D]: 1350 → 1358
-         → 🟠 EloUpdated { playerId: D, old: 1350, new: 1358, gameId: R1-G2 }
+         → 🟠 EloUpdated { playerId: D, old: 1350, new: 1358, gameId: R1-G1 }
 
-     🔵 UpdateElo { playerId: A, gameId: R1-G2, delta: +12 }
+     🔵 UpdateElo { playerId: A, gameId: R1-G1, delta: +12 }
          → 🟣 PlayerRating[A]: 1200 → 1212
-         → 🟠 EloUpdated { playerId: A, old: 1200, new: 1212, gameId: R1-G2 }
+         → 🟠 EloUpdated { playerId: A, old: 1200, new: 1212, gameId: R1-G1 }
 
-     🔵 UpdateElo { playerId: B, gameId: R1-G2, delta: -2 }
+     🔵 UpdateElo { playerId: B, gameId: R1-G1, delta: -2 }
          → 🟣 PlayerRating[B]: 1180 → 1178
          → 🟠 EloUpdated { ... }
 
-     🔵 UpdateElo { playerId: C, gameId: R1-G2, delta: -18 }
+     🔵 UpdateElo { playerId: C, gameId: R1-G1, delta: -18 }
          → 🟣 PlayerRating[C]: 1400 → 1382
          → 🟠 EloUpdated { ... }
 
   Step 5: Record processing
-     Mark gameId R1-G2 as processed → prevents re-processing on re-delivery
+     Mark gameId R1-G1 as processed → prevents re-processing on re-delivery
 
 
-  ┌─────────────────────────────────────────────┐
-  │ FILTER CASES (Elo is NOT updated):          │
-  │                                             │
-  │ • roomType = Tournament → skip              │
-  │ • isAbandoned = true → skip                 │
-  │ • gameId already processed → skip (idemp.)  │
-  └─────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────┐
+  │ FILTER CASES (Elo is NOT updated):                      │
+  │                                                         │
+  │ • roomType = Tournament → skip                          │
+  │ • isAbandoned = true → skip                             │
+  │ • gameId already processed → skip (idemp.)              │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ FINISHING ORDER DETERMINATION:                           │
+  │                                                         │
+  │ • 1st: player who emptied their hand                    │
+  │ • 2nd–last: ranked by ascending card-point total        │
+  │   (fewer points = higher rank)                          │
+  │ • Tie in card-point total: player with fewer cards      │
+  │   remaining ranks higher                                │
+  └─────────────────────────────────────────────────────────┘
 ```
 
 ---

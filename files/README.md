@@ -34,6 +34,121 @@ Throughout the documents we use the following color-coding convention (rendered 
 
 ---
 
+## EventStorming Big-Picture Board
+
+The following board summarizes the main business flows, exceptional paths, cross-context event propagation, and key policies discovered through EventStorming sessions. Colors follow the legend above.
+
+```
+═══════════════════════════════════════════════════════════════════════════════════════════
+  ROOM LIFECYCLE (Room Gameplay Context)                          TOURNAMENT LIFECYCLE
+═══════════════════════════════════════════════════════════════════════════════════════════
+
+🔵 CreateRoom          🔵 JoinRoom           🔵 StartGame              🔵 CreateTournament
+     │                      │                      │                        │
+     ▼                      ▼                      ▼                        ▼
+🟠 RoomCreated         🟠 PlayerJoined        🟠 GameStarted          🟠 TournamentCreated
+     │                                             │
+     └──► 🟢 SpectatorRoomView                     ├── 🟡 First Card Rule applied
+                                                   │      (action card effect if applicable)
+                                                   ▼
+                                          ┌─────────────────┐
+                                          │  GAMEPLAY LOOP   │
+                                          └─────────────────┘
+                                                   │
+          🔵 PlayCard ◄────────────────────────────┤
+               │                                   │
+               ▼                                   │
+          🟠 CardPlayed ──┬── 🟠 DirectionReversed │       🔵 RegisterPlayer
+               │          ├── 🟠 ForcedDraw        │            │
+               │          ├── 🟠 TurnSkipped       │            ▼
+               │          └── 🟠 UnoCallMade       │       🟠 PlayerRegistered
+               │                    │              │
+               │                    ▼              │       🔵 StartTournament
+               │          🟠 ChallengeWindowOpened │            │
+               │                    │              │            ▼
+               │           🟡 5s timer             │       🟠 TournamentStarted
+               │                    │              │            │
+               │                    ▼              │            ▼
+               │          🟠 ChallengeWindowClosed │       🟠 RoundStarted
+               │                                   │            │
+          ┌────┴─── player has 0 cards? ──────┐    │            ▼
+          │ No: loop continues                │    │       🟠 RoomCreationRequested
+          │ Yes:                               ▼    │       (×N rooms, to Room Gameplay)
+          │                              🟠 GameCompleted
+          │                                   │
+          │              ┌────────────────────┤
+          │              │                    │
+          │         Casual room          Tournament room
+          │              │                    │
+          │              ▼                    ▼
+          │    🟠 RoomCompleted         🟡 More games?
+          │         │                   │          │
+          │         ▼                  Yes         No
+          │    🟡 UpdateElo             │          │
+          │         │               🔵 StartGame  ▼
+          │         ▼               (next game)  🟠 MatchCompleted
+          │    🟠 EloUpdated                      │
+          │    (Ranking ctx)                      ▼
+          │                                 🟠 RoomCompleted
+          │                                      │
+          │                                      ▼
+          │                                 🟡 RecordRoomResult
+          │                                      │
+          │                                      ▼
+          │                                 🟠 RoomResultRecorded
+          │                                      │
+          │                                 🟡 All rooms done?
+          │                                 │              │
+          │                                 No             Yes
+          │                                 │              │
+          │                                (wait)          ▼
+          │                                          🟠 RoundCompleted
+          │                                               │
+          │                                          🟡 ≤10 players?
+          │                                          │            │
+          │                                         No           Yes
+          │                                          │            │
+          │                                          ▼            ▼
+          │                                    🟠 RoundStarted  🟠 FinalRoomCreated
+          │                                    (next round)          │
+          │                                                          ▼
+          │                                                    🟠 TournamentCompleted
+          │                                                          │
+          │                                                          ▼
+          │                                                    🟡 UpdateTournamentPlacement
+          │                                                          │
+          │                                                          ▼
+          │                                                    🟠 TournamentPlacementUpdated
+          │                                                    (Ranking ctx)
+          │
+═══════════════════════════════════════════════════════════════════════════════════════════
+  EXCEPTIONAL / FAILURE FLOWS
+═══════════════════════════════════════════════════════════════════════════════════════════
+          │
+          ├── 🔴 Player disconnects
+          │        🟠 PlayerDisconnected → 🟡 60s timer
+          │        │    On each turn: 🟠 TurnSkipped { reason: disconnection }
+          │        │    Timer expires: 🔵 ForfeitPlayer → 🟠 PlayerForfeited
+          │        │    Reconnects in time: 🔵 ReconnectPlayer → 🟠 PlayerReconnected
+          │
+          ├── 🔴 Turn timer expires (connected but inactive)
+          │        🟠 TurnTimedOut → 🟡 Auto-draw + pass
+          │
+          ├── 🔴 Stale command (wrong seq)
+          │        → HTTP 409 Conflict + current state → client reconciles via SSE
+          │
+          ├── 🔴 Session invalidated (new login)
+          │        🟠 SessionInvalidated → treated as disconnection in Room Gameplay
+          │
+          ├── 🔴 Room creation fails (tournament)
+          │        🟠 RoomCreationFailed → 🟡 Tournament retries or alerts operator
+          │
+          └── 🔴 Rate limit exceeded
+                   🟠 RateLimitExceeded → HTTP 429 + adaptive throttling
+```
+
+---
+
 ## High-Level Domain Map (Mermaid)
 
 ```mermaid

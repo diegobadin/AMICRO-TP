@@ -175,6 +175,11 @@ The most complex cross-context workflow is **tournament round advancement**, whi
 | Reconnection window (60s) | Room aggregate | Timer tracked per player; expiry triggers `ForfeitPlayer` |
 | Immutable game log | Room aggregate | Append-only data structure; no update/delete operations exposed |
 | Spectator privacy | Public Event Publisher + ACL | Hand data stripped at source; validated at boundary |
+| Action card effects (atomic) | Room aggregate | Skip/Reverse/DrawTwo/WD4 effects applied within same `PlayCard` processing; no separate command needed |
+| Wild color declaration | Room aggregate | `PlayCard` for Wild without `chosenColor` is rejected; no intermediate "color pending" state |
+| Turn timer (30s default) | Room aggregate | Server-side timer per turn; expiry triggers auto-draw + pass via `TurnTimedOut` |
+| First card rule | Room aggregate | Initial discard card effects applied at game start; Wild Draw Four is buried and redrawn |
+| Game count (casual=1, tournament≤3) | Room aggregate | `maxGames` derived from `roomType`; enforced before `StartGame` |
 
 ---
 
