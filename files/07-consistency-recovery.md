@@ -165,7 +165,7 @@ The most complex cross-context workflow is **tournament round advancement**, whi
 | Turn enforcement | Room aggregate | Command validation: `currentPlayer == command.playerId` |
 | Play legality | Room aggregate | Card-matching rules evaluated before acceptance |
 | Uno call requirement | Room aggregate + challenge window | Window opens automatically; challenge resolves penalty |
-| Best-of-three limit | Room aggregate | `gamesPlayed <= 3` guard; match ends at 2 wins |
+| Game count boundary | Room aggregate | Casual rooms: exactly 1 game. Tournament rooms: up to 3 games. `gamesPlayed < maxGames` checked before `StartGame` |
 | Player count bounds (2–10) | Room aggregate | Reject `JoinRoom` at capacity; end game if < 2 active |
 | Single active session | PlayerIdentity aggregate | New login invalidates old session atomically |
 | Elo: casual-only, non-abandoned, per-game | Ranking consumer policy | Filter on `roomType` and `isAbandoned` before processing |
@@ -179,7 +179,6 @@ The most complex cross-context workflow is **tournament round advancement**, whi
 | Wild color declaration | Room aggregate | `PlayCard` for Wild without `chosenColor` is rejected; no intermediate "color pending" state |
 | Turn timer (30s default) | Room aggregate | Server-side timer per turn; expiry triggers auto-draw + pass via `TurnTimedOut` |
 | First card rule | Room aggregate | Initial discard card effects applied at game start; Wild Draw Four is buried and redrawn |
-| Game count (casual=1, tournament≤3) | Room aggregate | `maxGames` derived from `roomType`; enforced before `StartGame` |
 
 ---
 

@@ -42,7 +42,7 @@
 | `PlayerDisconnected` | Room | Connection lost detected | `roomId`, `playerId`, `reconnectionDeadline` | Spectator View |
 | `PlayerReconnected` | Room | `ReconnectPlayer` accepted | `roomId`, `playerId` | Spectator View |
 | `PlayerForfeited` | Room | Forfeit triggered | `roomId`, `playerId`, `reason`, `isTournament` | Spectator View, Tournament Orch. |
-| `GameCompleted` | Room | Last card played or last active player standing | `roomId`, `gameNumber`, `finishingOrder`, `cardPointTotals`, `completedAt`, `isAbandoned` | Ranking (if casual + not abandoned), Tournament Orch., Analytics |
+| `GameCompleted` | Room | Last card played or last active player standing | `roomId`, `roomType`, `gameNumber`, `finishingOrder`, `cardPointTotals`, `completedAt`, `isAbandoned` | Ranking (if casual + not abandoned), Tournament Orch., Analytics |
 | `MatchCompleted` | Room | Tournament room: best-of-3 resolved or all 3 games played | `roomId`, `matchResults: Map<PlayerId, MatchScore>`, `advancingPlayers` | Tournament Orch., Analytics |
 | `RoomCompleted` | Room | Casual: single game ends. Tournament: match ends. | `roomId`, `finalResults`, `roomType` | Tournament Orch., Analytics |
 | `StaleCommandRejected` | Room | Command with wrong seq number | `roomId`, `playerId`, `expectedSeq`, `receivedSeq` | (Client via HTTP 409; not propagated to other contexts) |

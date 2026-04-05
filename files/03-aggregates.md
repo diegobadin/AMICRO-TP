@@ -8,9 +8,10 @@
 Room Gameplay Context
 ├── 🟣 Room Aggregate (primary, large)
 │   ├── Game (entity, nested)
-│   ├── Hand (entity per player, nested)
-│   ├── Deck (entity, nested)
-│   ├── DiscardPile (entity, nested)
+│   │   ├── Hand (entity per player, nested)
+│   │   ├── Deck (entity, nested)
+│   │   ├── DiscardPile (entity, nested)
+│   │   └── TurnOrder (entity, nested)
 │   └── GameLog (entity, nested)
 │
 Tournament Orchestration Context
