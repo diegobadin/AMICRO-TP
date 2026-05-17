@@ -40,8 +40,10 @@ The Room Gameplay context uses **PostgreSQL** as both the event store and the re
 
 ### 1.3 Log-Before-Broadcast: Transaction Design
 
+**Isolation level:** **`READ COMMITTED`** (PostgreSQL default), with correctness anchored on the `UNIQUE (room_id, sequence_number)` constraint on `event_store` and `outbox` (optimistic concurrency). Rationale: the only contention between concurrent writers to the same room is the next sequence number; `READ COMMITTED` + the unique constraint produces a deterministic loser (the conflicting INSERT fails with `23505`, the command is rejected as stale, and the client reconciles via ETag — see Architecture §2.3.1 and CHANGELOG §1.2). Promoting to `SERIALIZABLE` would buy nothing on this path (no read-modify-write across rooms) while inflating serialization-failure retries under the first-round surge. The aggregate-snapshot `UPDATE` (step 3 below) uses the same isolation and is guarded by `WHERE snapshot_version = :prevSeq`, so a stale snapshot write fails the predicate rather than corrupting state.
+
 ```
-BEGIN TRANSACTION (SERIALIZABLE or READ COMMITTED with unique constraint on seq)
+BEGIN TRANSACTION (READ COMMITTED — correctness via UNIQUE(room_id, sequence_number))
 
   1. INSERT INTO event_store (room_id, sequence_number, event_type, payload, signature, created_at)
      VALUES (:roomId, :newSeq, :type, :fullPayload, :hmac, NOW())

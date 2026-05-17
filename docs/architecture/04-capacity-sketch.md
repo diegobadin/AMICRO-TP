@@ -214,6 +214,17 @@ T+50min Round 1 gate closes. RoundCompleted. Next round begins with 300k players
 | Room Gameplay Service CPU | No. Room creation is lightweight (no game logic yet, just initial state). | Horizontal scaling, partition affinity. |
 | Network | No. Messages are small (< 1KB each). | Standard networking. |
 
+**Tail-latency budget during the T+25s→T+90s surge.** Steady-state SLOs (`PlayCard` p95 ≤ 100 ms, p99 ≤ 200 ms — see [06-nfr-matrix.md §1](./06-nfr-matrix.md)) are explicitly **relaxed** during the 65-second creation window because most rooms are being initialised, not played. The expected envelope:
+
+| Path | Steady-state p99 | Surge p99 (T+25s→T+90s) | Why the regression is acceptable |
+|------|------------------|--------------------------|-----------------------------------|
+| `POST /v1/tournaments/{id}/rooms` (room creation, internal) | ≤ 250 ms | ≤ 1,200 ms | Bounded by PostgreSQL write queue at ~24k inserts/s across 4–8 shards (3–6k/shard, well within NVMe envelope). Worker concurrency (32 workers × ~50 rooms/s) is sized to **stay under** PgBouncer pool saturation; queueing — not throughput — dominates p99. |
+| `POST .../moves` (PlayCard during surge) | ≤ 200 ms | ≤ 400 ms | Active-play traffic is still low at T+25s→T+90s (most rooms not yet `InProgress`). Player commands share the gateway fleet with room-creation acks but partition affinity on `roomId` keeps them off hot shards. |
+| SSE delivery to players | ≤ 500 ms (event→client) | ≤ 1,500 ms | Outbox-relay lag during the surge is bounded by Kafka publish rate, not by the relay loop. Gateway SSE push then dominates and stays sub-second per room. |
+| SSE delivery to spectators | ≤ 2 s | ≤ 5 s | Spectator projection is explicitly eventually consistent (see [03-persistence-layer.md §5](./03-persistence-layer.md) and 01 §6.3); brief degradation during the surge is by design. |
+
+**Backpressure path:** if PostgreSQL write latency exceeds 800 ms p99 on the room-creation shards, the Round Kickoff Workers throttle Kafka consumption (pause/resume on `tournament.room-creation`), which queues incoming `RoomCreationRequested` messages in the broker rather than the database. Kafka retention (24 h) absorbs this comfortably; the surge stretches from ~65 s to ~120 s rather than failing. No room-creation command is lost — the trade is wall-clock-time, not correctness.
+
 ---
 
 ## 6. Round-End Completion Spike

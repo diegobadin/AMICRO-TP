@@ -203,7 +203,10 @@ The assignment's hard constraint: *every authoritative state change is durably a
 │     b. APPEND filtered public events to the Outbox table         │
 │     c. UPDATE aggregate snapshot (optional, for perf)            │
 │  5. Transaction COMMITs → events are durable in the game log     │
-│  6. Return command result to player (HTTP response)              │
+│  6. ONLY AFTER COMMIT returns success: send HTTP 2xx response    │
+│     to the player. A pre-commit failure (constraint violation,   │
+│     timeout, connection loss) returns 4xx/5xx and the events     │
+│     do NOT enter the log.                                        │
 │                                                                  │
 │  ── SEPARATELY (async, after commit) ──                          │
 │                                                                  │
@@ -211,13 +214,24 @@ The assignment's hard constraint: *every authoritative state change is durably a
 │  8. Publishes to Kafka topics                                    │
 │  9. Marks outbox rows as published                               │
 │                                                                  │
-│  CRASH SAFETY:                                                   │
-│  • If crash at step 6: events are committed; client may retry    │
-│    (idempotent by seq number), relay will eventually publish.    │
-│  • If crash at step 7–8: relay resumes from last published       │
-│    offset; at-least-once delivery to Kafka.                      │
-│  • At NO point can a client or downstream consumer see an        │
-│    event that is NOT in the game log.                            │
+│  CRASH SAFETY (commit-then-respond ordering):                    │
+│  • Crash BETWEEN step 5 (commit) and step 6 (response):          │
+│    events are durable in the log; the client times out and       │
+│    retries with the same `If-Match` ETag. Either the retry       │
+│    hits a different instance and sees the committed seq          │
+│    (returns 200 with the same result via the idempotency-key     │
+│    / response-mapping read model, §1.4 of 03-persistence-layer)  │
+│    OR the retry's `If-Match` is now stale and the server         │
+│    returns 412 Precondition Failed (CHANGELOG §1.2) and the      │
+│    client reconciles. No silent loss, no double-apply.           │
+│  • Crash BEFORE step 5: nothing persisted; client retry replays  │
+│    cleanly because the seq number was never consumed.            │
+│  • Crash at step 7–8: relay resumes from last published          │
+│    offset; at-least-once delivery to Kafka; consumers dedupe     │
+│    on `(roomId, sequenceNumber)`.                                │
+│  • INVARIANT: an HTTP 2xx is sent if and only if the events      │
+│    are already in the immutable game log. A client that          │
+│    observed 2xx will never find the move "missing" on replay.    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -970,11 +984,11 @@ sequenceDiagram
 
 **Mechanism:**
 
-1. Client sends command with `sequenceNumber = N`.
+1. Client sends a state-mutating command carrying the current sequence number as `If-Match: "{N}"` (see §2.3.1 for the wire mapping).
 2. Room Gameplay Service loads the aggregate (current `seq = M`).
-3. If `N ≠ M`, reject with `409 Conflict` + `{ currentSeq: M, latestState }`.
+3. If `If-Match` is missing, reject with `428 Precondition Required`. If `N ≠ M`, reject with `412 Precondition Failed` + `{ currentSeq: M, latestState }` so the client can reconcile via SSE and retry. (`409 Conflict` is reserved for true state conflicts — act-out-of-turn, join a started/full room, start a game already in progress — per CHANGELOG §1.2.)
 4. If `N == M`, process command, append events with `seq = M+1` to event store.
-5. Event store enforces unique sequential event IDs per aggregate — a concurrent write with the same `seq` fails at the DB level (optimistic concurrency on the stream version).
+5. Event store enforces unique sequential event IDs per aggregate — a concurrent write with the same `seq` fails at the DB level (optimistic concurrency on the stream version), surfacing as the same `412` to the losing client.
 
 **Restart behavior:** On service restart, the aggregate is reloaded from the event store. The sequence number is derived from the last committed event. No in-memory state is lost — the event store is the source of truth.
 
