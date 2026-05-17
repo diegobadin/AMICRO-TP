@@ -2,7 +2,7 @@
 
 > **Scope:** Behavior-complete domain model for a global real-time Uno platform supporting ad-hoc rooms (2–10 players) and million-player elimination tournaments.  
 > **Methodology:** EventStorming-driven Domain-Driven Design.  
-> **Constraint:** Domain design only — no infrastructure, deployment, or protocol internals.
+> **Constraint:** The design package below is domain-only (no infrastructure or protocol internals). The solution architecture that builds on it lives under [Architecture](#architecture); deltas are tracked in [`CHANGELOG-design.md`](./CHANGELOG-design.md).
 
 ---
 
@@ -10,14 +10,35 @@
 
 | # | Document | Description |
 |---|----------|-------------|
-| 1 | [Domain Glossary](./docs/01-domain-glossary.md) | Ubiquitous language with precise definitions |
-| 2 | [Bounded Contexts & Context Map](./docs/02-bounded-contexts.md) | Context boundaries, relationships, and the Spectator View treatment |
-| 3 | [Aggregates, Entities & Value Objects](./docs/03-aggregates.md) | Candidate aggregates, consistency boundaries, and key invariants |
-| 4 | [Commands & Domain Events Catalog](./docs/04-commands-events.md) | Core commands, resulting events, causality, and idempotency |
-| 5 | [Domain Event Flow Narratives](./docs/05-event-flow-narratives.md) | End-to-end event sequences for key business flows |
-| 6 | [Edge Cases & Failure-Path Analysis](./docs/06-edge-cases.md) | Concurrent conflicts, disconnections, stale commands, security abuse |
-| 7 | [Consistency & Recovery Strategy](./docs/07-consistency-recovery.md) | Retries, deduplication, compensation/saga decisions at the domain level |
-| 8 | [Open Questions & Assumptions](./docs/08-open-questions.md) | Validated requirements vs. assumptions, connection-semantics assumptions |
+| 1 | [Domain Glossary](./docs/design/01-domain-glossary.md) | Ubiquitous language with precise definitions |
+| 2 | [Bounded Contexts & Context Map](./docs/design/02-bounded-contexts.md) | Context boundaries, relationships, and the Spectator View treatment |
+| 3 | [Aggregates, Entities & Value Objects](./docs/design/03-aggregates.md) | Candidate aggregates, consistency boundaries, and key invariants |
+| 4 | [Commands & Domain Events Catalog](./docs/design/04-commands-events.md) | Core commands, resulting events, causality, and idempotency |
+| 5 | [Domain Event Flow Narratives](./docs/design/05-event-flow-narratives.md) | End-to-end event sequences for key business flows |
+| 6 | [Edge Cases & Failure-Path Analysis](./docs/design/06-edge-cases.md) | Concurrent conflicts, disconnections, stale commands, security abuse |
+| 7 | [Consistency & Recovery Strategy](./docs/design/07-consistency-recovery.md) | Retries, deduplication, compensation/saga decisions at the domain level |
+| 8 | [Open Questions & Assumptions](./docs/design/08-open-questions.md) | Validated requirements vs. assumptions, connection-semantics assumptions |
+
+---
+
+## Architecture
+
+The solution architecture (Architecture Checkpoint) builds on and is traceable to the design package above.
+
+| # | Document | Description |
+|---|----------|-------------|
+| 6.1 | [Service Architecture](./docs/architecture/01-service-architecture.md) | Per-bounded-context services, interfaces, persistence, mandatory mechanisms (log-before-broadcast, durable timers, session kill, first-round surge, spectator projection, match-series, abandoned-vs-completed), C4 + sequence diagrams |
+| 6.2 | [Design Alignment Changelog](./CHANGELOG-design.md) | Architecture-driven deltas to the design package, traceability, and non-negotiable affirmations |
+| 6.3 | [Communication Patterns](./docs/architecture/02-communication-patterns.md) | Client connection model (REST + SSE), multi-layer rate limiting mapped to deployables, full integration table (sync, async, pub/sub, saga, timers, session kill) |
+| 6.4 | [Persistence Layer](./docs/architecture/03-persistence-layer.md) | Per-context data stores, consistency models, transactional boundaries, read models, retention/audit, log-before-broadcast transaction design, game log audit read path |
+| 6.5 | [Capacity Sketch](./docs/architecture/04-capacity-sketch.md) | Order-of-magnitude reasoning: peak concurrent entities, event/command rates, per-component scaling, first-round surge timeline, spectator multiplier, infrastructure summary |
+| — | [Observability & Health](./docs/architecture/05-observability-and-health.md) | Structured logging, metrics per service, correlation/tracing, liveness/readiness endpoints, tournament round health dashboard (strongly recommended §7) |
+| 7.1 | [NFR Matrix](./docs/architecture/06-nfr-matrix.md) | Latency budgets, throughput targets, availability goals, data consistency SLOs, scalability limits, flow-to-NFR traceability (strongly recommended §7) |
+| 7.2 | [Threat Model](./docs/architecture/07-threat-model.md) | Lightweight STRIDE analysis: spoofing, tampering, repudiation, information disclosure, DoS, elevation of privilege; trust boundaries, risk summary (strongly recommended §7) |
+| 7.3 | [Architecture Decision Records](./docs/architecture/08-adrs.md) | ADRs for top 10 choices: event sourcing, transactional outbox, REST+SSE, Kafka, API Gateway, choreographed saga, durable timers, per-context DB, separate Spectator View, CloudEvents (strongly recommended §7) |
+| 7.4 | [Local & Test Topology](./docs/architecture/09-local-topology.md) | Docker Compose sketch with network isolation, service dependencies, health checks, differences from production (optional enrichment §7) |
+| 7.5 | [API & Event Catalog](./docs/architecture/10-api-event-catalog.md) | OpenAPI fragments for critical REST endpoints, AsyncAPI outline for Kafka events, traceability to design command/event catalog (optional enrichment §7) |
+| 7.6 | [Data Migration & Versioning](./docs/architecture/11-data-migration.md) | Event schema versioning (additive-only + upcasting), REST API versioning, DB migration principles, Kafka topic configuration (optional enrichment §7) |
 
 ---
 
@@ -135,7 +156,9 @@ The following board summarizes the main business flows, exceptional paths, cross
           │        🟠 TurnTimedOut → 🟡 Auto-draw + pass
           │
           ├── 🔴 Stale command (wrong seq)
-          │        → HTTP 409 Conflict + current state → client reconciles via SSE
+          │        → stale state-mutating request rejected; client reconciles
+          │          current state via SSE and retries (HTTP mapping: stale
+          │          sequence → 412 Precondition Failed, see Architecture §2.3.1)
           │
           ├── 🔴 Session invalidated (new login)
           │        🟠 SessionInvalidated → treated as disconnection in Room Gameplay
@@ -179,6 +202,6 @@ graph TB
     RG -- "publishes filtered state" --> SV
     RG -- "GameCompleted, CardPlayed" --> AB
     TO -- "RoomCreationRequested" --> RG
-    TO -- "TournamentPlacementChanged" --> RK
-    TO -- "RoundAdvanced, BracketUpdated" --> AB
+    TO -- "TournamentCompleted" --> RK
+    TO -- "RoundStarted, RoundCompleted, RoomResultRecorded" --> AB
 ```
