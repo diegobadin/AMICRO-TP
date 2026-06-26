@@ -24,3 +24,6 @@ ignore = ["UP017"]
 python_version = "3.12"
 strict = true
 files = ["app.py", "server.py", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
