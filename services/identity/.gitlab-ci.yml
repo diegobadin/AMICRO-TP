@@ -158,7 +158,9 @@
           syncOptions:
             - CreateNamespace=true
       EOF
-    # 5) GitOps deploy via Argo + readiness gate (wait for Healthy+Synced)
+    # 5) GitOps deploy via Argo + readiness gate (wait for Healthy+Synced).
+    #    --core reads argocd-cm from the current kube-context namespace, so point it at argocd.
+    - 'kubectl config set-context --current --namespace=argocd'
     - 'argocd app sync identity-staging --core --timeout 240'
     - 'argocd app wait identity-staging --core --health --sync --timeout 240'
     - 'kubectl -n unoarena-staging rollout status deploy/identity --timeout=120s'
