@@ -42,23 +42,45 @@ clients/cli/                   # Client CLI (register/whoami/--json) used by the
 specs/                         # Spec-Driven Development: mission, tech-stack, roadmap, feature spec
 ```
 
-A reviewer walks **architecture service → `services/<svc>/` → image `…/unoarena/<svc>` →
-Argo app `<svc>-staging` → wiring depth** in one hop via the matrix in §5.
+**Path convention (uniform for all 10).** For service `<svc>`:
+- Source: `services/<svc>/` · Pipeline fragment: `services/<svc>/.gitlab-ci.yml` · Helm chart:
+  `services/<svc>/chart/` · GitOps overlay: `gitops/apps/<svc>/overlays/<env>/values.yaml` ·
+  Argo app: `<svc>-staging` / `<svc>-production` (manifests in `gitops/applications/`).
 
-### The 10 deployables (mirror of `docs/architecture/09-local-topology.md`)
+**Image name & versioning scheme.** Image: `registry.gitlab.com/<group>/unoarena/<svc>`. Versioning
+is **hybrid**: a human-readable tag `<ref-slug>-<short-sha>` (provenance) **plus** the
+content-addressable **digest** `@sha256:…` captured at build. Deploys pin by **digest**, so staging
+and production point at the same built artifact (build once, promote — consigna §5.4 / §6.4).
 
-| Service | Language | Port | Image | Canned surface |
-|---|---|---|---|---|
-| `identity` ⭐ | Node/TS | 8085 | `…/unoarena/identity` | **real**: `register`, `login`, `whoami` + `/health` |
-| `gateway` | Node/TS | 8080 | `…/unoarena/gateway` | `GET /rooms → []` |
-| `spectator` | Node/TS | 8086 | `…/unoarena/spectator` | `GET /spectate → {"spectators":0}` |
-| `room-gameplay` | Kotlin/JVM | 8081 | `…/unoarena/room-gameplay` | `GET /rooms/sample/state` |
-| `tournament` | Kotlin/JVM | 8083 | `…/unoarena/tournament` | `GET /tournaments/sample` |
-| `ranking` | Python | 8084 | `…/unoarena/ranking` | `GET /players/sample/rating` |
-| `analytics-workers` | Python | 8090 | `…/unoarena/analytics-workers` | worker (`/health` only) |
-| `analytics-api` | Python | 8087 | `…/unoarena/analytics-api` | `GET /tournaments/sample/bracket` |
-| `outbox-relay` | Go | 8088 | `…/unoarena/outbox-relay` | worker (`/health` only) |
-| `timer-worker` | Go | 8089 | `…/unoarena/timer-worker` | worker (`/health` only) |
+### One-hop navigability map (architecture service → folder → image → Argo app → wiring)
+
+| Service | Lang / Port | Folder (= source) | Image `…/unoarena/` | Argo app(s) | Wiring depth |
+|---|---|---|---|---|---|
+| `identity` ⭐ | Node / 8085 | `services/identity/` | `identity` | `identity-staging`, `identity-production` | **full** → integration-staging |
+| `gateway` | Node / 8080 | `services/gateway/` | `gateway` | `gateway-staging`, `gateway-production` | test→build→deliver (+stub deploy) |
+| `spectator` | Node / 8086 | `services/spectator/` | `spectator` | `spectator-staging`, `spectator-production` | test→build→deliver (+stub deploy) |
+| `room-gameplay` | Kotlin / 8081 | `services/room-gameplay/` | `room-gameplay` | `room-gameplay-staging`, `…-production` | test→build→deliver (+stub deploy) |
+| `tournament` | Kotlin / 8083 | `services/tournament/` | `tournament` | `tournament-staging`, `…-production` | test→build→deliver (+stub deploy) |
+| `ranking` | Python / 8084 | `services/ranking/` | `ranking` | `ranking-staging`, `ranking-production` | test→build→deliver (+stub deploy) |
+| `analytics-workers` | Python / 8090 | `services/analytics-workers/` | `analytics-workers` | `analytics-workers-staging`, `…-production` | test→build→deliver (+stub deploy) |
+| `analytics-api` | Python / 8087 | `services/analytics-api/` | `analytics-api` | `analytics-api-staging`, `…-production` | test→build→deliver (+stub deploy) |
+| `outbox-relay` | Go / 8088 | `services/outbox-relay/` | `outbox-relay` | `outbox-relay-staging`, `…-production` | test→build→deliver (+stub deploy) |
+| `timer-worker` | Go / 8089 | `services/timer-worker/` | `timer-worker` | `timer-worker-staging`, `…-production` | test→build→deliver (+stub deploy) |
+
+### Canned surface per service
+
+| Service | Canned surface |
+|---|---|
+| `identity` ⭐ | **real**: `register`, `login`, `whoami` + `/health` |
+| `gateway` | `GET /rooms → []` |
+| `spectator` | `GET /spectate → {"spectators":0}` |
+| `room-gameplay` | `GET /rooms/sample/state` |
+| `tournament` | `GET /tournaments/sample` |
+| `ranking` | `GET /players/sample/rating` |
+| `analytics-workers` | worker (`/health` only) |
+| `analytics-api` | `GET /tournaments/sample/bracket` |
+| `outbox-relay` | worker (`/health` only) |
+| `timer-worker` | worker (`/health` only) |
 
 ⭐ **Fully-wired service: `identity`.** It is the first surface the Client CLI touches
 (`register`/`login`/`whoami`/`seed`, consigna client §5.A), gives a meaningful self-contained real
@@ -74,6 +96,12 @@ smoke test isolates the pipeline mechanic. The other nine are canned placeholder
 ## 2. Pipeline narrative & failure semantics (§6.2)
 
 Stages: `test → build → deliver → deploy-staging → integration-staging → deliver-production → deploy-production`.
+
+> **`build` is merged with the image build** (consigna §6.2 — "may merge these and must say so"):
+> there is no separate compile-artifact stage. The `build` job *is* the Kaniko image build. The
+> only services with a distinct compile step (Kotlin `room-gameplay`, `tournament`) compile during
+> their `test` job (`gradle test`) and again inside the multi-stage Dockerfile; the others
+> (Node/Python/Go) build entirely within the image.
 
 | Stage | What runs | Failure semantics |
 |---|---|---|
@@ -165,7 +193,23 @@ Each named cell maps to a real job (`<stage>:<svc>`) in that service's
 
 ---
 
-## 6. Running it locally
+## 6. Configuration, secrets & observability (§6.8)
+
+- **Configuration source of truth.** Per-service, per-environment config lives in the GitOps
+  overlays `gitops/apps/<svc>/overlays/<env>/values.yaml` (replicas, log level, image digest),
+  layered over the chart defaults in `services/<svc>/chart/values.yaml`. **Never in the image** —
+  the same image runs in any environment; only the overlay changes.
+- **Secrets.** Bitnami **Sealed Secrets** (see §3 and `gitops/apps/identity/overlays/staging/`).
+  Only the in-cluster controller decrypts; the sealed blob is safe to commit. **No plaintext secret
+  in the repo.**
+- **Observability hook.** `identity` emits one structured JSON log line per request with a
+  `correlationId` (propagated from the CLI's `x-correlation-id`). Retrieve it with
+  `kubectl logs deploy/identity -n unoarena-staging`. This is the seam a real service later uses to
+  carry `correlationId` end to end — no dashboards/alerting are built (restraint, §8).
+
+---
+
+## 7. Running it locally
 
 ```bash
 # Per-service test stage (examples)
