@@ -105,3 +105,21 @@ For the design package **as a whole**, every Design Checkpoint non-negotiable gu
 | Consistent match vs. game terminology | D1 §1.4 | Preserved across all interface/event names |
 
 **Conclusion.** The design package and the architecture now tell one story. All deltas are intentional, representation- or completeness-level, and recorded above with rationale; no domain invariant was relaxed.
+
+---
+
+## 6. DevOps Checkpoint deltas (placeholder set vs. architecture)
+
+> Per DevOps Checkpoint §3, any drift between the architecture document and the set of service
+> placeholders must be recorded here. The placeholder set mirrors the **10 deployable containers**
+> of `docs/architecture/09-local-topology.md` one-to-one (`services/<name>/`).
+
+| # | Delta | Rationale | Invariant impact |
+|---|-------|-----------|------------------|
+| 6.1 | C4 "Round Kickoff Workers" (Architecture §1, §3.2) is **not** a separate placeholder; it is **folded into the `tournament` placeholder**. | The local-topology compose (the authoritative *deployable* decomposition) does not ship it as its own container; it is a stateless worker pool of the Tournament context. For a placeholder pipeline whose grading lens is independent deployability, one `tournament` image is the honest unit. | **None.** No domain guarantee lives in the worker pool; the first-round-surge mechanism (Architecture §3.5) is unchanged and would be exercised by a real `tournament` service later. |
+| 6.2 | The placeholder set is the **10 deployables**, not the 6 bounded contexts. | Room Gameplay ships as `room-gameplay` + `outbox-relay` + `timer-worker`; Analytics as `analytics-workers` + `analytics-api`. Splitting them as separate images/charts reflects their separate release lifecycles (Architecture §2.2, §7.2). | **None.** Boundaries and ownership are preserved; this is finer-grained delivery, not a boundary change. |
+
+**Affirmation.** No bounded-context boundary, aggregate, event, or non-negotiable invariant was
+changed by the DevOps checkpoint. The placeholders carry no domain behaviour except the small
+`identity` `register`/`whoami` slice (the fully-wired demonstrator), which does not encode any
+domain invariant.

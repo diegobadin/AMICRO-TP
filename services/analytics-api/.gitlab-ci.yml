@@ -1,0 +1,50 @@
+# analytics-api — placeholder fragment (test → build → deliver → deploy-staging stub; NOT
+# fully-wired). Change detection: every job is guarded by `rules: changes:` on this service's path
+# so editing another service never runs these jobs (independent deployability).
+# analytics-api is not a GameCompleted consumer, so build needs only its own test.
+
+"test:analytics-api":
+  stage: test
+  image: python:3.12-slim
+  script:
+    - cd services/analytics-api
+    - pip install ruff mypy pytest
+    - ruff check .
+    - mypy .
+    - pytest
+  rules:
+    - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
+
+"build:analytics-api":
+  extends: .build-image
+  needs: ["test:analytics-api"]
+  variables:
+    SVC: analytics-api
+  rules:
+    - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
+
+"deliver:analytics-api":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:analytics-api"]
+  script:
+    - helm lint services/analytics-api/chart
+    - helm package services/analytics-api/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/analytics-api-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when ready)
+  rules:
+    - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
+
+# Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
+"deploy-staging:analytics-api":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:analytics-api"]
+  variables:
+    SVC: analytics-api
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/analytics-api/**/*"]
+      when: manual
+      allow_failure: true

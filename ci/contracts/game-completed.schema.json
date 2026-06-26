@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unoarena/contracts/game-completed/v1",
+  "title": "GameCompleted",
+  "description": "Published async contract on room.lifecycle.events. Producer: room-gameplay. Consumers: ranking, analytics-workers. Traces to docs/architecture/10-api-event-catalog.md. Additive-only evolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId", "roomId", "gameId", "sequenceNumber", "correlationId",
+    "roomType", "isAbandoned", "finishingOrder", "cardPointTotals"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "roomId": { "type": "string" },
+    "gameId": { "type": "string" },
+    "sequenceNumber": { "type": "integer", "minimum": 0 },
+    "correlationId": { "type": "string" },
+    "roomType": { "type": "string", "enum": ["Casual", "Tournament"] },
+    "isAbandoned": { "type": "boolean" },
+    "finishingOrder": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "cardPointTotals": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+# gateway — a PLACEHOLDER service (not fully-wired): test → build → deliver → deploy-staging (stub).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:gateway":
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd services/gateway
+    - npm install --no-audit --no-fund
+    - npm run lint
+    - npm test
+  rules:
+    - changes: ["services/gateway/**/*", "ci/templates/**/*"]
+
+"build:gateway":
+  extends: .build-image
+  needs: ["test:gateway"]
+  variables:
+    SVC: gateway
+  rules:
+    - changes: ["services/gateway/**/*", "ci/templates/**/*"]
+
+"deliver:gateway":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:gateway"]
+  script:
+    - helm lint services/gateway/chart
+    - helm package services/gateway/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/gateway-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/gateway/**/*", "ci/templates/**/*"]
+
+# Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
+"deploy-staging:gateway":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:gateway"]
+  variables:
+    SVC: gateway
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/gateway/**/*"]
+      when: manual
+      allow_failure: true

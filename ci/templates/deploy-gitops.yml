@@ -1,0 +1,29 @@
+# Reusable GitOps deploy — the pipeline does NOT kubectl apply. It pins the delivered image
+# digest into the env overlay and asks Argo CD to reconcile, then WAITS for Argo health before
+# the job goes green (honest readiness gate — not `sleep 30`, consigna §6.5).
+#
+# A service fragment uses this by setting SVC + ENV and `extends: .deploy-gitops`.
+# Requires CI variables (masked, never in repo): ARGOCD_SERVER, ARGOCD_AUTH_TOKEN,
+# GITOPS_PUSH_TOKEN. Until the staging cluster (AWS/Azure, TBD) is confirmed, the same job runs
+# unchanged against the kind+Argo bootstrap (gitops/bootstrap/) — vendor-neutral by design.
+
+.deploy-gitops:
+  image: alpine:3.20
+  variables:
+    OVERLAY: "gitops/apps/$SVC/overlays/$ENV/values.yaml"
+  script:
+    - apk add --no-cache git curl yq
+    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+    - chmod +x /usr/local/bin/argocd
+    # 1) Pin the delivered digest into the env overlay (promotion = digest, no rebuild)
+    - yq -i ".image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
+    - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
+    - git add "$OVERLAY"
+    - git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"
+    - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
+    # 2) Reconcile and WAIT for Argo to report Synced+Healthy (the readiness gate)
+    - argocd login "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web
+    - argocd app sync "$SVC-$ENV" --grpc-web
+    - argocd app wait "$SVC-$ENV" --health --sync --timeout 180 --grpc-web
+  environment:
+    name: "$ENV/$SVC"

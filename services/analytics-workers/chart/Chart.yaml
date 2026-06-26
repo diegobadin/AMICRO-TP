@@ -1,0 +1,6 @@
+apiVersion: v2
+name: analytics-workers
+description: UnoArena Analytics Workers service (placeholder worker, stdlib-only runtime)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

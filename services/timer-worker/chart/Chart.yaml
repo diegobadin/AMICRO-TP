@@ -1,0 +1,6 @@
+apiVersion: v2
+name: timer-worker
+description: UnoArena Timer Worker (placeholder background worker — health endpoint only)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

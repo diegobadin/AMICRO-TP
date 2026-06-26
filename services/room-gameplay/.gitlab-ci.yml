@@ -1,0 +1,48 @@
+# room-gameplay — placeholder service fragment (test → build → deliver → deploy-staging stub).
+# NOT fully-wired: no integration-staging job, deploy-staging is manual/allow_failure.
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:room-gameplay":
+  stage: test
+  image: gradle:8.8-jdk21
+  script:
+    - cd services/room-gameplay
+    - gradle --no-daemon test
+    - gradle --no-daemon check
+  rules:
+    - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
+
+"build:room-gameplay":
+  extends: .build-image
+  needs: ["test:room-gameplay"]
+  variables:
+    SVC: room-gameplay
+  rules:
+    - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
+
+"deliver:room-gameplay":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:room-gameplay"]
+  script:
+    - helm lint services/room-gameplay/chart
+    - helm package services/room-gameplay/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/room-gameplay-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
+
+# Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).
+"deploy-staging:room-gameplay":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:room-gameplay"]
+  variables:
+    SVC: room-gameplay
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/room-gameplay/**/*"]
+      when: manual # Phase 2: flip to automatic
+      allow_failure: true

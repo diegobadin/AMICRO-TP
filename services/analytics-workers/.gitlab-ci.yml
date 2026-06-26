@@ -1,0 +1,52 @@
+# analytics-workers — placeholder fragment (test → build → deliver → deploy-staging stub; NOT
+# fully-wired). Change detection: every job is guarded by `rules: changes:` on this service's path
+# so editing another service never runs these jobs (independent deployability).
+#
+# Cross-service contract: build also needs the async GameCompleted contract check (this worker is a
+# consumer), so an incompatible event-schema change blocks this build (fail-fast, consigna §6.3).
+
+"test:analytics-workers":
+  stage: test
+  image: python:3.12-slim
+  script:
+    - cd services/analytics-workers
+    - pip install ruff mypy pytest
+    - ruff check .
+    - mypy .
+    - pytest
+  rules:
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+
+"build:analytics-workers":
+  extends: .build-image
+  needs: ["test:analytics-workers", "test:contract:game-completed"]
+  variables:
+    SVC: analytics-workers
+  rules:
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+
+"deliver:analytics-workers":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:analytics-workers"]
+  script:
+    - helm lint services/analytics-workers/chart
+    - helm package services/analytics-workers/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/analytics-workers-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when ready)
+  rules:
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+
+# Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
+"deploy-staging:analytics-workers":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:analytics-workers"]
+  variables:
+    SVC: analytics-workers
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/analytics-workers/**/*"]
+      when: manual
+      allow_failure: true

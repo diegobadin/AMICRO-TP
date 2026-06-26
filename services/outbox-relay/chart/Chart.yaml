@@ -1,0 +1,6 @@
+apiVersion: v2
+name: outbox-relay
+description: UnoArena Outbox Relay worker (placeholder background worker — health endpoint only)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

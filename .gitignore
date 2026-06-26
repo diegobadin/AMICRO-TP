@@ -1,0 +1,25 @@
+/.idea/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyc
+.venv/
+
+# JVM / Gradle
+.gradle/
+build/
+
+# Go build output
+/services/*/server
+
+# CI / local artifacts
+*.digest
+build.env

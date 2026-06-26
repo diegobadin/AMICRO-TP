@@ -1,0 +1,60 @@
+# identity — the FULLY-WIRED service (test → build → deliver → deploy-staging → integration-staging).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:identity":
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd services/identity
+    - npm install --no-audit --no-fund
+    - npm run lint
+    - npm test
+  rules:
+    - changes: ["services/identity/**/*", "ci/templates/**/*"]
+
+"build:identity":
+  extends: .build-image
+  needs: ["test:identity"]
+  variables:
+    SVC: identity
+  rules:
+    - changes: ["services/identity/**/*", "ci/templates/**/*"]
+
+"deliver:identity":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:identity"]
+  script:
+    - helm lint services/identity/chart
+    - helm package services/identity/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/identity-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/identity/**/*", "ci/templates/**/*"]
+
+# ── Phase 2 (fully-wired). Auto on default branch once the Argo target cluster is confirmed.
+# Kept `when: manual` until then so the Phase-1 pipeline is green through deliver (cluster TBD).
+"deploy-staging:identity":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:identity"]
+  variables:
+    SVC: identity
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/identity/**/*"]
+      when: manual # Phase 2: flip to automatic
+      allow_failure: true
+
+"integration-staging:identity":
+  extends: .smoke-cli
+  needs: ["deploy-staging:identity"]
+  variables:
+    SVC: identity
+    UNOARENA_API_URL: "$IDENTITY_STAGING_URL"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual # Phase 2: flip to automatic
+      allow_failure: true

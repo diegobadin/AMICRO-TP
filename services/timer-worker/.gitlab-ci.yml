@@ -1,0 +1,47 @@
+# timer-worker — placeholder background worker (NOT fully-wired: stops at a manual deploy stub).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:timer-worker":
+  stage: test
+  image: golang:1.22-alpine
+  script:
+    - cd services/timer-worker
+    - go vet ./...
+    - go test ./...
+  rules:
+    - changes: ["services/timer-worker/**/*", "ci/templates/**/*"]
+
+"build:timer-worker":
+  extends: .build-image
+  needs: ["test:timer-worker"]
+  variables:
+    SVC: timer-worker
+  rules:
+    - changes: ["services/timer-worker/**/*", "ci/templates/**/*"]
+
+"deliver:timer-worker":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:timer-worker"]
+  script:
+    - helm lint services/timer-worker/chart
+    - helm package services/timer-worker/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/timer-worker-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/timer-worker/**/*", "ci/templates/**/*"]
+
+# ── Stub: not fully-wired. Manual on default branch; no integration-staging job yet.
+"deploy-staging:timer-worker":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:timer-worker"]
+  variables:
+    SVC: timer-worker
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/timer-worker/**/*"]
+      when: manual
+      allow_failure: true

@@ -1,0 +1,48 @@
+# tournament — placeholder service fragment (test → build → deliver → deploy-staging stub).
+# NOT fully-wired: no integration-staging job, deploy-staging is manual/allow_failure.
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:tournament":
+  stage: test
+  image: gradle:8.8-jdk21
+  script:
+    - cd services/tournament
+    - gradle --no-daemon test
+    - gradle --no-daemon check
+  rules:
+    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+
+"build:tournament":
+  extends: .build-image
+  needs: ["test:tournament"]
+  variables:
+    SVC: tournament
+  rules:
+    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+
+"deliver:tournament":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:tournament"]
+  script:
+    - helm lint services/tournament/chart
+    - helm package services/tournament/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/tournament-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+
+# Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).
+"deploy-staging:tournament":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:tournament"]
+  variables:
+    SVC: tournament
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/tournament/**/*"]
+      when: manual # Phase 2: flip to automatic
+      allow_failure: true

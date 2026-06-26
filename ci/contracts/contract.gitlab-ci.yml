@@ -1,0 +1,17 @@
+# Illustrative async contract-check seam. Runs in the `test` stage on the GameCompleted pair
+# (producer: room-gameplay; consumers: ranking, analytics-workers). Its failure is a `needs:`
+# blocker for the consumers' build jobs, so an incompatible event-schema change blocks ALL
+# affected services (cross-service fail-fast, consigna §6.3). One illustrative check is enough.
+
+"test:contract:game-completed":
+  stage: test
+  image: python:3.12-alpine
+  script:
+    - pip install --quiet jsonschema
+    - python ci/contracts/validate.py
+  rules:
+    - changes:
+        - ci/contracts/**/*
+        - services/room-gameplay/**/*
+        - services/ranking/**/*
+        - services/analytics-workers/**/*

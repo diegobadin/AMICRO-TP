@@ -1,0 +1,52 @@
+# ranking — placeholder fragment (test → build → deliver → deploy-staging stub; NOT fully-wired).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+#
+# Cross-service contract: build also needs the async GameCompleted contract check (ranking is a
+# consumer), so an incompatible event-schema change blocks this build (fail-fast, consigna §6.3).
+
+"test:ranking":
+  stage: test
+  image: python:3.12-slim
+  script:
+    - cd services/ranking
+    - pip install ruff mypy pytest
+    - ruff check .
+    - mypy .
+    - pytest
+  rules:
+    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+
+"build:ranking":
+  extends: .build-image
+  needs: ["test:ranking", "test:contract:game-completed"]
+  variables:
+    SVC: ranking
+  rules:
+    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+
+"deliver:ranking":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:ranking"]
+  script:
+    - helm lint services/ranking/chart
+    - helm package services/ranking/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/ranking-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+
+# Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
+"deploy-staging:ranking":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:ranking"]
+  variables:
+    SVC: ranking
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/ranking/**/*"]
+      when: manual
+      allow_failure: true

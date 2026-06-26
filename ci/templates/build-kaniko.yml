@@ -1,0 +1,32 @@
+# Reusable image build+push (Kaniko, rootless — no Docker-in-Docker privilege).
+#
+# A service fragment uses this by setting `SVC` and `extends: .build-image`. The job builds
+# services/$SVC/Dockerfile, pushes a hybrid tag (<ref-slug>-<short-sha>), and captures the
+# resulting content-addressable DIGEST into a dotenv artifact so downstream jobs (deliver,
+# deploy) pin the SAME built artifact — build once, promote by digest (consigna §5.4 / §6.4).
+
+.build-image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  variables:
+    IMAGE: "$REGISTRY_BASE/$SVC"
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      cat > /kaniko/.docker/config.json <<EOF
+      {"auths":{"$CI_REGISTRY":{"username":"$CI_REGISTRY_USER","password":"$CI_REGISTRY_PASSWORD"}}}
+      EOF
+    - |
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR/services/$SVC" \
+        --dockerfile "$CI_PROJECT_DIR/services/$SVC/Dockerfile" \
+        --destination "$IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA" \
+        --digest-file /tmp/digest
+    - echo "IMAGE_DIGEST=$(cat /tmp/digest)" >> build.env
+    - echo "IMAGE_REF=$IMAGE@$(cat /tmp/digest)" >> build.env
+    - echo "Built $IMAGE@$(cat /tmp/digest)"
+  artifacts:
+    reports:
+      dotenv: build.env

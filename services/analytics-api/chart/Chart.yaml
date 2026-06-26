@@ -1,0 +1,6 @@
+apiVersion: v2
+name: analytics-api
+description: UnoArena Analytics API service (placeholder, stdlib-only runtime)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

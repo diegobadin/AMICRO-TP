@@ -1,0 +1,48 @@
+# spectator — a PLACEHOLDER service (not fully-wired): test → build → deliver → deploy-staging (stub).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:spectator":
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd services/spectator
+    - npm install --no-audit --no-fund
+    - npm run lint
+    - npm test
+  rules:
+    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+
+"build:spectator":
+  extends: .build-image
+  needs: ["test:spectator"]
+  variables:
+    SVC: spectator
+  rules:
+    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+
+"deliver:spectator":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:spectator"]
+  script:
+    - helm lint services/spectator/chart
+    - helm package services/spectator/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/spectator-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+
+# Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
+"deploy-staging:spectator":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:spectator"]
+  variables:
+    SVC: spectator
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/spectator/**/*"]
+      when: manual
+      allow_failure: true

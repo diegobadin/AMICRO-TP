@@ -1,0 +1,15 @@
+# Default (base) values. Environment overlays in gitops/apps/spectator/overlays/<env>/values.yaml
+# override replicas, logLevel, URLs, and pin image.digest. Secrets are NOT here — they come from a
+# SealedSecret mounted as env (see gitops overlay). The image is pinned by digest at deploy time.
+image:
+  repository: registry.gitlab.com/REPLACE_GROUP/unoarena/spectator
+  digest: "" # pinned by CI/GitOps (build once, promote by digest)
+  tag: latest # fallback only; digest wins when set
+  pullPolicy: IfNotPresent
+
+replicas: 1
+port: 8086
+healthPath: /health
+logLevel: info
+
+env: []

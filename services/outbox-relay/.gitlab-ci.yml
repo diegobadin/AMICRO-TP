@@ -1,0 +1,47 @@
+# outbox-relay — placeholder background worker (NOT fully-wired: stops at a manual deploy stub).
+# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
+# another service never runs these jobs (independent deployability).
+
+"test:outbox-relay":
+  stage: test
+  image: golang:1.22-alpine
+  script:
+    - cd services/outbox-relay
+    - go vet ./...
+    - go test ./...
+  rules:
+    - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
+
+"build:outbox-relay":
+  extends: .build-image
+  needs: ["test:outbox-relay"]
+  variables:
+    SVC: outbox-relay
+  rules:
+    - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
+
+"deliver:outbox-relay":
+  stage: deliver
+  image: alpine/helm:3.15.0
+  needs: ["build:outbox-relay"]
+  script:
+    - helm lint services/outbox-relay/chart
+    - helm package services/outbox-relay/chart -d /tmp
+    - 'echo "delivered image $IMAGE_REF + chart"'
+    # helm push /tmp/outbox-relay-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
+  rules:
+    - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
+
+# ── Stub: not fully-wired. Manual on default branch; no integration-staging job yet.
+"deploy-staging:outbox-relay":
+  extends: .deploy-gitops
+  stage: deploy-staging
+  needs: ["deliver:outbox-relay"]
+  variables:
+    SVC: outbox-relay
+    ENV: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: ["services/outbox-relay/**/*"]
+      when: manual
+      allow_failure: true

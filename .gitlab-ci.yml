@@ -1,0 +1,40 @@
+# UnoArena — root pipeline orchestrator (monorepo).
+#
+# Each service owns its own fragment under services/<svc>/.gitlab-ci.yml and is wired through the
+# per-service stage spine. Change detection is path-based (rules: changes:) so a change limited to
+# one service only runs that service's jobs — independent deployability (consigna §4, §6.2).
+#
+# Shared reusable job templates live under ci/templates/ and the illustrative async contract check
+# under ci/contracts/. See devops-checkpoint/README.md for the full narrative + coverage matrix.
+
+stages:
+  - test
+  - build
+  - deliver
+  - deploy-staging
+  - integration-staging
+  - deliver-production
+  - deploy-production
+
+variables:
+  # Image naming convention: registry.gitlab.com/<group>/unoarena/<svc>
+  REGISTRY_BASE: "$CI_REGISTRY_IMAGE"
+
+include:
+  # Shared templates (hidden jobs consumed via `extends`)
+  - local: ci/templates/build-kaniko.yml
+  - local: ci/templates/deploy-gitops.yml
+  - local: ci/templates/smoke-cli.yml
+  - local: ci/contracts/contract.gitlab-ci.yml
+
+  # Per-service fragments (one image = one chart = one fragment)
+  - local: services/gateway/.gitlab-ci.yml
+  - local: services/identity/.gitlab-ci.yml
+  - local: services/room-gameplay/.gitlab-ci.yml
+  - local: services/tournament/.gitlab-ci.yml
+  - local: services/ranking/.gitlab-ci.yml
+  - local: services/analytics-workers/.gitlab-ci.yml
+  - local: services/analytics-api/.gitlab-ci.yml
+  - local: services/spectator/.gitlab-ci.yml
+  - local: services/outbox-relay/.gitlab-ci.yml
+  - local: services/timer-worker/.gitlab-ci.yml

@@ -1,0 +1,26 @@
+[project]
+name = "unoarena-analytics-workers"
+version = "0.1.0"
+description = "UnoArena analytics-workers service (placeholder worker, stdlib-only runtime)"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "S", "A", "UP"]
+# UP017 (datetime.UTC) requires py3.11+ at runtime; keep timezone.utc for broad runtime compat.
+ignore = ["UP017"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["app.py", "server.py", "tests"]
