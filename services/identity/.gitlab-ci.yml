@@ -87,11 +87,16 @@
     - 'docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"'
     - 'docker pull "$IMAGE@$IMAGE_DIGEST"'
     - 'docker tag "$IMAGE@$IMAGE_DIGEST" ci-identity:smoke'
-    # 2) kind cluster with the NodePort published on the dind host (reachable at docker:30080)
+    # 2) kind cluster: publish the API server + NodePort on the dind host's IP so the job container
+    #    can reach them (the `docker` dind service alias is in /etc/hosts).
+    - 'DIND_IP=$(grep -w docker /etc/hosts | awk "{ print \$1 }" | head -1); echo "DIND_IP=$DIND_IP"'
     - |
       cat > /tmp/kind.yaml <<EOF
       kind: Cluster
       apiVersion: kind.x-k8s.io/v1alpha4
+      networking:
+        apiServerAddress: "$DIND_IP"
+        apiServerPort: 6443
       nodes:
         - role: control-plane
           extraPortMappings:
@@ -101,7 +106,7 @@
       EOF
     - 'kind create cluster --name ci --config /tmp/kind.yaml --wait 150s'
     - 'kind get kubeconfig --name ci > "$KUBECONFIG"'
-    - 'sed -i "s#127.0.0.1#docker#g" "$KUBECONFIG"'
+    - 'kubectl cluster-info'
     - 'kind load docker-image ci-identity:smoke --name ci'
     # 3) Install Argo CD and wait for its components
     - 'kubectl create namespace argocd'
