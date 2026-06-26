@@ -16,6 +16,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532 # distroless 'nonroot' uid — kubelet needs a numeric user to verify non-root
       containers:
         - name: {{ include "svc.name" . }}
           image: {{ include "svc.image" . | quote }}
