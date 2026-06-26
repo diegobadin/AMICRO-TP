@@ -6,17 +6,21 @@
 > behaviour through the Client CLI. Assignment: [`../docs/devops/consigna.md`](../docs/devops/consigna.md).
 > Full reasoning lives in the Spec-Driven docs under [`../specs/`](../specs/).
 
-**Status:** Phase 1 complete (all 10 services wired `test → build → deliver`, fail-fast +
-change detection, the contract-check seam). Phase 2 complete (GitOps under `gitops/`, the
-Client CLI under `clients/cli/`, and `identity`'s `deploy-staging` + `integration-staging` jobs).
-The fully-wired jobs run **automatically** on the default branch as soon as the cluster CI
-variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`) are set — no code change needed.
+**Status:** ✅ Complete. All 10 services run `test → build → deliver` (fail-fast, change detection,
+contract-check seam); `identity` goes the full distance to `integration-staging`, where **Argo CD
+deploys it (GitOps) and the Client CLI smoke test passes** — entirely within GitLab, no cloud.
 
-🔗 **Green pipeline run reaching `integration-staging`:** _added once the staging cluster — a local
-**kind/k3d** stood up by `gitops/bootstrap/` (no cloud; consigna §4 "the cluster is assumed to
-exist") — is connected and its CI variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`) are set._ The
-CLI smoke mechanic is verified end-to-end locally against the real `identity` service
-(`register` → `whoami` → assert; see `gitops/README.md` and the smoke template).
+🔗 **Green pipeline run reaching `integration-staging`:**
+https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455
+(`test 11/11 · build 10/10 · deliver 10/10 · integration-staging 1/1`).
+
+**How the green `integration-staging` works (no external cluster, no cloud).** The
+`integration-staging:identity` job stands up a **kind** cluster + **Argo CD** inside the CI runner
+(dind), loads the exact image the pipeline built (pulled by digest), lets **Argo deploy `identity`
+from the repo** (`services/identity/chart`), waits for Argo **Synced + Healthy** (the readiness
+gate), then drives the **Client CLI** (`register` → `whoami` → assert). Because the kind cluster is
+job-scoped, deploy + smoke share this one job; the `gitops/` Applications + `deploy-staging:identity`
+describe the same GitOps flow against a persistent cluster.
 
 ---
 
@@ -228,27 +232,14 @@ for the full verification matrix (fail-fast drill, independence drill, promotion
 
 ---
 
-## 8. Producing the green `integration-staging` run (local cluster, no cloud)
+## 8. Reproducing the green run
 
-Per consigna §4 the cluster is *assumed to exist*; here it is a local **kind** cluster — **no public
-cloud at any step** (§9 only needs a green GitLab pipeline page).
+**It is self-contained — just push to the default branch.** No external cluster, no cloud, no CI
+variables to set: the `integration-staging:identity` job builds its own kind cluster + Argo CD on
+the GitLab shared runner (dind), so a push to `main` produces the green pipeline above end to end.
 
-1. **Push this repo** to the course GitLab project
-   (`gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp`). The GitOps repoURL
-   and registry paths are already configured for it — no placeholders to replace.
-2. **Stand up the cluster** (kind + Argo CD + Sealed Secrets, registers the app-of-apps):
-   ```bash
-   gitops/bootstrap/install.sh
-   ```
-   The kind node maps `30080 → host:30080`; `identity` staging is a NodePort on `30080`.
-3. **Register a GitLab runner** that can reach the cluster (a self-hosted runner on the kind host is
-   simplest; the runner needs Docker for Kaniko/CLI).
-4. **Set CI/CD variables** (Settings → CI/CD → Variables, masked):
-   `ARGOCD_SERVER`, `ARGOCD_AUTH_TOKEN`, `GITOPS_PUSH_TOKEN`, and
-   `IDENTITY_STAGING_URL=http://<host>:30080`.
-5. **Push to the default branch.** `deploy-staging:identity` pins the digest, Argo syncs, the job
-   waits for health; `integration-staging:identity` runs the CLI smoke (`register` → `whoami`) and
-   goes green. The pipeline page is the §9 link.
-
-Without the variables set, jobs 5's deploy/integration are skipped and the pipeline is green through
-`deliver` for all 10 services (the variables are the single switch that activates the fully-wired path).
+**Optional — a persistent cluster (the `gitops/` model).** If you prefer Argo running persistently
+against a standing cluster (the production-shaped path the `gitops/` Applications describe), stand
+one up locally with `gitops/bootstrap/install.sh` (kind + Argo CD + Sealed Secrets) and use the
+`deploy-staging:identity` job (gated on the `ARGOCD_SERVER` / `IDENTITY_STAGING_URL` CI variables).
+Still no cloud — consigna §4 only assumes *a* cluster, and kind/k3d qualifies.
