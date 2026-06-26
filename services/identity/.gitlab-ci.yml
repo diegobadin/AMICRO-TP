@@ -38,10 +38,11 @@
 # $IDENTITY_STAGING_URL CI variables. Until then the variables are unset and these jobs are simply
 # skipped — the pipeline stays green through deliver. No code change is needed to activate: just set
 # the CI variables.
+# needs build:identity too, so the IMAGE/IMAGE_DIGEST dotenv (from the build job) is inherited.
 "deploy-staging:identity":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:identity"]
+  needs: ["deliver:identity", "build:identity"]
   variables:
     SVC: identity
     ENV: staging

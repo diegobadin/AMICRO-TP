@@ -15,8 +15,10 @@
     - apk add --no-cache git curl yq
     - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
     - chmod +x /usr/local/bin/argocd
-    # 1) Pin the delivered digest into the env overlay (promotion = digest, no rebuild)
-    - yq -i ".image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
+    # 1) Pin the delivered image (repository + digest) into the env overlay. Pinning the repository
+    #    too means Argo always deploys exactly what CI built ($CI_REGISTRY_IMAGE/$SVC), regardless of
+    #    the chart's placeholder default. Promotion = digest, no rebuild.
+    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
     - git add "$OVERLAY"
     - git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"

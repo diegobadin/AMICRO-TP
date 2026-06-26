@@ -24,6 +24,7 @@
         --dockerfile "$CI_PROJECT_DIR/services/$SVC/Dockerfile" \
         --destination "$IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA" \
         --digest-file /tmp/digest
+    - echo "IMAGE=$IMAGE" >> build.env
     - echo "IMAGE_DIGEST=$(cat /tmp/digest)" >> build.env
     - echo "IMAGE_REF=$IMAGE@$(cat /tmp/digest)" >> build.env
     - echo "Built $IMAGE@$(cat /tmp/digest)"
