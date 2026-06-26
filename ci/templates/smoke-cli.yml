@@ -14,8 +14,8 @@
     SMOKE_USER: "smoke-$CI_PIPELINE_ID"
     SMOKE_PASS: "smoke-pass-$CI_PIPELINE_ID"
   script:
-    - cd clients/cli && npm ci && cd "$CI_PROJECT_DIR"
-    - export UNOARENA_API_URL
+    - cd clients/cli && npm install --no-audit --no-fund && npm run build && cd "$CI_PROJECT_DIR"
+    - export UNOARENA_API_URL UNOARENA_SESSION=/tmp/uno-session.json
     - node clients/cli/dist/cli.js register --user "$SMOKE_USER" --pass "$SMOKE_PASS" --json | tee /tmp/reg.json
     - node clients/cli/dist/cli.js whoami --json | tee /tmp/whoami.json
     # Assert: register ok AND whoami returns the user we just registered

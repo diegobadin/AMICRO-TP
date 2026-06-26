@@ -1,0 +1,20 @@
+{
+  "name": "@unoarena/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UnoArena Client CLI (subset for the DevOps smoke test): register, login, whoami with --json.",
+  "bin": {
+    "unoarena": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

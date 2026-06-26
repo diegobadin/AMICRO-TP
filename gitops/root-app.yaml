@@ -1,0 +1,22 @@
+# App-of-apps: registers every per-service Application under gitops/applications.
+# Replace REPLACE_REPO_URL with the GitLab repo URL once the project is created.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unoarena-root
+  namespace: argocd
+spec:
+  project: unoarena
+  source:
+    repoURL: REPLACE_REPO_URL
+    targetRevision: main
+    path: gitops/applications
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

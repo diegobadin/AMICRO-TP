@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: timer-worker-staging
+  namespace: argocd
+spec:
+  project: unoarena
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unoarena-staging
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: main
+      path: services/timer-worker/chart
+      helm:
+        valueFiles:
+          - $values/gitops/apps/timer-worker/overlays/staging/values.yaml
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: main
+      ref: values
+  syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

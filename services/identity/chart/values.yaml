@@ -12,4 +12,7 @@ port: 8085
 healthPath: /health
 logLevel: info
 
+# Optional: name of a Secret (delivered as a SealedSecret via GitOps) injected as env. Empty = none.
+secretName: ""
+
 env: []

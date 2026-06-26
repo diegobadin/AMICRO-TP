@@ -1,0 +1,8 @@
+# Environment overlay for identity (staging). image.digest is pinned by the deploy-gitops CI job at
+# deploy time — build once, promote the SAME digest from staging to production (no rebuild).
+image:
+  repository: registry.gitlab.com/REPLACE_GROUP/unoarena/identity
+  digest: "" # pinned by CI (deploy-gitops)
+replicas: 1
+logLevel: debug
+secretName: identity-secrets # SealedSecret in this overlay (sealed-secret.example.yaml)

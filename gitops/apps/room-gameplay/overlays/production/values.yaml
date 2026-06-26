@@ -1,0 +1,7 @@
+# Environment overlay for room-gameplay (production). image.digest is pinned by the deploy-gitops CI job at
+# deploy time — build once, promote the SAME digest from staging to production (no rebuild).
+image:
+  repository: registry.gitlab.com/REPLACE_GROUP/unoarena/room-gameplay
+  digest: "" # pinned by CI (deploy-gitops)
+replicas: 3
+logLevel: info

@@ -3,7 +3,7 @@
 > Phases ordered by dependency. Grounded in [`mission.md`](./mission.md) and
 > [`tech-stack.md`](./tech-stack.md). Each phase becomes (or extends) a dated spec under `specs/`.
 
-## Phase 1 — Repo skeleton & placeholders (all 10 → test/build/deliver) — **active**
+## Phase 1 — Repo skeleton & placeholders (all 10 → test/build/deliver) — **complete**
 
 Spec: [`2026-06-26-devops-pipeline/`](./2026-06-26-devops-pipeline/)
 
@@ -18,7 +18,7 @@ Spec: [`2026-06-26-devops-pipeline/`](./2026-06-26-devops-pipeline/)
 **Exit:** all 10 services green through `test → build → deliver`; a deliberately-failing test
 on a branch turns exactly one pipeline red and blocks its `build`.
 
-## Phase 2 — GitOps deploy + `identity` fully wired — **active (same spec)**
+## Phase 2 — GitOps deploy + `identity` fully wired — **built (awaiting cluster connection)**
 
 - `gitops/` cluster-state: Argo CD `Application` per service per env; staging/prod overlays.
 - `identity` real slice: `register` + `whoami` (in-memory store; trivial DB only if demoing the

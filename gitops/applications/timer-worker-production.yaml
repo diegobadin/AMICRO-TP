@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: timer-worker-production
+  namespace: argocd
+spec:
+  project: unoarena
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unoarena-production
+  sources:
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: main
+      path: services/timer-worker/chart
+      helm:
+        valueFiles:
+          - $values/gitops/apps/timer-worker/overlays/production/values.yaml
+    - repoURL: REPLACE_REPO_URL
+      targetRevision: main
+      ref: values
+  syncPolicy:
+  # production: manual sync (no automated block) — promote via gate
+    syncOptions:
+      - CreateNamespace=true

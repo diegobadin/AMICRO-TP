@@ -1,0 +1,10 @@
+# Minimal kind cluster for the vendor-neutral staging fallback. Argo CD + Helm run identically
+# here and on EKS/AKS, so the same pipeline produces a green integration-staging run before the
+# cloud cluster is confirmed.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080 # ingress/nodeport for the identity staging URL
+        hostPort: 30080

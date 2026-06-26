@@ -7,11 +7,15 @@
 > Full reasoning lives in the Spec-Driven docs under [`../specs/`](../specs/).
 
 **Status:** Phase 1 complete (all 10 services wired `test → build → deliver`, fail-fast +
-change detection, the contract-check seam). Phase 2 (GitOps deploy + CLI smoke for `identity`)
-is scaffolded and flips to automatic once the Argo target cluster is confirmed.
+change detection, the contract-check seam). Phase 2 complete (GitOps under `gitops/`, the
+Client CLI under `clients/cli/`, and `identity`'s `deploy-staging` + `integration-staging` jobs).
+The fully-wired jobs run **automatically** on the default branch as soon as the cluster CI
+variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`) are set — no code change needed.
 
-🔗 **Green pipeline run reaching `integration-staging`:** _TBD — added when the staging cluster
-(AWS EKS / Azure AKS educational, or the kind+Argo bootstrap fallback) is wired in Phase 2._
+🔗 **Green pipeline run reaching `integration-staging`:** _added once the staging cluster
+(AWS EKS / Azure AKS educational, or the `gitops/bootstrap/` kind+Argo fallback) is connected and
+its CI variables are set._ The CLI smoke mechanic is verified end-to-end locally against the real
+`identity` service (`register` → `whoami` → assert; see `gitops/README.md` and the smoke template).
 
 ---
 
@@ -33,8 +37,8 @@ services/<svc>/                # one folder per deployable (source + Dockerfile 
   Dockerfile                   #   multi-stage, non-root, minimal base
   chart/                       #   Helm chart (one image = one chart)
   .gitlab-ci.yml               #   the service's stage-spine fragment
-gitops/                        # (Phase 2) Argo CD apps + staging/production overlays
-clients/cli/                   # (Phase 2) Client CLI used by the smoke test
+gitops/                        # Argo CD AppProject, app-of-apps, per-svc Applications + overlays, bootstrap
+clients/cli/                   # Client CLI (register/whoami/--json) used by the smoke test
 specs/                         # Spec-Driven Development: mission, tech-stack, roadmap, feature spec
 ```
 

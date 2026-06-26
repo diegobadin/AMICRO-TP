@@ -33,8 +33,11 @@
   rules:
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
-# ── Phase 2 (fully-wired). Auto on default branch once the Argo target cluster is confirmed.
-# Kept `when: manual` until then so the Phase-1 pipeline is green through deliver (cluster TBD).
+# ── Phase 2 (fully-wired). These run AUTOMATICALLY on the default branch once the Argo target
+# cluster is wired (presence of $ARGOCD_SERVER / $IDENTITY_STAGING_URL CI variables). Until the
+# cluster (AWS EKS / Azure AKS, or the kind+Argo bootstrap) is confirmed, the variables are unset
+# and these jobs are simply skipped — the pipeline stays green through deliver. No code change is
+# needed to activate: just set the CI variables.
 "deploy-staging:identity":
   extends: .deploy-gitops
   stage: deploy-staging
@@ -43,10 +46,9 @@
     SVC: identity
     ENV: staging
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $ARGOCD_SERVER'
       changes: ["services/identity/**/*"]
-      when: manual # Phase 2: flip to automatic
-      allow_failure: true
+      when: on_success
 
 "integration-staging:identity":
   extends: .smoke-cli
@@ -55,6 +57,5 @@
     SVC: identity
     UNOARENA_API_URL: "$IDENTITY_STAGING_URL"
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: manual # Phase 2: flip to automatic
-      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $IDENTITY_STAGING_URL'
+      when: on_success
