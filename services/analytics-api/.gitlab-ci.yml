@@ -13,6 +13,7 @@
     - mypy .
     - pytest
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
 
 "build:analytics-api":
@@ -21,6 +22,7 @@
   variables:
     SVC: analytics-api
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
 
 "deliver:analytics-api":
@@ -33,6 +35,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/analytics-api-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/analytics-api/**/*", "ci/templates/**/*"]
 
 # Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.

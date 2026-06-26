@@ -10,6 +10,7 @@
     - pip install --quiet jsonschema
     - python ci/contracts/validate.py
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes:
         - ci/contracts/**/*
         - services/room-gameplay/**/*

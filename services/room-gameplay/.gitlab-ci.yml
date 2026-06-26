@@ -11,6 +11,7 @@
     - gradle --no-daemon test
     - gradle --no-daemon check
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
 
 "build:room-gameplay":
@@ -19,6 +20,7 @@
   variables:
     SVC: room-gameplay
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
 
 "deliver:room-gameplay":
@@ -31,6 +33,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/room-gameplay-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
 
 # Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).

@@ -10,6 +10,7 @@
     - go vet ./...
     - go test ./...
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
 
 "build:outbox-relay":
@@ -18,6 +19,7 @@
   variables:
     SVC: outbox-relay
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
 
 "deliver:outbox-relay":
@@ -30,6 +32,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/outbox-relay-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
 
 # ── Stub: not fully-wired. Manual on default branch; no integration-staging job yet.

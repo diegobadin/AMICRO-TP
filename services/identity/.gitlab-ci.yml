@@ -11,6 +11,7 @@
     - npm run lint
     - npm test
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
 "build:identity":
@@ -19,6 +20,7 @@
   variables:
     SVC: identity
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
 "deliver:identity":
@@ -31,6 +33,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/identity-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
 # ── Phase 2 (fully-wired). These run AUTOMATICALLY on the default branch once the local kind/k3d

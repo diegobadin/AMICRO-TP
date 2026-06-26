@@ -11,6 +11,7 @@
     - gradle --no-daemon test
     - gradle --no-daemon check
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/tournament/**/*", "ci/templates/**/*"]
 
 "build:tournament":
@@ -19,6 +20,7 @@
   variables:
     SVC: tournament
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/tournament/**/*", "ci/templates/**/*"]
 
 "deliver:tournament":
@@ -31,6 +33,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/tournament-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/tournament/**/*", "ci/templates/**/*"]
 
 # Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).

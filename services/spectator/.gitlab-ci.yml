@@ -11,6 +11,7 @@
     - npm run lint
     - npm test
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/spectator/**/*", "ci/templates/**/*"]
 
 "build:spectator":
@@ -19,6 +20,7 @@
   variables:
     SVC: spectator
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/spectator/**/*", "ci/templates/**/*"]
 
 "deliver:spectator":
@@ -31,6 +33,7 @@
     - 'echo "delivered image $IMAGE_REF + chart"'
     # helm push /tmp/spectator-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/spectator/**/*", "ci/templates/**/*"]
 
 # Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
