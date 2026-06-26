@@ -56,12 +56,112 @@
       changes: ["services/identity/**/*"]
       when: on_success
 
+# Self-contained GitOps green run (consigna §9): stands up kind + Argo CD inside the CI runner
+# (dind), lets ARGO deploy identity from the repo (chart, image pinned to the digest CI built),
+# waits for Argo Healthy+Synced (readiness gate), then drives the Client-CLI smoke. No external
+# cluster, no cloud — entirely within GitLab. On an ephemeral CI cluster the deploy + smoke share
+# one job (the cluster is job-scoped); the gitops/ Applications + deploy-staging:identity describe
+# the same GitOps flow against a persistent cluster.
 "integration-staging:identity":
-  extends: .smoke-cli
-  needs: ["deploy-staging:identity"]
+  stage: integration-staging
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs: ["build:identity", "deliver:identity"]
   variables:
-    SVC: identity
-    UNOARENA_API_URL: "$IDENTITY_STAGING_URL"
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+    KUBECONFIG: "/tmp/kubeconfig"
+    REPO_URL: "https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git"
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $IDENTITY_STAGING_URL'
-      when: on_success
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - apk add --no-cache curl bash git nodejs npm
+    - 'curl -sSLo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64 && chmod +x /usr/local/bin/kind'
+    - 'curl -sSLo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl && chmod +x /usr/local/bin/kubectl'
+    - 'curl -sSLo /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v2.12.3/argocd-linux-amd64 && chmod +x /usr/local/bin/argocd'
+    - 'until docker info >/dev/null 2>&1; do sleep 1; done'
+    # 1) Pull the exact image CI built (by digest) and load it into kind
+    - 'docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"'
+    - 'docker pull "$IMAGE@$IMAGE_DIGEST"'
+    - 'docker tag "$IMAGE@$IMAGE_DIGEST" ci-identity:smoke'
+    # 2) kind cluster with the NodePort published on the dind host (reachable at docker:30080)
+    - |
+      cat > /tmp/kind.yaml <<EOF
+      kind: Cluster
+      apiVersion: kind.x-k8s.io/v1alpha4
+      nodes:
+        - role: control-plane
+          extraPortMappings:
+            - containerPort: 30080
+              hostPort: 30080
+              listenAddress: "0.0.0.0"
+      EOF
+    - 'kind create cluster --name ci --config /tmp/kind.yaml --wait 150s'
+    - 'kind get kubeconfig --name ci > "$KUBECONFIG"'
+    - 'sed -i "s#127.0.0.1#docker#g" "$KUBECONFIG"'
+    - 'kind load docker-image ci-identity:smoke --name ci'
+    # 3) Install Argo CD and wait for its components
+    - 'kubectl create namespace argocd'
+    - 'kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.3/manifests/install.yaml'
+    - 'kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=300s'
+    - 'kubectl -n argocd rollout status deploy/argocd-redis --timeout=180s'
+    - 'kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=240s'
+    # 4) Give Argo read access to the private repo via the CI job token, then create the Application
+    - |
+      cat <<EOF | kubectl apply -f -
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: repo-amicro
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: repository
+      stringData:
+        type: git
+        url: $REPO_URL
+        username: gitlab-ci-token
+        password: $CI_JOB_TOKEN
+      EOF
+    - |
+      cat <<EOF | kubectl apply -f -
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: identity-staging
+        namespace: argocd
+      spec:
+        project: default
+        destination:
+          server: https://kubernetes.default.svc
+          namespace: unoarena-staging
+        source:
+          repoURL: $REPO_URL
+          targetRevision: $CI_COMMIT_SHA
+          path: services/identity/chart
+          helm:
+            parameters:
+              - {name: image.repository, value: ci-identity}
+              - {name: image.tag, value: smoke}
+              - {name: image.digest, value: ""}
+              - {name: service.type, value: NodePort}
+              - {name: service.nodePort, value: "30080"}
+              - {name: secretName, value: ""}
+        syncPolicy:
+          syncOptions:
+            - CreateNamespace=true
+      EOF
+    # 5) GitOps deploy via Argo + readiness gate (wait for Healthy+Synced)
+    - 'argocd app sync identity-staging --core --timeout 240'
+    - 'argocd app wait identity-staging --core --health --sync --timeout 240'
+    - 'kubectl -n unoarena-staging rollout status deploy/identity --timeout=120s'
+    # 6) Client-CLI smoke against the NodePort (register -> whoami -> assert)
+    - 'cd clients/cli && npm ci && npm run build && cd "$CI_PROJECT_DIR"'
+    - 'export UNOARENA_API_URL=http://docker:30080 UNOARENA_SESSION=/tmp/s.json'
+    - 'node clients/cli/dist/cli.js register --user "smoke-$CI_PIPELINE_ID" --pass pw --json | tee /tmp/reg.json'
+    - 'node clients/cli/dist/cli.js whoami --json | tee /tmp/who.json'
+    - 'node clients/cli/scripts/assert-smoke.js /tmp/reg.json /tmp/who.json "smoke-$CI_PIPELINE_ID"'
+  after_script:
+    - 'kind delete cluster --name ci || true'
