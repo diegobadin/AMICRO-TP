@@ -21,7 +21,7 @@
     - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
     - git add "$OVERLAY"
-    - git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"
+    - 'git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"'
     - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
     # 2) Reconcile and WAIT for Argo to report Synced+Healthy (the readiness gate)
     - argocd login "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web
