@@ -11,7 +11,7 @@
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
   variables:
-    IMAGE: "$REGISTRY_BASE/$SVC"
+    IMAGE: "$REGISTRY_BASE/unoarena/$SVC"
   script:
     - mkdir -p /kaniko/.docker
     - |

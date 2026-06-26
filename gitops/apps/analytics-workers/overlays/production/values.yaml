@@ -1,7 +1,7 @@
 # Environment overlay for analytics-workers (production). image.digest is pinned by the deploy-gitops CI job at
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
-  repository: registry.gitlab.com/REPLACE_GROUP/unoarena/analytics-workers
+  repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/analytics-workers
   digest: "" # pinned by CI (deploy-gitops)
 replicas: 3
 logLevel: info

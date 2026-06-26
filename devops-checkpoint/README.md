@@ -233,9 +233,9 @@ for the full verification matrix (fail-fast drill, independence drill, promotion
 Per consigna §4 the cluster is *assumed to exist*; here it is a local **kind** cluster — **no public
 cloud at any step** (§9 only needs a green GitLab pipeline page).
 
-1. **Create the GitLab project** and push this repo. Replace `REPLACE_REPO_URL` (in
-   `gitops/root-app.yaml` and `gitops/applications/*.yaml`) and `REPLACE_GROUP` (in the chart/overlay
-   `image.repository`) with your group's path.
+1. **Push this repo** to the course GitLab project
+   (`gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp`). The GitOps repoURL
+   and registry paths are already configured for it — no placeholders to replace.
 2. **Stand up the cluster** (kind + Argo CD + Sealed Secrets, registers the app-of-apps):
    ```bash
    gitops/bootstrap/install.sh

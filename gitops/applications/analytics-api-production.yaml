@@ -9,13 +9,13 @@ spec:
     server: https://kubernetes.default.svc
     namespace: unoarena-production
   sources:
-    - repoURL: REPLACE_REPO_URL
+    - repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
       targetRevision: main
       path: services/analytics-api/chart
       helm:
         valueFiles:
           - $values/gitops/apps/analytics-api/overlays/production/values.yaml
-    - repoURL: REPLACE_REPO_URL
+    - repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
       targetRevision: main
       ref: values
   syncPolicy:

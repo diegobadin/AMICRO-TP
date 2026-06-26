@@ -50,6 +50,8 @@ which Argo auto-reconciles — restores the last healthy image.
 gitops/bootstrap/install.sh   # kind + Argo CD + Sealed Secrets, then the project + app-of-apps
 ```
 
-Edit `REPLACE_REPO_URL` (in `root-app.yaml` and `applications/*.yaml`) and `REPLACE_GROUP` (in the
-overlays) to your GitLab repo/group first. To reuse an existing cluster instead of kind, set
-`USE_KIND=false` and point kubectl at it; the rest is identical.
+The repoURL (in `root-app.yaml` and `applications/*.yaml`) and the registry group (in the overlays)
+are already set to the course repo `itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp`. To
+reuse an existing cluster instead of kind, set `USE_KIND=false` and point kubectl at it; the rest is
+identical. For a **private** repo, give Argo read access:
+`argocd repo add https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git --username <user> --password <deploy-token>`.

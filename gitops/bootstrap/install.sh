@@ -23,7 +23,7 @@ kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
 kubectl -n kube-system rollout status deploy/sealed-secrets-controller --timeout=120s || true
 
-# Register the project and the app-of-apps (edit REPLACE_REPO_URL first)
+# Register the project and the app-of-apps (repoURL already configured to the course repo)
 kubectl apply -f "$(dirname "$0")/../projects/unoarena.yaml"
 kubectl apply -f "$(dirname "$0")/../root-app.yaml"
 

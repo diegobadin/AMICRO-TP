@@ -2,7 +2,7 @@
 # override replicas, logLevel, URLs, and pin image.digest. Secrets are NOT here — they come from a
 # SealedSecret mounted as env (see gitops overlay). The image is pinned by digest at deploy time.
 image:
-  repository: registry.gitlab.com/REPLACE_GROUP/unoarena/outbox-relay
+  repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/outbox-relay
   digest: "" # pinned by CI/GitOps (build once, promote by digest)
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
