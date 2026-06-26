@@ -29,7 +29,9 @@
 
 "deliver:ranking":
   stage: deliver
-  image: alpine/helm:3.20.2
+  image:
+    name: alpine/helm:3.20.2
+    entrypoint: [""]
   needs: ["build:ranking"]
   script:
     - helm lint services/ranking/chart
