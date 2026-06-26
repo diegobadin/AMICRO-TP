@@ -1,6 +1,6 @@
-# Minimal kind cluster for the vendor-neutral staging fallback. Argo CD + Helm run identically
-# here and on EKS/AKS, so the same pipeline produces a green integration-staging run before the
-# cloud cluster is confirmed.
+# Minimal local kind cluster used as the staging cluster (no cloud; consigna §4 — the cluster is
+# assumed to exist, and a kind/k3d/minikube equivalent is explicitly allowed). Argo CD runs here
+# and the pipeline produces a green integration-staging run against it.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:

@@ -57,19 +57,19 @@ honest **sync-wait** gate so the pipeline never reports "deployed" while Argo is
 - **Rollback.** `argocd app rollback <svc>-staging <prev>` (or `git revert` of the digest
   commit, which Argo reconciles) — one operator action.
 
-## 4. Cluster target (unconfirmed → robust by design)
+## 4. Cluster target (local Kubernetes — no cloud)
 
-The faculty cluster is **likely AWS (EKS) or Azure (AKS) on educational accounts, not yet
-confirmed**. To stay vendor-neutral and guarantee a green pipeline today:
+Per consigna §4 the **cluster is assumed to exist** and "you may sketch a minimal kind/k3d/minikube
+local equivalent". **No public cloud is required.** The staging cluster is a local Kubernetes
+(kind/k3d/minikube) — a real cluster for grading purposes; `kind/k3d` counts.
 
-- The deploy path is **provider-agnostic**: Argo CD + Helm run identically on EKS, AKS, or a
-  local **kind/k3d** cluster.
-- A `gitops/bootstrap/` recipe stands up **Argo CD on an ephemeral kind cluster inside the
-  runner** (or a persistent dev cluster) so `deploy-staging` + `integration-staging` are
-  reproducible **before** the cloud cluster is confirmed. This is the documented fallback for
-  the "green pipeline reaching integration-staging" deliverable.
-- When EKS/AKS is confirmed, only the Argo target cluster + secret backend change; the chart,
-  overlays, and pipeline stay identical. Documented as an ADR.
+- `gitops/bootstrap/` stands up the assumed cluster locally: **kind + Argo CD + Sealed Secrets**,
+  then registers the AppProject and the app-of-apps. Run once per environment.
+- The pipeline targets that cluster through its CI variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`).
+  `deploy-staging` + `integration-staging` reach a green run once those point at the bootstrapped
+  cluster — entirely within GitLab, no external infrastructure.
+- Provider-agnostic by construction: the same chart/overlays/pipeline would run unchanged on any
+  Kubernetes, but that is a property, not a requirement of this checkpoint.
 
 ## 5. Image versioning
 
@@ -87,10 +87,8 @@ the **same built artifact** (consigna §5.4 / §6.4). Helm chart versions are in
 
 **Bitnami Sealed Secrets** (cluster-internal controller). Plaintext secrets are encrypted to a
 `SealedSecret` that is safe to commit under `gitops/`; only the in-cluster controller can decrypt.
-Chosen over cloud KMS/ESO to stay **vendor-neutral** while the cluster is unconfirmed (consigna §4
-discourages vendor-specific KMS). On a confirmed managed cluster, **External Secrets Operator**
-backed by AWS/Azure secret manager is the documented upgrade. **No plaintext secret ever enters
-the repo.**
+Cluster-internal by design — no external/cloud secret backend (consigna §4 discourages
+vendor-specific KMS). **No plaintext secret ever enters the repo.**
 
 ## 7. Contract-check seam (one illustrative)
 

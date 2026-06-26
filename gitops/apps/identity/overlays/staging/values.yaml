@@ -6,3 +6,6 @@ image:
 replicas: 1
 logLevel: debug
 secretName: identity-secrets # SealedSecret in this overlay (sealed-secret.example.yaml)
+service:
+  type: NodePort
+  nodePort: 30080 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → staging URL host:30080

@@ -89,7 +89,7 @@ branch/tag, promoting the **same digest** (no rebuild), prod overlay differing f
 - **Restraint:** no canaries, blue-green, multi-region, build matrices for thoroughness, SLO/
   alerting, or real domain logic (consigna §4, §8).
 - **Honesty:** every stub/skip documented as such; architecture drift in `CHANGELOG-design.md`.
-- **Vendor-neutral:** runs on kind/k3d, EKS, or AKS unchanged; no cloud KMS dependency.
+- **Local cluster, no cloud:** staging is a local kind/k3d (consigna §4); no cloud or KMS dependency.
 
 ## 4. Acceptance criteria (traceable to consigna §8)
 

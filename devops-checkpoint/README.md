@@ -12,10 +12,11 @@ Client CLI under `clients/cli/`, and `identity`'s `deploy-staging` + `integratio
 The fully-wired jobs run **automatically** on the default branch as soon as the cluster CI
 variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`) are set — no code change needed.
 
-🔗 **Green pipeline run reaching `integration-staging`:** _added once the staging cluster
-(AWS EKS / Azure AKS educational, or the `gitops/bootstrap/` kind+Argo fallback) is connected and
-its CI variables are set._ The CLI smoke mechanic is verified end-to-end locally against the real
-`identity` service (`register` → `whoami` → assert; see `gitops/README.md` and the smoke template).
+🔗 **Green pipeline run reaching `integration-staging`:** _added once the staging cluster — a local
+**kind/k3d** stood up by `gitops/bootstrap/` (no cloud; consigna §4 "the cluster is assumed to
+exist") — is connected and its CI variables (`ARGOCD_SERVER`, `IDENTITY_STAGING_URL`) are set._ The
+CLI smoke mechanic is verified end-to-end locally against the real `identity` service
+(`register` → `whoami` → assert; see `gitops/README.md` and the smoke template).
 
 ---
 
@@ -147,10 +148,10 @@ drift is a visible diff. Trade-off accepted: one extra moving piece (Argo) and a
 - **Rollback (one sentence):** run `argocd app rollback identity-staging <previous-revision>`
   (equivalently `git revert` the digest-bump commit, which Argo auto-reconciles) to restore the
   last healthy image.
-- **Cluster TBD:** Argo + Helm run identically on EKS, AKS, or local **kind/k3d**; a
-  `gitops/bootstrap/` kind+Argo recipe guarantees a reproducible green run before the cloud cluster
-  is confirmed. Only the Argo target + secret backend (Sealed Secrets → External Secrets Operator)
-  change later; chart, overlays, and pipeline stay identical.
+- **Cluster (local, no cloud):** the staging cluster is a local **kind/k3d** stood up by
+  `gitops/bootstrap/` (kind + Argo CD + Sealed Secrets). Per consigna §4 the cluster is *assumed to
+  exist*; this recipe is the reproducible local equivalent reviewers can run. No public cloud is
+  involved at any step.
 
 ---
 
@@ -224,3 +225,30 @@ python ci/contracts/validate.py
 
 See [`../specs/2026-06-26-devops-pipeline/validation.md`](../specs/2026-06-26-devops-pipeline/validation.md)
 for the full verification matrix (fail-fast drill, independence drill, promotion-by-digest, etc.).
+
+---
+
+## 8. Producing the green `integration-staging` run (local cluster, no cloud)
+
+Per consigna §4 the cluster is *assumed to exist*; here it is a local **kind** cluster — **no public
+cloud at any step** (§9 only needs a green GitLab pipeline page).
+
+1. **Create the GitLab project** and push this repo. Replace `REPLACE_REPO_URL` (in
+   `gitops/root-app.yaml` and `gitops/applications/*.yaml`) and `REPLACE_GROUP` (in the chart/overlay
+   `image.repository`) with your group's path.
+2. **Stand up the cluster** (kind + Argo CD + Sealed Secrets, registers the app-of-apps):
+   ```bash
+   gitops/bootstrap/install.sh
+   ```
+   The kind node maps `30080 → host:30080`; `identity` staging is a NodePort on `30080`.
+3. **Register a GitLab runner** that can reach the cluster (a self-hosted runner on the kind host is
+   simplest; the runner needs Docker for Kaniko/CLI).
+4. **Set CI/CD variables** (Settings → CI/CD → Variables, masked):
+   `ARGOCD_SERVER`, `ARGOCD_AUTH_TOKEN`, `GITOPS_PUSH_TOKEN`, and
+   `IDENTITY_STAGING_URL=http://<host>:30080`.
+5. **Push to the default branch.** `deploy-staging:identity` pins the digest, Argo syncs, the job
+   waits for health; `integration-staging:identity` runs the CLI smoke (`register` → `whoami`) and
+   goes green. The pipeline page is the §9 link.
+
+Without the variables set, jobs 5's deploy/integration are skipped and the pipeline is green through
+`deliver` for all 10 services (the variables are the single switch that activates the fully-wired path).

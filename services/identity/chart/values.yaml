@@ -12,6 +12,12 @@ port: 8085
 healthPath: /health
 logLevel: info
 
+# Service exposure. Staging overlay sets type=NodePort + nodePort=30080 (matching the kind
+# extraPortMapping) so the integration-staging smoke test reaches it at the injected staging URL.
+service:
+  type: ClusterIP
+  nodePort: ""
+
 # Optional: name of a Secret (delivered as a SealedSecret via GitOps) injected as env. Empty = none.
 secretName: ""
 

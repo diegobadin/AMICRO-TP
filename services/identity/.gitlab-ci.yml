@@ -33,11 +33,11 @@
   rules:
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
-# ── Phase 2 (fully-wired). These run AUTOMATICALLY on the default branch once the Argo target
-# cluster is wired (presence of $ARGOCD_SERVER / $IDENTITY_STAGING_URL CI variables). Until the
-# cluster (AWS EKS / Azure AKS, or the kind+Argo bootstrap) is confirmed, the variables are unset
-# and these jobs are simply skipped — the pipeline stays green through deliver. No code change is
-# needed to activate: just set the CI variables.
+# ── Phase 2 (fully-wired). These run AUTOMATICALLY on the default branch once the local kind/k3d
+# staging cluster (stood up by gitops/bootstrap/, no cloud) is wired via the $ARGOCD_SERVER /
+# $IDENTITY_STAGING_URL CI variables. Until then the variables are unset and these jobs are simply
+# skipped — the pipeline stays green through deliver. No code change is needed to activate: just set
+# the CI variables.
 "deploy-staging:identity":
   extends: .deploy-gitops
   stage: deploy-staging

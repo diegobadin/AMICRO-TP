@@ -36,8 +36,8 @@ production `replicas:3/logLevel:info`.
 ## Secrets
 
 Bitnami **Sealed Secrets** — only the in-cluster controller can decrypt; the sealed blob is safe to
-commit. No plaintext secret is ever in the repo. On a confirmed managed cluster, swap to External
-Secrets Operator backed by the cloud secret manager (no chart/pipeline change).
+commit. No plaintext secret is ever in the repo. Cluster-internal by design — no external/cloud
+secret backend.
 
 ## Rollback
 
@@ -51,4 +51,5 @@ gitops/bootstrap/install.sh   # kind + Argo CD + Sealed Secrets, then the projec
 ```
 
 Edit `REPLACE_REPO_URL` (in `root-app.yaml` and `applications/*.yaml`) and `REPLACE_GROUP` (in the
-overlays) to your GitLab repo/group first. On EKS/AKS, skip the kind step; the rest is identical.
+overlays) to your GitLab repo/group first. To reuse an existing cluster instead of kind, set
+`USE_KIND=false` and point kubectl at it; the rest is identical.

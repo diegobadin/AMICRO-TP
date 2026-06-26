@@ -54,7 +54,7 @@ on a branch turns exactly one pipeline red and blocks its `build`.
 1. GitOps (Argo CD) vs. pipeline-applied Helm.
 2. Monorepo change-detection: parent + dynamic child pipelines vs. `rules: changes:` only.
 3. Promotion model: digest pin in GitOps overlay.
-4. Secrets backend: Sealed Secrets (vendor-neutral) → ESO on confirmed managed cluster.
+4. Secrets backend: Sealed Secrets (cluster-internal, no cloud).
 5. Contract-test placement: async event-schema check in `test` stage of producer + consumers.
 
 ## Out of scope (restraint — consigna §4, §8)

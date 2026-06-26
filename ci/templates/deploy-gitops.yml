@@ -4,8 +4,8 @@
 #
 # A service fragment uses this by setting SVC + ENV and `extends: .deploy-gitops`.
 # Requires CI variables (masked, never in repo): ARGOCD_SERVER, ARGOCD_AUTH_TOKEN,
-# GITOPS_PUSH_TOKEN. Until the staging cluster (AWS/Azure, TBD) is confirmed, the same job runs
-# unchanged against the kind+Argo bootstrap (gitops/bootstrap/) — vendor-neutral by design.
+# GITOPS_PUSH_TOKEN. The staging cluster is a local kind/k3d stood up by gitops/bootstrap/
+# (no cloud; consigna §4 — the cluster is assumed to exist).
 
 .deploy-gitops:
   image: alpine:3.20

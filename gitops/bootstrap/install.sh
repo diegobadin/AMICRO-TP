@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Stand up the vendor-neutral staging target: a kind cluster + Argo CD + Sealed Secrets controller,
-# then register the UnoArena AppProject and the app-of-apps. Idempotent. Run once per environment.
+# Stand up the local staging cluster (no cloud): a kind cluster + Argo CD + Sealed Secrets
+# controller, then register the UnoArena AppProject and the app-of-apps. Idempotent. Run once.
+# Per consigna §4 the cluster is assumed to exist; this is the kind/k3d local equivalent.
 #
-# On a confirmed managed cluster (EKS/AKS), SKIP the kind step and point kubectl at that cluster;
-# everything below is identical (vendor-neutral).
+# To use an already-existing cluster instead, set USE_KIND=false and point kubectl at it; the rest
+# is identical.
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-unoarena-staging}"

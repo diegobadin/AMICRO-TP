@@ -164,8 +164,9 @@ coverage matrix (§6.9); link to a green `integration-staging` run. Plus 5 short
 
 ## 9. Open risks / decisions deferred
 
-- **Cluster confirmation (AWS/Azure):** until confirmed, staging runs on kind+Argo (bootstrap).
-  When confirmed: swap Argo target cluster + Sealed Secrets→ESO. No chart/pipeline change. (ADR-4)
+- **Cluster:** local **kind/k3d** stood up by `gitops/bootstrap/` (no cloud; consigna §4 — the
+  cluster is assumed to exist). Set the CI variables to point the pipeline at it; the green
+  integration-staging run happens entirely within GitLab. (ADR-4)
 - **Migrate-job demo:** default off (in-memory identity). Enable only if we want to show the
   migrate stage; keep DB trivial.
 - **Chart library vs per-chart copy:** start per-chart (clarity); factor a library only if drift hurts.
