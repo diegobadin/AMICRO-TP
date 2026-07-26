@@ -1,0 +1,65 @@
+# Standalone Redis (D3): one-pod shared cache/coordination store — durability is not its job,
+# so AOF and RDB are off and there is no volume. maxmemory+noeviction per
+# docs/architecture/03-persistence-layer.md §7.1: timer:* keys must never be silently evicted,
+# so the shared instance errors loudly on memory pressure instead. Official image pinned (R3).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4.10-alpine
+          args:
+            - --appendonly
+            - "no"
+            - --save
+            - ""
+            - --maxmemory
+            - 96mb
+            - --maxmemory-policy
+            - noeviction
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: redis
+      name: redis

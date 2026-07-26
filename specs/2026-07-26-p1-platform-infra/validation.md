@@ -51,6 +51,11 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
   bundled schemas) — bootstrap now pins argocd `v3.4.5` applied server-side (Strimzi's Kafka CRD
   is ~330KB, so `ServerSideApply=true` is mandatory on the operator app; kube-prometheus-stack
   will need the same in F5). The CI job's v2.12.3 CLI is unaffected (self-contained install).
+- **F3 (passed 2026-07-26).** CNPG chart 0.29.0 (operator 1.30.0) + `unoarena-pg` (1 instance,
+  2Gi): converged Synced/Healthy in ~100s, no manual steps. The five context `Database` CRs
+  (identity, room_gameplay, tournament, ranking, analytics — from
+  `docs/architecture/03-persistence-layer.md`; Spectator is Redis-only) all report
+  `applied=true`, and `psql -U postgres` inside `unoarena-pg-1` lists them.
 - **Pre-existing, deferred to F6** (service side, invisible to CI because `integration-staging`
   applies its own ad-hoc Application under project `default`): (a) `unoarena-root` shows
   `InvalidSpecError` on a fresh cluster — the `unoarena` AppProject only allows `unoarena-*`
