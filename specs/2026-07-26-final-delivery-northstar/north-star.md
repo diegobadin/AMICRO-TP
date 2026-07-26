@@ -21,7 +21,7 @@
 | # | Decision | Chosen |
 |---|----------|--------|
 | N1 | Timeline | 1.5–2 months to the exam → plan the **full program**, tournaments included |
-| N2 | Demo cluster | **Provided by the faculty** — the bootstrap must install everything into *any* kubeconfig; local kind stays as the rehearsal harness |
+| N2 | Demo cluster | **Self-provisioned on the faculty's educational AWS account** (updated 2026-07-26: the faculty provides the account, we create 100% — cluster included, likely EKS); the bootstrap still installs into *any* kubeconfig; local kind stays as the rehearsal harness |
 | N3 | Tournament ambition | Planned end-to-end, but **casual core ships first**; degrades documented if time runs out |
 | N4 | Execution | All implementation happens here (single executor); teammate reviews/presents |
 
@@ -45,9 +45,10 @@ casual-only. No re-litigation; any delta goes to `CHANGELOG-design.md`.
 
 ## Open risks
 
-- **R1** Faculty-cluster unknowns (ingress class, storage class, RBAC, registry reachability) →
-  cluster-profile values layer + an early install dry-run against a "foreign" kubeconfig; ask the
-  faculty for cluster specs when coordinating the date.
+- **R1** Educational-AWS constraints (Academy-style accounts often cap IAM, use expiring session
+  credentials, and limit quotas/cost) → provision the cluster early with reproducible IaC
+  (eksctl/Terraform), rehearse the create→install→destroy cycle, and keep kind as the everyday
+  harness so AWS hours are spent only on rehearsals.
 - **R2** Uno rules engine correctness under concurrency (stacking, jump-in windows, Uno! races) →
   pure engine module + property/log-replay tests in P3, sequence numbers enforced at the API.
 - **R3** SSE fan-out on demo hardware → demo targets correctness; the 1M-scale story is told in

@@ -13,8 +13,9 @@ the fresh GitLab PAT for the live runs.
 ## P1 — Platform infra from an empty cluster
 
 - Ships: Kafka (single-broker Strimzi or Redpanda), Postgres, Redis as GitOps apps under the
-  app-of-apps; bootstrap split into *create-kind* (rehearsal only) and *install-into-kubeconfig*
-  (faculty path, N2); observability stack (Prometheus + Grafana) installed here, dashboards later.
+  app-of-apps; bootstrap split into *create-cluster* (kind for rehearsal, EKS on the educational
+  AWS account for the exam — reproducible IaC, N2/R1) and *install-into-kubeconfig* (works
+  against either); observability stack (Prometheus + Grafana) installed here, dashboards later.
 - Why first: "empty cluster → everything Healthy" is the demo's opening move; it must become a
   boring, repeatable drill before any real service exists.
 - Infra it debuts: everything. Depends on: P0 pipeline.
@@ -86,8 +87,8 @@ the fresh GitLab PAT for the live runs.
 
 - Ships: timed empty-cluster runbook (the exact demo script), CLI functional pass (the faculty's
   test, self-run), presentation deck (final architecture + key decisions, from the ADRs and
-  `docs/architecture/`), README final pass, 48h-before checklist, date coordinated with faculty
-  (ask for cluster specs — R1).
+  `docs/architecture/`), README final pass, 48h-before checklist, date coordinated with faculty,
+  and at least one full rehearsal on a freshly created AWS cluster (R1).
 - Depends on: everything shipped by then; rehearse at least twice.
 
 ## Dependency sketch
