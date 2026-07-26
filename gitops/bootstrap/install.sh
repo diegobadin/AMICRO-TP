@@ -22,10 +22,13 @@ if command -v kind >/dev/null && [ "${USE_KIND:-true}" = "true" ]; then
     kind create cluster --name "$CLUSTER_NAME" --config "$(dirname "$0")/kind-cluster.yaml"
 fi
 
-# Argo CD — pinned to the same version as the CLI in ci/templates/deploy-gitops.yml (R3:
-# `stable` drifted until its CRDs no longer fit a client-side apply).
+# Argo CD — pinned (R3: `stable` drifts). Needs >=3.x: on Kubernetes 1.33+ the 2.x
+# structured-merge-diff schemas break server-side-apply diffing (status.terminatingReplicas),
+# which the platform apps rely on for oversized operator CRDs. Applied server-side for the same
+# CRD-size reason; --force-conflicts keeps re-runs/upgrades over older installs boring.
+# (The v2.12.3 argocd CLI pinned in ci/ is unaffected: that job installs its own Argo.)
 kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.3/manifests/install.yaml
+kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.5/manifests/install.yaml
 kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
 # Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason
