@@ -1,0 +1,25 @@
+# App-of-apps for platform infra: renders the child Applications in gitops/platform/templates.
+# The chart passes targetRevision down to every child, so a rehearsal cluster can track a feature
+# branch end to end — install.sh rewrites both revisions below via TARGET_REVISION (default main).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unoarena-platform-root
+  namespace: argocd
+spec:
+  project: unoarena-platform
+  source:
+    repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
+    targetRevision: main
+    path: gitops/platform
+    helm:
+      parameters:
+        - name: targetRevision
+          value: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

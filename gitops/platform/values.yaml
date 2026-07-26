@@ -1,0 +1,4 @@
+# Shared by every child Application template. targetRevision is overridden per-cluster by the
+# root app's helm parameter (see gitops/platform-root.yaml and install.sh TARGET_REVISION).
+repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
+targetRevision: main

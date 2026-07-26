@@ -51,9 +51,13 @@
 ## Changes by file
 
 - `gitops/projects/unoarena-platform.yaml` — new AppProject.
-- `gitops/platform-root.yaml` — app-of-apps over `gitops/platform/`.
-- `gitops/platform/{strimzi-operator,kafka,cnpg-operator,postgres,redis,monitoring}.yaml` — one
-  Argo Application each (Helm charts pinned by version; `redis` points at raw manifests in
+- `gitops/platform-root.yaml` — app-of-apps over `gitops/platform/`. **Amended in F1:** the root
+  is a Helm-typed app (minimal chart in `gitops/platform/`), not a directory source — children
+  take their git `targetRevision` from `{{ .Values.targetRevision }}`, so the `TARGET_REVISION`
+  override cascades from the root to every child (a directory source would leave children pinned
+  to `main`, breaking the R4 branch rehearsal).
+- `gitops/platform/templates/{strimzi-operator,kafka,cnpg-operator,postgres,redis,monitoring}.yaml`
+  — one Argo Application each (Helm charts pinned by version; `redis` points at raw manifests in
   `gitops/platform/redis/`), sync-wave annotated.
 - `gitops/platform/values/` — pinned chart values (small requests, kind-friendly).
 - `gitops/bootstrap/install.sh` — apply the platform project + root app too, and accept a
