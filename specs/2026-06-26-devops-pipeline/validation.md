@@ -51,7 +51,7 @@ Exactly one `integration-staging ✅` (identity). Every row `test→build→deli
 - [x] Green pipeline run reaching `integration-staging:identity` linked in `devops-checkpoint/README.md`
   ([run 2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455)).
 - [x] `CHANGELOG-design.md` records the Round-Kickoff-workers fold + any other drift (§6).
-- [ ] 5 ADRs written (roadmap §"Decision log").
+- [x] 5 ADRs written (roadmap §"Decision log") — [`devops-checkpoint/adrs.md`](../../devops-checkpoint/adrs.md).
 - [x] README covers layout, pipeline narrative, GitOps justification, smoke test, coverage matrix.
 
 ## 5. Out-of-scope confirmations (restraint check — consigna §8)

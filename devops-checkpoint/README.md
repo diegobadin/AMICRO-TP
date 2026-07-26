@@ -5,6 +5,8 @@
 > exactly one (`identity`) carries a **small real slice** so the staging smoke test validates real
 > behaviour through the Client CLI. Assignment: [`../docs/devops/consigna.md`](../docs/devops/consigna.md).
 > Full reasoning lives in the Spec-Driven docs under [`../specs/`](../specs/).
+> Decision log: [`adrs.md`](./adrs.md) (5 ADRs — deploy model, change detection, promotion,
+> secrets, contract placement).
 
 **Status:** ✅ Complete. All 10 services run `test → build → deliver` (fail-fast, change detection,
 contract-check seam); `identity` goes the full distance to `integration-staging`, where **Argo CD
