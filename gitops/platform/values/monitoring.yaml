@@ -1,0 +1,36 @@
+# kube-prometheus-stack trimmed for the placeholder era (D4): no Alertmanager (no alerting
+# requirement yet), Grafana reached by port-forward until an ingress exists (P4), business
+# dashboards arrive with P8. Everything ephemeral (default emptyDir storage) and sized for
+# kind (R1).
+alertmanager:
+  enabled: false
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 768Mi
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+grafana:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
