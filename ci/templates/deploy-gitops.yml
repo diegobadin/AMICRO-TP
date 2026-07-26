@@ -13,13 +13,17 @@
     OVERLAY: "gitops/apps/$SVC/overlays/$ENV/values.yaml"
   script:
     - apk add --no-cache git curl yq
-    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v2.12.3/argocd-linux-amd64
     - chmod +x /usr/local/bin/argocd
     # 1) Pin the delivered image (repository + digest) into the env overlay. Pinning the repository
     #    too means Argo always deploys exactly what CI built ($CI_REGISTRY_IMAGE/$SVC), regardless of
-    #    the chart's placeholder default. Promotion = digest, no rebuild.
-    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
+    #    the chart's placeholder default. Promotion = digest, no rebuild. The pin lands on the
+    #    CURRENT remote head (not this pipeline's checkout) so the push fast-forwards even if the
+    #    branch moved on since this pipeline ran.
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
+    - git fetch "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "$CI_COMMIT_REF_NAME"
+    - git checkout -B ci-deploy FETCH_HEAD
+    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
     - git add "$OVERLAY"
     - 'git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"'
     - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
@@ -41,8 +45,10 @@
     OVERLAY: "gitops/apps/$SVC/overlays/$ENV/values.yaml"
   script:
     - apk add --no-cache git yq
-    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
+    - git fetch "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "$CI_COMMIT_REF_NAME"
+    - git checkout -B ci-promote FETCH_HEAD
+    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
     - git add "$OVERLAY"
     - 'git commit -m "promote($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"'
     - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
@@ -53,7 +59,7 @@
   image: alpine:3.20
   script:
     - apk add --no-cache curl
-    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v2.12.3/argocd-linux-amd64
     - chmod +x /usr/local/bin/argocd
     - argocd login "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web
     - argocd app sync "$SVC-$ENV" --grpc-web
