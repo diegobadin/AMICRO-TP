@@ -34,7 +34,7 @@ on a branch turns exactly one pipeline red and blocks its `build`.
 Met on 2026-06-26 — [run 2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455),
 self-contained kind + Argo CD inside the CI runner.
 
-## Phase 3 — Production promotion (optional) — **in progress**
+## Phase 3 — Production promotion (optional) — **complete (promotion run linked)**
 
 Spec: [`2026-07-26-prod-promotion-closure/`](./2026-07-26-prod-promotion-closure/) (also carries
 the checkpoint-closure work: ADRs, evidence drills, specs truth pass).

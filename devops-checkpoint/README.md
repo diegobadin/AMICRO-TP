@@ -189,7 +189,7 @@ Exactly one row has `integration-staging ✅` (`identity`). Every row has `test 
 
 | Service | test | build | deliver | deploy-staging | integration-staging | deliver-prod | deploy-prod | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✋ manual | ✋ manual | fully wired; real `register`+`whoami` slice; prod = digest promotion behind manual gates |
+| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ manual | ✋ manual | fully wired; real `register`+`whoami` slice; prod promotion run linked in §9; deploy-prod awaits a persistent cluster |
 | `gateway` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder; deploy job `when: manual` |
 | `spectator` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder |
 | `room-gameplay` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder; contract **producer** |
@@ -268,6 +268,6 @@ deliberate — they prove the gates bite.
 | Independence (AC-2) | [2707021400](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707021400) | ranking-only change → only `test/build/deliver:ranking` + the contract check (bounded set: ranking is a consumer) |
 | Fail-fast (AC-3) | [2707019434](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707019434) | flipped identity assertion → `test:identity` red, `build`/`deliver:identity` never start, other services keep running |
 | Contract-break (AC-8) | [2707019496](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707019496) | incompatible `isAbandoned` type → contract job red, `build:ranking` + `build:analytics-workers` blocked |
-| Promotion by digest (AC-4) | _pending gate run_ | `deliver-production:identity` pins the staging-tested digest into the production overlay |
+| Promotion by digest (AC-4) | [job 15541147687](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541147687) | gate played on the green run → bot commit `ed8a3834` pins `sha256:4731de…` (the exact `build:identity` digest) into the production overlay, `[skip ci]`, no rebuild |
 | Negative smoke (AC-6) | local transcript | CLI against a dead URL → `result:"error"`, exit 1 (recorded in the closure spec) |
 | Observability hook (AC-10) | [job 15541020672](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541020672) | the job runs `kubectl logs deploy/identity` and shows the structured JSON lines with `correlationId` for the smoke's `register`/`whoami` |

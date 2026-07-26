@@ -24,7 +24,7 @@ Exactly one `integration-staging ✅` (identity). Every row `test→build→deli
 
 | Service | test | build | deliver | deploy-staging | integration-staging | deliver-prod | deploy-prod | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✋ manual | ✋ manual | fully wired; real `register`+`whoami` slice |
+| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ manual | ✋ manual | fully wired; real `register`+`whoami` slice |
 | `gateway` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder; deploy job `when: manual` |
 | `room-gameplay` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder; contract **producer** |
 | `tournament` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder (Round-Kickoff workers folded in) |
@@ -46,7 +46,8 @@ Exactly one `integration-staging ✅` (identity). Every row `test→build→deli
 
 ## 4. Definition of done (gate to close the feature)
 
-- [ ] All AC-1…AC-10 pass (drill evidence tracked in
+- [x] All AC-1…AC-10 pass (2026-07-26 — drill runs linked in the README §9; negative smoke and
+  digest checks recorded in
   [`../2026-07-26-prod-promotion-closure/validation.md`](../2026-07-26-prod-promotion-closure/validation.md)).
 - [x] Green pipeline run reaching `integration-staging:identity` linked in `devops-checkpoint/README.md`
   ([run 2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455)).

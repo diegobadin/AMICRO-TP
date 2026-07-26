@@ -33,8 +33,11 @@ exit=1
 
 ## Definition of done
 
-- [ ] AC-C1 … AC-C7 pass.
-- [ ] Old-spec DoD (2026-06-26 §4) fully ticked, including "All AC-1…AC-10 pass".
-- [ ] Drill branches deleted from the course repo; pipeline links still resolve.
-- [ ] ESTADO-FINAL.md written in this directory (what shipped, run links, leftovers).
-- [ ] User reminded to revoke the PAT and delete `~/.amicro_gitlab_token`.
+- [x] AC-C1 … AC-C7 pass (2026-07-26; runs linked in README §9 — green state
+  [2707017997](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707017997),
+  promotion [job 15541147687](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541147687);
+  AC-C4 verified by absence of `deploy-production:identity` while `$ARGOCD_SERVER` is unset).
+- [x] Old-spec DoD (2026-06-26 §4) fully ticked, including "All AC-1…AC-10 pass".
+- [x] Drill branches deleted from the course repo; pipeline links still resolve.
+- [x] ESTADO-FINAL.md written in this directory (what shipped, run links, leftovers).
+- [x] User reminded to revoke the PAT and delete `~/.amicro_gitlab_token` (closure hand-off).
