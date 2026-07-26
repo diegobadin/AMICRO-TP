@@ -171,6 +171,9 @@
     - 'node clients/cli/dist/cli.js register --user "smoke-$CI_PIPELINE_ID" --pass pw --json | tee /tmp/reg.json'
     - 'node clients/cli/dist/cli.js whoami --json | tee /tmp/who.json'
     - 'node clients/cli/scripts/assert-smoke.js /tmp/reg.json /tmp/who.json "smoke-$CI_PIPELINE_ID"'
+    # 7) Observability hook (consigna §6.8): the structured JSON log line the smoke just caused,
+    #    retrieved the way an operator would.
+    - 'kubectl -n unoarena-staging logs deploy/identity --tail=5'
   after_script:
     - 'kind delete cluster --name ci || true'
 
