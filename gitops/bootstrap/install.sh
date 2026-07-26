@@ -17,13 +17,14 @@ if command -v kind >/dev/null && [ "${USE_KIND:-true}" = "true" ]; then
     kind create cluster --name "$CLUSTER_NAME" --config "$(dirname "$0")/kind-cluster.yaml"
 fi
 
-# Argo CD
+# Argo CD — pinned to the same version as the CLI in ci/templates/deploy-gitops.yml (R3:
+# `stable` drifted until its CRDs no longer fit a client-side apply).
 kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.3/manifests/install.yaml
 kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
-# Sealed Secrets controller (vendor-neutral secret backend)
-kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
+# Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason
+kubectl apply -f https://github.com/bitnami/sealed-secrets/releases/download/v0.38.4/controller.yaml
 kubectl -n kube-system rollout status deploy/sealed-secrets-controller --timeout=120s || true
 
 # Register the projects and both app-of-apps (repoURL already configured to the course repo).
