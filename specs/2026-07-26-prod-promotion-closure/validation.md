@@ -24,7 +24,12 @@ UNOARENA_API_URL=http://127.0.0.1:9 node dist/cli.js whoami --json; echo "exit=$
 
 Pass: `result` is an error payload and `exit` is non-zero. Transcript recorded below when run.
 
-- [ ] Run and recorded.
+- [x] Run and recorded (2026-07-26, local):
+
+```
+{"ts":"2026-07-26T21:11:49.367Z","action":"whoami","result":"error","error_code":"unreachable","correlationId":"e186c222-5459-466a-b22b-7328c51cf52c","detail":"TypeError: fetch failed"}
+exit=1
+```
 
 ## Definition of done
 
