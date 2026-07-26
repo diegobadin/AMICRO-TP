@@ -11,6 +11,11 @@ set -euo pipefail
 CLUSTER_NAME="${CLUSTER_NAME:-unoarena-staging}"
 # Branch the platform apps track (rehearsal clusters set this to the feature branch, see plan R4).
 TARGET_REVISION="${TARGET_REVISION:-main}"
+# The repo is private: Argo needs read access. Pass a token with read_repository (CI uses its job
+# token; locally use your PAT). Empty = skip, useful if the repo secret already exists.
+GITOPS_REPO_TOKEN="${GITOPS_REPO_TOKEN:-}"
+GITOPS_REPO_USER="${GITOPS_REPO_USER:-oauth2}"
+REPO_URL="https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git"
 
 if command -v kind >/dev/null && [ "${USE_KIND:-true}" = "true" ]; then
   kind get clusters | grep -q "^${CLUSTER_NAME}$" || \
@@ -26,6 +31,24 @@ kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 # Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason
 kubectl apply -f https://github.com/bitnami/sealed-secrets/releases/download/v0.38.4/controller.yaml
 kubectl -n kube-system rollout status deploy/sealed-secrets-controller --timeout=120s || true
+
+# Repo read access (same declarative pattern the integration-staging CI job uses)
+if [ -n "$GITOPS_REPO_TOKEN" ]; then
+  kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-amicro
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: ${REPO_URL}
+  username: ${GITOPS_REPO_USER}
+  password: ${GITOPS_REPO_TOKEN}
+EOF
+fi
 
 # Register the projects and both app-of-apps (repoURL already configured to the course repo).
 # The platform root gets its git revision rewritten so a rehearsal cluster can track a branch;
