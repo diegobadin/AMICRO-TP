@@ -18,7 +18,7 @@ Spec: [`2026-06-26-devops-pipeline/`](./2026-06-26-devops-pipeline/)
 **Exit:** all 10 services green through `test → build → deliver`; a deliberately-failing test
 on a branch turns exactly one pipeline red and blocks its `build`.
 
-## Phase 2 — GitOps deploy + `identity` fully wired — **built (awaiting cluster connection)**
+## Phase 2 — GitOps deploy + `identity` fully wired — **complete**
 
 - `gitops/` cluster-state: Argo CD `Application` per service per env; staging/prod overlays.
 - `identity` real slice: `register` + `whoami` (in-memory store; trivial DB only if demoing the
@@ -31,8 +31,13 @@ on a branch turns exactly one pipeline red and blocks its `build`.
 - **Rollback** documented; structured-log **observability hook** verified via `kubectl logs`.
 
 **Exit:** green pipeline run reaching `integration-staging` for `identity`, linked in the README.
+Met on 2026-06-26 — [run 2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455),
+self-contained kind + Argo CD inside the CI runner.
 
-## Phase 3 — Production promotion (optional)
+## Phase 3 — Production promotion (optional) — **in progress**
+
+Spec: [`2026-07-26-prod-promotion-closure/`](./2026-07-26-prod-promotion-closure/) (also carries
+the checkpoint-closure work: ADRs, evidence drills, specs truth pass).
 
 - `deliver-production` / `deploy-production` behind a **manual gate**, on protected branch / tag.
 - Promote the **same digest** tested in staging into the production overlay (no rebuild).

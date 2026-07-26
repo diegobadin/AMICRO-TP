@@ -46,11 +46,13 @@ Exactly one `integration-staging ✅` (identity). Every row `test→build→deli
 
 ## 4. Definition of done (gate to close the feature)
 
-- [ ] All AC-1…AC-10 pass.
-- [ ] Green pipeline run reaching `integration-staging:identity` linked in `devops-checkpoint/README.md`.
-- [ ] `CHANGELOG-design.md` records the Round-Kickoff-workers fold + any other drift.
+- [ ] All AC-1…AC-10 pass (drill evidence tracked in
+  [`../2026-07-26-prod-promotion-closure/validation.md`](../2026-07-26-prod-promotion-closure/validation.md)).
+- [x] Green pipeline run reaching `integration-staging:identity` linked in `devops-checkpoint/README.md`
+  ([run 2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455)).
+- [x] `CHANGELOG-design.md` records the Round-Kickoff-workers fold + any other drift (§6).
 - [ ] 5 ADRs written (roadmap §"Decision log").
-- [ ] README covers layout, pipeline narrative, GitOps justification, smoke test, coverage matrix.
+- [x] README covers layout, pipeline narrative, GitOps justification, smoke test, coverage matrix.
 
 ## 5. Out-of-scope confirmations (restraint check — consigna §8)
 
