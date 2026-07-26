@@ -24,7 +24,7 @@ Exactly one `integration-staging ✅` (identity). Every row `test→build→deli
 
 | Service | test | build | deliver | deploy-staging | integration-staging | deliver-prod | deploy-prod | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ⬜ opt | ⬜ opt | fully wired; real `register`+`whoami` slice |
+| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✋ manual | ✋ manual | fully wired; real `register`+`whoami` slice |
 | `gateway` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder; deploy job `when: manual` |
 | `room-gameplay` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder; contract **producer** |
 | `tournament` | ✅ | ✅ | ✅ | ⬜ stub | ⬜ stub | — | — | placeholder (Round-Kickoff workers folded in) |

@@ -117,7 +117,8 @@ Stages: `test → build → deliver → deploy-staging → integration-staging �
 | **deliver** | `helm lint` + `helm package` the chart; (chart push when the chart registry is wired). | A broken chart fails before anything is deployed. |
 | **deploy-staging** | **(identity, Phase 2)** bot pins the digest into the staging overlay → `argocd app sync` → `argocd app wait --health`. Idempotent. Stub (`when: manual`) for the other nine. | Job is green **only after Argo reports Synced+Healthy** — honest readiness gate, never `sleep`. |
 | **integration-staging** | **(identity only)** the Client CLI smoke test (§4). | Non-zero exit on unreachable / wrong canned response fails the pipeline. Flake budget: `retry: 1`. |
-| **deliver/deploy-production** | _(optional, Phase 3)_ manual gate; promote the **same digest** — no rebuild. | — |
+| **deliver-production** | **(identity)** manual gate: pins the staging-tested digest into the production overlay — same artifact, no rebuild. | Unclicked gate never blocks the pipeline (`allow_failure`); a failed pin/push fails the job. |
+| **deploy-production** | **(identity)** manual: `argocd app sync identity-production` + honest wait; appears only when `$ARGOCD_SERVER` is wired. | Green **only after** Argo reports Synced+Healthy. |
 
 ### Fail-fast wiring
 - `build:<svc> needs [test:<svc>]`; `deliver needs build`; `deploy needs deliver` — downstream
@@ -183,7 +184,7 @@ Exactly one row has `integration-staging ✅` (`identity`). Every row has `test 
 
 | Service | test | build | deliver | deploy-staging | integration-staging | deliver-prod | deploy-prod | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ⬜ opt | ⬜ opt | fully wired; real `register`+`whoami` slice |
+| `identity` ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | ✋ manual | ✋ manual | fully wired; real `register`+`whoami` slice; prod = digest promotion behind manual gates |
 | `gateway` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder; deploy job `when: manual` |
 | `spectator` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder |
 | `room-gameplay` | ✅ | ✅ | ✅ | ⬜ stub | — | — | — | placeholder; contract **producer** |

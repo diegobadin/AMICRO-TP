@@ -1,4 +1,5 @@
-# identity — the FULLY-WIRED service (test → build → deliver → deploy-staging → integration-staging).
+# identity — the FULLY-WIRED service (test → build → deliver → deploy-staging →
+# integration-staging → manual production gates).
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
 
@@ -172,3 +173,32 @@
     - 'node clients/cli/scripts/assert-smoke.js /tmp/reg.json /tmp/who.json "smoke-$CI_PIPELINE_ID"'
   after_script:
     - 'kind delete cluster --name ci || true'
+
+# ── Phase 3 (optional, consigna §6.7): production behind manual gates on the default branch.
+# deliver-production promotes the digest this pipeline's staging smoke just validated (same
+# build:identity dotenv — build once, never a rebuild). deploy-production reconciles
+# identity-production and, like deploy-staging, only appears once the persistent cluster is wired
+# via $ARGOCD_SERVER. allow_failure keeps an unclicked gate from blocking the green pipeline.
+"deliver-production:identity":
+  extends: .promote-digest
+  stage: deliver-production
+  needs: ["integration-staging:identity", "build:identity"]
+  variables:
+    SVC: identity
+    ENV: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+
+"deploy-production:identity":
+  extends: .argocd-sync
+  stage: deploy-production
+  needs: ["deliver-production:identity"]
+  variables:
+    SVC: identity
+    ENV: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $ARGOCD_SERVER'
+      when: manual
+      allow_failure: true
