@@ -4,13 +4,16 @@
 > hardest gates, so they come first. Each phase ships deployable and gets its own dated triad
 > spec when it starts. Grounded in [`north-star.md`](./north-star.md).
 
-## P0 — DevOps checkpoint closure — **in progress**
+## P0 — DevOps checkpoint closure — **SHIPPED (2026-07-26)**
 
 Ships: drills evidence, ADRs, manual prod gates. Triad:
-[`../2026-07-26-prod-promotion-closure/`](../2026-07-26-prod-promotion-closure/). Blocked only on
-the fresh GitLab PAT for the live runs.
+[`../2026-07-26-prod-promotion-closure/`](../2026-07-26-prod-promotion-closure/) — see its
+`ESTADO-FINAL.md` and the evidence table in `devops-checkpoint/README.md` §9.
 
-## P1 — Platform infra from an empty cluster
+## P1 — Platform infra from an empty cluster — **next** (triad + review pass done, F1 not started)
+
+Triad: [`../2026-07-26-p1-platform-infra/`](../2026-07-26-p1-platform-infra/) — new sessions
+start from its `kickoff.md`.
 
 - Ships: Kafka (single-broker Strimzi or Redpanda), Postgres, Redis as GitOps apps under the
   app-of-apps; bootstrap split into *create-cluster* (kind for rehearsal, EKS on the educational
