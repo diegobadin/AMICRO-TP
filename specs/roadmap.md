@@ -46,7 +46,11 @@ the checkpoint-closure work: ADRs, evidence drills, specs truth pass).
 **Exit (optional):** documented promotion run, or the promotion model documented "as if done"
 (no points lost if staging is solid — consigna §6.7).
 
-## Phase 4 — Real-service handoff (future, out of checkpoint scope)
+## Phase 4 — Real-service handoff — **superseded by the final-delivery program**
+
+This handoff is now a program of its own (the exam requires the real system):
+[`2026-07-26-final-delivery-northstar/`](./2026-07-26-final-delivery-northstar/) (north-star +
+roadmap P1–P9). The notes below remain as the original sketch.
 
 - Replace placeholders with real services one at a time **without changing the pipeline shape**.
 - Stretch table (§6.9): architecture invariants → future pipeline job that carries each
