@@ -13,8 +13,11 @@ contract-check seam); `identity` goes the full distance to `integration-staging`
 deploys it (GitOps) and the Client CLI smoke test passes** — entirely within GitLab, no cloud.
 
 🔗 **Green pipeline run reaching `integration-staging`:**
-https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455
-(`test 11/11 · build 10/10 · deliver 10/10 · integration-staging 1/1`).
+https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707017997
+(`test 11/11 · build 10/10 · deliver 10/10 · integration-staging 1/1`, manual production gates
+present; first-ever green run:
+[2633085455](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2633085455)).
+Verification drills with their own linked runs: §9.
 
 **How the green `integration-staging` works (no external cluster, no cloud).** The
 `integration-staging:identity` job stands up a **kind** cluster + **Argo CD** inside the CI runner
@@ -248,3 +251,23 @@ against a standing cluster (the production-shaped path the `gitops/` Application
 one up locally with `gitops/bootstrap/install.sh` (kind + Argo CD + Sealed Secrets) and use the
 `deploy-staging:identity` job (gated on the `ARGOCD_SERVER` / `IDENTITY_STAGING_URL` CI variables).
 Still no cloud — consigna §4 only assumes *a* cluster, and kind/k3d qualifies.
+
+---
+
+## 9. Live evidence (verification drills)
+
+Each row maps to a check in the verification matrices
+([`../specs/2026-06-26-devops-pipeline/validation.md`](../specs/2026-06-26-devops-pipeline/validation.md),
+[`../specs/2026-07-26-prod-promotion-closure/validation.md`](../specs/2026-07-26-prod-promotion-closure/validation.md)).
+The drill branches are deleted after capture; the linked pipeline pages remain. Red runs are
+deliberate — they prove the gates bite.
+
+| Drill (AC) | Run | Outcome |
+|---|---|---|
+| Closure state green end to end (AC-1) | [2707017997](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707017997) | 35 jobs green through `integration-staging`; production gates waiting on `manual` |
+| Independence (AC-2) | [2707021400](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707021400) | ranking-only change → only `test/build/deliver:ranking` + the contract check (bounded set: ranking is a consumer) |
+| Fail-fast (AC-3) | [2707019434](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707019434) | flipped identity assertion → `test:identity` red, `build`/`deliver:identity` never start, other services keep running |
+| Contract-break (AC-8) | [2707019496](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2707019496) | incompatible `isAbandoned` type → contract job red, `build:ranking` + `build:analytics-workers` blocked |
+| Promotion by digest (AC-4) | _pending gate run_ | `deliver-production:identity` pins the staging-tested digest into the production overlay |
+| Negative smoke (AC-6) | local transcript | CLI against a dead URL → `result:"error"`, exit 1 (recorded in the closure spec) |
+| Observability hook (AC-10) | [job 15541020672](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541020672) | the job runs `kubectl logs deploy/identity` and shows the structured JSON lines with `correlationId` for the smoke's `register`/`whoami` |
