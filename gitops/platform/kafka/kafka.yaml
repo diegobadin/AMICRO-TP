@@ -1,0 +1,47 @@
+# Single-node KRaft Kafka (D1): one combined controller+broker, sized for kind (R1).
+# Topics auto-create (no entity operator — placeholder-era restraint; KafkaTopic CRs can come
+# with the services that need guarantees). deleteClaim keeps EKS rehearsals EBS-clean (E2).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: single
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: unoarena
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: 5Gi
+    deleteClaim: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      memory: 1Gi
+  jvmOptions:
+    "-Xms": 512m
+    "-Xmx": 512m
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: unoarena
+  namespace: kafka
+spec:
+  kafka:
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1

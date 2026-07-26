@@ -1,0 +1,10 @@
+# Strimzi operator sized for kind (R1). watchAnyNamespace avoids RoleBindings into the kafka
+# namespace at install time, so the operator never depends on another app's namespace existing.
+watchAnyNamespace: true
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 384Mi
