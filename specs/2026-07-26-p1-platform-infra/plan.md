@@ -14,13 +14,18 @@
   values), per-context **databases** inside it — per-context persistence is preserved logically;
   separate instances would triple the RAM bill for placeholder-era value. Per-service credentials
   arrive with P2 (SealedSecrets).
-- **D3 — Redis standalone** via the Bitnami chart, no replicas, AOF off. It backs SSE fan-out +
-  session kill later; durability is not its job here.
+- **D3 — Redis standalone** as plain manifests (Deployment + Service, official `redis:7-alpine`
+  pinned), no replicas, AOF off. A chart adds nothing to a one-pod cache, and the Bitnami catalog
+  moved to legacy/paid images in 2025 — the official image is the boring choice. It backs SSE
+  fan-out + session kill later; durability is not its job here.
 - **D4 — Observability = kube-prometheus-stack**, Alertmanager disabled (restraint: no alerting
   requirement), Grafana behind port-forward until an ingress exists (P4).
 - **D5 — Topology in `gitops/platform/`**: new AppProject `unoarena-platform` (its own namespaces:
   `strimzi`, `kafka`, `cnpg-system`, `postgres`, `redis`, `monitoring`) + app-of-apps
-  `unoarena-platform-root`. Sync waves: operators (wave 0) → instances (wave 1). The service
+  `unoarena-platform-root`. Ordering: sync waves stagger child-app creation (operators wave 0,
+  instances wave 1), but across separate apps waves don't await health — so instance apps also
+  carry `SkipDryRunOnMissingResource=true` + sync retry, and the guarantee is **convergence**
+  (retries land the CRs once the operator's CRDs exist), not strict sequencing. The service
   root-app is untouched (AC-P1.5).
 - **D6 — EKS via eksctl config file** (`gitops/bootstrap/eks/cluster.yaml`): `LabRole` as
   service role and nodegroup instance role, 2× `t3.large` managed nodes, public subnets only
@@ -48,9 +53,11 @@
 - `gitops/projects/unoarena-platform.yaml` — new AppProject.
 - `gitops/platform-root.yaml` — app-of-apps over `gitops/platform/`.
 - `gitops/platform/{strimzi-operator,kafka,cnpg-operator,postgres,redis,monitoring}.yaml` — one
-  Argo Application each (Helm or raw manifests per component), sync-wave annotated.
+  Argo Application each (Helm charts pinned by version; `redis` points at raw manifests in
+  `gitops/platform/redis/`), sync-wave annotated.
 - `gitops/platform/values/` — pinned chart values (small requests, kind-friendly).
-- `gitops/bootstrap/install.sh` — apply the platform project + root app too (three added lines).
+- `gitops/bootstrap/install.sh` — apply the platform project + root app too, and accept a
+  `TARGET_REVISION` override (default `main`) so a rehearsal cluster can track a feature branch.
 - `gitops/bootstrap/eks/{cluster.yaml,create.sh,destroy.sh,sweep.sh,README.md}` — new.
 
 ## Risks
@@ -61,5 +68,7 @@
   family, 2 nodes, verified live in F7 before anything depends on it.
 - **R3** Chart/operator versions drift → every chart pinned to an exact version in the
   Application spec; upgrades are deliberate commits.
-- **R4** CI minutes: platform work is `gitops/`-only and never triggers service pipelines
-  (change detection ignores `gitops/`); spec/docs commits use `[skip ci]`.
+- **R4** CI minutes: on `main` every push runs the full pipeline, so P1 develops on
+  `feat/p1-platform` (gitops-only changes create no service jobs on branches) with the rehearsal
+  cluster tracking the branch via `TARGET_REVISION`; merge fast-forward into `main` once the kind
+  drills pass — one full pipeline for the whole phase. Spec/docs commits use `[skip ci]`.

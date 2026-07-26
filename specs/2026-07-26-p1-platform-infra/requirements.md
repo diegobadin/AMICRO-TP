@@ -50,8 +50,9 @@ behind after a rehearsal.
   resources (sweep output empty).
 - **AC-P1.5** The existing pipeline stays green: `integration-staging:identity` is unaffected
   (platform apps live in their own project/namespaces).
-- **AC-P1.6** Operator-before-instance ordering is declarative (sync waves) — a fresh install
-  never races CRDs.
+- **AC-P1.6** A from-scratch sync converges with no manual intervention: instance apps retry
+  until their operator's CRDs exist (waves + `SkipDryRunOnMissingResource` + retry), and a
+  deleted platform namespace self-heals back to Healthy.
 
 ## Behaviour contract (edge cases)
 

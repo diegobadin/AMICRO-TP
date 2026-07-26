@@ -12,7 +12,7 @@
 | AC-P1.3 | `gitops/bootstrap/eks/create.sh` then `install.sh` (`USE_KIND=false`) on the Learner Lab. | Cluster up with `LabRole` only, no NAT/ELB; AC-P1.1 probes pass on EKS. |
 | AC-P1.4 | `gitops/bootstrap/eks/destroy.sh && gitops/bootstrap/eks/sweep.sh` | Sweep prints nothing and exits 0. |
 | AC-P1.5 | Next `main` pipeline after P1 merges. | `integration-staging:identity` still green, untouched by platform files. |
-| AC-P1.6 | `kubectl delete` a platform namespace, let Argo resync from scratch. | Instances never apply before their operator (waves hold). |
+| AC-P1.6 | `kubectl delete` a platform namespace, let Argo resync from scratch. | Argo converges back to Synced/Healthy with no manual steps (retries absorb the CRD race). |
 
 ## Probes (used by AC-P1.1/2/3)
 
@@ -25,7 +25,7 @@ kubectl -n kafka run kcat-c --rm -i --restart=Never --image=edenhill/kcat:1.7.1 
 # Postgres
 kubectl -n postgres exec unoarena-pg-1 -- psql -U postgres -c "\l"
 # Redis
-kubectl -n redis exec deploy/redis-master -- redis-cli PING
+kubectl -n redis exec deploy/redis -- redis-cli PING
 # Grafana
 kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80 &
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
