@@ -16,7 +16,7 @@
     - pytest
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+    - changes: ["services/ranking/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "build:ranking":
   extends: .build-image
@@ -25,7 +25,7 @@
     SVC: ranking
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+    - changes: ["services/ranking/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "deliver:ranking":
   stage: deliver
@@ -40,7 +40,7 @@
     # helm push /tmp/ranking-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/ranking/**/*", "ci/templates/**/*"]
+    - changes: ["services/ranking/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 # Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
 "deploy-staging:ranking":

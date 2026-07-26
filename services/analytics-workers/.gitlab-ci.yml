@@ -16,7 +16,7 @@
     - pytest
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "build:analytics-workers":
   extends: .build-image
@@ -25,7 +25,7 @@
     SVC: analytics-workers
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "deliver:analytics-workers":
   stage: deliver
@@ -40,7 +40,7 @@
     # helm push /tmp/analytics-workers-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when ready)
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*"]
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 # Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
 "deploy-staging:analytics-workers":

@@ -132,7 +132,9 @@ Stages: `test → build → deliver → deploy-staging → integration-staging �
 Every job is guarded by `rules: changes: ["services/<svc>/**/*", "ci/templates/**/*"]`. A change
 limited to `services/ranking/**` runs only `ranking`'s `test→build→deliver` — the other nine
 services' jobs are not created. A change to a shared template (`ci/templates/**`) intentionally
-rebuilds the affected set (justified: it is the shared spine). No "rebuild the world".
+rebuilds the affected set (justified: it is the shared spine), and the two `GameCompleted`
+consumers (`ranking`, `analytics-workers`) also react to `ci/contracts/**` so a schema-only change
+creates — and, if incompatible, blocks — exactly their builds. No "rebuild the world".
 
 ---
 
