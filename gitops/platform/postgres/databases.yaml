@@ -1,0 +1,57 @@
+# One database per Postgres-backed bounded context (docs/architecture/03-persistence-layer.md
+# §1-§6; Spectator is Redis-only). All owned by the bootstrap `app` role until P2 brings
+# per-service credentials via SealedSecrets.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: identity
+  namespace: postgres
+spec:
+  name: identity
+  owner: app
+  cluster:
+    name: unoarena-pg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: room-gameplay
+  namespace: postgres
+spec:
+  name: room_gameplay
+  owner: app
+  cluster:
+    name: unoarena-pg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: tournament
+  namespace: postgres
+spec:
+  name: tournament
+  owner: app
+  cluster:
+    name: unoarena-pg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: ranking
+  namespace: postgres
+spec:
+  name: ranking
+  owner: app
+  cluster:
+    name: unoarena-pg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: analytics
+  namespace: postgres
+spec:
+  name: analytics
+  owner: app
+  cluster:
+    name: unoarena-pg

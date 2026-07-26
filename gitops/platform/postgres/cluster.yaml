@@ -1,0 +1,18 @@
+# One CNPG cluster for the whole system (D2): per-context persistence is logical (databases),
+# not physical (instances) — separate instances would triple the RAM bill for placeholder-era
+# value. Single instance on kind (R1); the exam shape can raise `instances` later.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: unoarena-pg
+  namespace: postgres
+spec:
+  instances: 1
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

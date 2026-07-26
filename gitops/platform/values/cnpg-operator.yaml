@@ -1,0 +1,8 @@
+# CNPG operator sized for kind (R1). CRDs ship with the chart (crds.create defaults true).
+resources:
+  requests:
+    cpu: 100m
+    memory: 200Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi

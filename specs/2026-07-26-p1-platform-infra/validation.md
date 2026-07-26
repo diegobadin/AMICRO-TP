@@ -42,6 +42,15 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
   as the CI job); the `stable` Argo CD manifest had drifted past the client-side apply annotation
   limit, so bootstrap now pins argocd `v2.12.3` (matching the CI CLI) and sealed-secrets
   `v0.38.4`.
+- **F2 (passed 2026-07-26).** Strimzi 1.1.0 (chart pinned) + single-node KRaft Kafka 4.3.0:
+  `strimzi-operator` and `kafka` apps `Synced/Healthy`, Kafka CR `Ready=True` ~2.5 min after the
+  push with zero manual steps — the wave-0/wave-1 + `SkipDryRunOnMissingResource` + retry
+  convergence design absorbed the CRD race as intended. kcat round-trip on
+  `unoarena-kafka-bootstrap:9092` produced and consumed `hello`. Found en route: Argo CD 2.x
+  cannot SSA-diff against Kubernetes 1.33+ (`status.terminatingReplicas` missing from its
+  bundled schemas) — bootstrap now pins argocd `v3.4.5` applied server-side (Strimzi's Kafka CRD
+  is ~330KB, so `ServerSideApply=true` is mandatory on the operator app; kube-prometheus-stack
+  will need the same in F5). The CI job's v2.12.3 CLI is unaffected (self-contained install).
 - **Pre-existing, deferred to F6** (service side, invisible to CI because `integration-staging`
   applies its own ad-hoc Application under project `default`): (a) `unoarena-root` shows
   `InvalidSpecError` on a fresh cluster — the `unoarena` AppProject only allows `unoarena-*`
