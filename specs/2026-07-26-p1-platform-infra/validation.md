@@ -77,8 +77,27 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
 
 ## Drill records
 
-- [ ] F6 fresh-kind drill (AC-P1.1) — transcript pending.
-- [ ] F6 `USE_KIND=false` drill (AC-P1.2) — transcript pending.
+- [x] **F6 fresh-kind drill (AC-P1.1) — passed 2026-07-27.** `kind delete` then one
+  `install.sh` run (`TARGET_REVISION=feat/p1-platform`, `GITOPS_REPO_TOKEN` from the PAT):
+  install script 2m39s, **all 7 platform apps Synced/Healthy at ~9 min** from an empty machine
+  state (02:35:36 → 02:44:33, image pulls included). All four probes passed (kcat round-trip
+  `hello`; the 5 context DBs present; `PONG`; Grafana login 200). Immediate re-run: pure no-op
+  (16× unchanged), exit 0.
+- [x] **F6 `USE_KIND=false` drill (AC-P1.2) — passed 2026-07-27.** Bare `kind create cluster
+  --name generic-drill` standing in for "any pre-existing kubeconfig"; same install command with
+  `USE_KIND=false`: install 2m08s, 7/7 Synced/Healthy at ~8.5 min, all four probes identical.
+  No kind-specific assumption hit (the NodePort mapping in `kind-cluster.yaml` is service-side
+  only). Cluster deleted afterwards.
+- [x] **F6 namespace-delete drill (AC-P1.6) — passed 2026-07-27.** `kubectl delete namespace
+  kafka` (hardest case: operator-owned CRs + PVC): Argo self-heal recreated namespace + CRs
+  with **zero manual steps**; Kafka CR back to `Ready=True` in ~3 min (02:19:51 delete →
+  02:22:54 Ready); fresh produce/consume round-trip on the healed broker passed.
+- [x] **F6 service-tree state on fresh clusters (informational).** With the two pre-existing
+  bugs fixed, `unoarena-root` now syncs and creates all 20 service Applications on a fresh
+  cluster. Staging placeholders still cannot reach Healthy from repo state alone — three gaps,
+  all P2 territory by design: overlays carry `digest: ""` (CI pins at deploy time; chart falls
+  back to `:latest`), the private registry needs a pull secret, and `identity-secrets` is a
+  per-cluster SealedSecret. Platform ACs are unaffected.
 - [ ] F7 EKS rehearsal (AC-P1.3), timed — transcript pending.
 - [ ] F7 sweep empty (AC-P1.4) — transcript pending.
 
