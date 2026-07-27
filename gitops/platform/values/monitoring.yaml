@@ -4,6 +4,19 @@
 # kind (R1).
 alertmanager:
   enabled: false
+# Control-plane scrape targets: off. Their Services land in kube-system (outside the platform
+# AppProject), EKS's managed control plane never exposes them, and kind binds them to localhost
+# — permanently-down targets either way. kubelet stays on (operator-managed, works on both).
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+coreDns:
+  enabled: false
 prometheus:
   prometheusSpec:
     retention: 24h
