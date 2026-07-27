@@ -16,9 +16,12 @@ check() {
   local label="$1"; shift
   local out
   if ! out=$("$@" --region "$REGION" --output text 2>&1); then
-    echo "SWEEP-QUERY-FAILED $label: $out"; found=1; return
+    echo "SWEEP-QUERY-FAILED $label: $out"; found=1; return 0
   fi
-  [ -n "$out" ] && { echo "LEFTOVER $label: $out"; found=1; }
+  if [ -n "$out" ]; then
+    echo "LEFTOVER $label: $out"; found=1
+  fi
+  return 0
 }
 
 check eks-cluster aws eks list-clusters --query 'clusters'
