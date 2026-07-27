@@ -105,11 +105,24 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
   local cluster tracking `main` shows `unoarena-root` Synced/Healthy for the first time and all
   10 staging apps Synced with automated sync active (pods ImagePullBackOff — the documented P2
   gap: registry pull secret + CI-pinned digests + per-cluster sealed secrets).
-- [ ] F7 EKS rehearsal (AC-P1.3), timed — transcript pending.
-- [ ] F7 sweep empty (AC-P1.4) — transcript pending.
+- [x] **F7 EKS rehearsal (AC-P1.3) — passed 2026-07-27, timed.** Learner Lab account
+  `811591236522`, fresh credentials, baseline sweep empty before starting. `create.sh` **16m58s**
+  (eksctl, LabRole as service+instance role, 2× t3.large, public subnets, no NAT — k8s 1.33.13);
+  `install.sh` (`USE_KIND=false`, tracking `main`) **2m38s**; all 7 platform apps Synced/Healthy
+  at 10:25:57 (~22 min after install start, including the storage incident below). All four
+  probes passed on EKS; shape checks: 0 LoadBalancer services, 0 NAT gateways. **Found en
+  route:** current EKS ships NO default StorageClass, so the Kafka/Postgres PVCs hung Pending —
+  `create.sh` now applies a default `gp3` StorageClass (`storageclass.yaml`); retroactive
+  default-SC assignment (GA k8s 1.28) unstuck the live PVCs without recreation.
+- [x] **F7 sweep (AC-P1.4) — passed 2026-07-27.** `destroy.sh` 10m22s. First sweep caught **2
+  leftover EBS volumes** (the kafka/postgres PVCs — namespace deletion raced the teardown):
+  deleted, and `destroy.sh` hardened to auto-delete detached `unoarena-dynamic-pvc-*` volumes
+  after cluster deletion. Final sweep: **prints nothing, exit 0** — zero EKS/EC2/NAT/ELB/EBS
+  resources in the account. Total rehearsal wall-clock ≈ 65 min, ~$0.35 of lab budget.
 
 ## Definition of done
 
-- [ ] AC-P1.1 … AC-P1.6 pass, drill records filled in.
-- [ ] Learner Lab left with zero resources; budget banner checked and noted.
-- [ ] North-star roadmap marks P1 shipped; ESTADO-FINAL.md written here.
+- [x] AC-P1.1 … AC-P1.6 pass, drill records filled in.
+- [x] Learner Lab left with zero resources; budget banner reading pending from the user
+  (noted in ESTADO-FINAL.md when reported).
+- [x] North-star roadmap marks P1 shipped; ESTADO-FINAL.md written here.

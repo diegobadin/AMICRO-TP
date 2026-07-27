@@ -10,10 +10,11 @@ Ships: drills evidence, ADRs, manual prod gates. Triad:
 [`../2026-07-26-prod-promotion-closure/`](../2026-07-26-prod-promotion-closure/) — see its
 `ESTADO-FINAL.md` and the evidence table in `devops-checkpoint/README.md` §9.
 
-## P1 — Platform infra from an empty cluster — **next** (triad + review pass done, F1 not started)
+## P1 — Platform infra from an empty cluster — **SHIPPED 2026-07-27**
 
-Triad: [`../2026-07-26-p1-platform-infra/`](../2026-07-26-p1-platform-infra/) — new sessions
-start from its `kickoff.md`.
+Triad: [`../2026-07-26-p1-platform-infra/`](../2026-07-26-p1-platform-infra/) — all six ACs
+green (kind drills, EKS rehearsal with empty sweep, pipeline unaffected); evidence in its
+`validation.md`, closure in its `ESTADO-FINAL.md`.
 
 - Ships: Kafka (single-broker Strimzi or Redpanda), Postgres, Redis as GitOps apps under the
   app-of-apps; bootstrap split into *create-cluster* (kind for rehearsal, EKS on the educational
