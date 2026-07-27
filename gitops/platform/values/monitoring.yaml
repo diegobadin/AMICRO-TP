@@ -34,6 +34,8 @@ prometheusOperator:
     limits:
       memory: 256Mi
 grafana:
+  # Chart-default admin credentials — acceptable only while access is port-forward on a private
+  # cluster; must move to a managed secret when the ingress lands (P4).
   resources:
     requests:
       cpu: 50m

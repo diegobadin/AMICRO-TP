@@ -22,6 +22,13 @@ if command -v kind >/dev/null && [ "${USE_KIND:-true}" = "true" ]; then
     kind create cluster --name "$CLUSTER_NAME" --config "$(dirname "$0")/kind-cluster.yaml"
 fi
 
+# The repo is private: without a token or a pre-existing repo secret every app would sit in
+# "authentication required" — fail fast before installing anything (behaviour contract).
+if [ -z "$GITOPS_REPO_TOKEN" ] && ! kubectl -n argocd get secret repo-amicro >/dev/null 2>&1; then
+  echo "ERROR: repo is private and Argo has no credentials. Pass GITOPS_REPO_TOKEN=<token with read_repository>." >&2
+  exit 1
+fi
+
 # Argo CD — pinned (R3: `stable` drifts). Needs >=3.x: on Kubernetes 1.33+ the 2.x
 # structured-merge-diff schemas break server-side-apply diffing (status.terminatingReplicas),
 # which the platform apps rely on for oversized operator CRDs. Applied server-side for the same

@@ -5,6 +5,11 @@ kind: Application
 metadata:
   name: redis
   namespace: argocd
+  # Removing a component from git must remove it from the cluster too: the root prunes this
+  # Application, and the finalizer cascades that deletion to its resources instead of
+  # orphaning them.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
