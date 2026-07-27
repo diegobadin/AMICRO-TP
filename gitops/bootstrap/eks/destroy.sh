@@ -20,4 +20,16 @@ fi
 echo "== deleting EKS cluster 'unoarena' (~10-15 min)"
 time eksctl delete cluster --name unoarena --region us-east-1 --wait --force
 rm -f "$KUBECONFIG_FILE"
+
+# Belt and suspenders: CSI-provisioned volumes outlive the cluster when the namespace deletion
+# above races the teardown (first rehearsal caught exactly this). Only detached volumes with the
+# cluster's dynamic-PVC name tag are touched.
+LEFT=$(aws ec2 describe-volumes --region us-east-1 \
+  --filters "Name=tag:Name,Values=unoarena-dynamic-pvc-*" "Name=status,Values=available" \
+  --query 'Volumes[].VolumeId' --output text)
+for v in $LEFT; do
+  echo "== deleting leftover PVC volume $v"
+  aws ec2 delete-volume --region us-east-1 --volume-id "$v"
+done
+
 echo "== done. Now run ./sweep.sh — it must print nothing and exit 0."
