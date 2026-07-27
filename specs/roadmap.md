@@ -1,5 +1,12 @@
 # Roadmap — DevOps Checkpoint
 
+> **Superseded (2026-07-27).** This roadmap covered the DevOps checkpoint and is fully complete
+> (closure: [`2026-07-26-prod-promotion-closure/`](./2026-07-26-prod-promotion-closure/)). The
+> **active roadmap** is the final-exam program
+> [`2026-07-26-final-delivery-northstar/roadmap.md`](./2026-07-26-final-delivery-northstar/roadmap.md)
+> — P1 shipped 2026-07-27, next up is **P2 (identity + real auth slice)**. New feature specs
+> start from there.
+
 > Phases ordered by dependency. Grounded in [`mission.md`](./mission.md) and
 > [`tech-stack.md`](./tech-stack.md). Each phase becomes (or extends) a dated spec under `specs/`.
 
