@@ -98,6 +98,13 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
   all P2 territory by design: overlays carry `digest: ""` (CI pins at deploy time; chart falls
   back to `:latest`), the private registry needs a pull secret, and `identity-secrets` is a
   per-cluster SealedSecret. Platform ACs are unaffected.
+- [x] **P1 merge + pipeline (AC-P1.5) — passed 2026-07-27.** `feat/p1-platform` merged
+  fast-forward into `main` (`114152f..0567466`, 17 commits, one pipeline for the whole phase per
+  R4). Pipeline `2707575117`: 33 jobs — 32 success + `deliver-production:identity` manual (the
+  promotion gate, by design); `integration-staging:identity` green in 125s. Post-merge, the
+  local cluster tracking `main` shows `unoarena-root` Synced/Healthy for the first time and all
+  10 staging apps Synced with automated sync active (pods ImagePullBackOff — the documented P2
+  gap: registry pull secret + CI-pinned digests + per-cluster sealed secrets).
 - [ ] F7 EKS rehearsal (AC-P1.3), timed — transcript pending.
 - [ ] F7 sweep empty (AC-P1.4) — transcript pending.
 
