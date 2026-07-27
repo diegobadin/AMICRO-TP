@@ -1,0 +1,16 @@
+# EKS ships no default StorageClass on current versions (gp2 exists but is not annotated), so
+# PVCs that rely on the cluster default — Kafka and Postgres do, to stay portable with kind —
+# would hang Pending forever. create.sh applies this gp3 default (D6: gp3 volumes); retroactive
+# default assignment (GA k8s 1.28) unsticks any PVC created before it.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true

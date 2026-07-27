@@ -20,6 +20,9 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
 echo "== creating EKS cluster 'unoarena' in us-east-1 (~15-20 min)"
 time eksctl create cluster -f cluster.yaml --kubeconfig "$KUBECONFIG_FILE"
 
+# EKS has no default StorageClass — without one, the Kafka/Postgres PVCs hang Pending.
+KUBECONFIG="$KUBECONFIG_FILE" kubectl apply -f storageclass.yaml
+
 echo "== cluster up. Install the platform with:"
 echo "   export KUBECONFIG=$KUBECONFIG_FILE"
 echo "   GITOPS_REPO_TOKEN=<token> USE_KIND=false $(cd .. && pwd)/install.sh"
