@@ -1,0 +1,45 @@
+# Exam-shaped EKS cluster for the AWS Academy Learner Lab (E1/E3/D6).
+# The lab forbids IAM creation, so the pre-created LabRole is used for BOTH the cluster service
+# role and the nodegroup instance role, and OIDC/pod-identity is off (addons fall back to the
+# node role). Public subnets only — a NAT gateway would bill even with the lab off (E2).
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: unoarena
+  region: us-east-1
+  version: "1.33"
+  tags:
+    project: unoarena
+    purpose: exam-rehearsal
+iam:
+  serviceRoleARN: arn:aws:iam::811591236522:role/LabRole
+  withOIDC: false
+addonsConfig:
+  autoApplyPodIdentityAssociations: false
+vpc:
+  nat:
+    gateway: Disable
+  clusterEndpoints:
+    publicAccess: true
+    privateAccess: false
+availabilityZones:
+  - us-east-1a
+  - us-east-1b
+managedNodeGroups:
+  - name: workers
+    instanceType: t3.large
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    privateNetworking: false
+    volumeSize: 30
+    volumeType: gp3
+    iam:
+      instanceRoleARN: arn:aws:iam::811591236522:role/LabRole
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  # PVCs (Kafka/Postgres) need the EBS CSI driver on EKS >=1.23; it runs with the node's
+  # LabRole since IRSA is unavailable in the lab.
+  - name: aws-ebs-csi-driver
