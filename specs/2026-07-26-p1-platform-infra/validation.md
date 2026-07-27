@@ -123,6 +123,6 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
 ## Definition of done
 
 - [x] AC-P1.1 … AC-P1.6 pass, drill records filled in.
-- [x] Learner Lab left with zero resources; budget banner reading pending from the user
-  (noted in ESTADO-FINAL.md when reported).
+- [x] Learner Lab left with zero resources; budget banner checked and noted in
+  ESTADO-FINAL.md ("Used $0 of $50" — pre-lag baseline, rehearsal cost not yet reflected).
 - [x] North-star roadmap marks P1 shipped; ESTADO-FINAL.md written here.

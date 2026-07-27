@@ -45,8 +45,9 @@
 - Staging placeholders sit in ImagePullBackOff on fresh clusters: private registry pull secret,
   CI-pinned digests and per-cluster sealed secrets are P2 scope.
 - Postgres runs 1 instance (kind-sized); the exam shape may raise it (values-only change).
-- Budget banner reading after this rehearsal: to be noted here when the user reports it
-  (~$0.35 estimated for the 65-minute rehearsal).
+- Budget banner (user-reported, 2026-07-27, right after the rehearsal): **"Used $0 of $50"** —
+  the banner lags ~8-12h, so the rehearsal's ~$0.35 was not yet reflected; the reading confirms
+  zero prior consumption on the account. The lab budget is effectively untouched.
 
 ## Next
 
