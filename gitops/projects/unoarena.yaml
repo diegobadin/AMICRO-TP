@@ -8,6 +8,11 @@ spec:
   sourceRepos:
     - "*"
   destinations:
+    # argocd: the unoarena-root app-of-apps itself lives there (its "resources" are the
+    # per-service Application objects) — without it the root is InvalidSpecError on any
+    # fresh cluster.
+    - namespace: argocd
+      server: https://kubernetes.default.svc
     - namespace: "unoarena-*"
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:
