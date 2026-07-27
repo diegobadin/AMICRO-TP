@@ -56,6 +56,18 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/login   # 200
   (identity, room_gameplay, tournament, ranking, analytics — from
   `docs/architecture/03-persistence-layer.md`; Spectator is Redis-only) all report
   `applied=true`, and `psql -U postgres` inside `unoarena-pg-1` lists them.
+- **F4 (passed 2026-07-26).** `redis:7.4.10-alpine` pinned, AOF+RDB off, `maxmemory 96mb` +
+  `noeviction` (per persistence doc §7.1: `timer:*` must never be silently evicted; the shared
+  instance errors loudly instead). `PING`→`PONG` ~30s after push.
+- **F5 (passed 2026-07-26).** kube-prometheus-stack 87.19.2, Alertmanager off, control-plane
+  scrape targets off (their Services land in kube-system — outside the AppProject — and are
+  unreachable on EKS/kind anyway). Converged Synced/Healthy; Grafana `/login` → HTTP 200 via
+  port-forward. Note: a values fix during a running sync leaves the old operation retrying with
+  the old desired state — removing `.operation` (terminate) lets auto-sync restart cleanly;
+  from-scratch installs never hit this.
+- **Probe names confirmed** as written above: `unoarena-kafka-bootstrap:9092`, `unoarena-pg-1`,
+  `deploy/redis`, `svc/monitoring-grafana`. One flake: `kubectl run -i --rm` sometimes swallows
+  kcat's consumed output — for evidence, run the consumer without `--rm` and read `kubectl logs`.
 - **Pre-existing, deferred to F6** (service side, invisible to CI because `integration-staging`
   applies its own ad-hoc Application under project `default`): (a) `unoarena-root` shows
   `InvalidSpecError` on a fresh cluster — the `unoarena` AppProject only allows `unoarena-*`
