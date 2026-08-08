@@ -19,6 +19,8 @@ env:
     value: identity
   - name: REDIS_URL
     value: redis://redis.redis.svc.cluster.local:6379
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
 service:
   type: NodePort
   nodePort: 30080 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → staging URL host:30080

@@ -19,6 +19,7 @@
   "dependencies": {
     "ioredis": "^6.0.0",
     "jose": "^6.2.8",
+    "kafkajs": "^2.2.4",
     "pg": "^8.22.0"
   }
 }

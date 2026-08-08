@@ -1,6 +1,7 @@
 # Single-node KRaft Kafka (D1): one combined controller+broker, sized for kind (R1).
-# Topics auto-create (no entity operator — placeholder-era restraint; KafkaTopic CRs can come
-# with the services that need guarantees). deleteClaim keeps EKS rehearsals EBS-clean (E2).
+# The Topic Operator arrives with the first real producer (P2, identity): a topic the event
+# catalog names should be declared in git with its partitions and retention, not conjured by
+# broker auto-creation. deleteClaim keeps EKS rehearsals EBS-clean (E2).
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
@@ -45,3 +46,11 @@ spec:
       transaction.state.log.min.isr: 1
       default.replication.factor: 1
       min.insync.replicas: 1
+  entityOperator:
+    topicOperator:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 192Mi
+        limits:
+          memory: 256Mi

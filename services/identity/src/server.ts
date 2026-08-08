@@ -5,7 +5,9 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { handle, Identity, SERVICE } from "./app.js";
+import { Kafka, logLevel } from "kafkajs";
 import { createRedis, RedisCache } from "./cache-redis.js";
+import { PublishingEvents } from "./events.js";
 import { migrate } from "./migrate.js";
 import { Sessions } from "./sessions.js";
 import { PgStore } from "./store.js";
@@ -24,7 +26,21 @@ const pool = new pg.Pool({
 const store = new PgStore(pool);
 const redis = createRedis(process.env.REDIS_URL ?? "redis://localhost:6379");
 const cache = new RedisCache(redis, () => log("cache-unavailable", 0, "-"));
-const sessions = new Sessions(store, cache, process.env.IDENTITY_JWT_SECRET ?? "dev-secret", TOKEN_TTL_SECONDS);
+
+// Bounded retries and short timeouts: a broker that is down has to surface as a counted failure in
+// seconds, not as a login that hangs while kafkajs works through its default backoff.
+const kafka = new Kafka({
+  clientId: "identity",
+  brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
+  connectionTimeout: 2000,
+  requestTimeout: 5000,
+  retry: { retries: 2, initialRetryTime: 200 },
+  logLevel: logLevel.NOTHING,
+});
+const events = new PublishingEvents(redis, kafka, (transport) =>
+  log("session-event-publish-failed", 0, "-", { transport }),
+);
+const sessions = new Sessions(store, cache, process.env.IDENTITY_JWT_SECRET ?? "dev-secret", TOKEN_TTL_SECONDS, events);
 const app = new Identity(store, sessions);
 
 function log(action: string, status: number, correlationId: string, extra: Record<string, unknown> = {}) {

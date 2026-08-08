@@ -50,7 +50,7 @@ export class Identity {
   // clean up without the CLI reporting a failure.
   async logout(token: string | undefined): Promise<Reply> {
     const session = await this.sessions.resolve(token);
-    const closed = session ? await this.sessions.close(session.sessionId, "logout") : false;
+    const closed = session ? await this.sessions.close(session.playerId, session.sessionId, "logout") : false;
     return { status: 200, json: { result: "ok", closed } };
   }
 

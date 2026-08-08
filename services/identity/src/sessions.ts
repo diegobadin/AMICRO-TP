@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
+import { NoEvents, type SessionEvents } from "./events.js";
 import type { Store } from "./store.js";
 
 export interface SessionCache {
@@ -46,6 +47,7 @@ export class Sessions {
     private readonly cache: SessionCache,
     secret: string,
     private readonly ttlSeconds: number,
+    private readonly events: SessionEvents = new NoEvents(),
   ) {
     this.key = new TextEncoder().encode(secret);
   }
@@ -54,7 +56,10 @@ export class Sessions {
     const sessionId = randomUUID();
     const expiresAt = new Date(Date.now() + this.ttlSeconds * 1000);
     const supersededSessionId = await this.store.openSession(playerId, sessionId, expiresAt);
-    if (supersededSessionId) await this.cache.drop(supersededSessionId);
+    if (supersededSessionId) {
+      await this.cache.drop(supersededSessionId);
+      await this.events.invalidated(playerId, supersededSessionId, sessionId, "superseded");
+    }
     await this.cache.put(sessionId, playerId, this.ttlSeconds);
     const token = await new SignJWT({ sid: sessionId })
       .setProtectedHeader({ alg: "HS256" })
@@ -84,9 +89,12 @@ export class Sessions {
     return { playerId, sessionId };
   }
 
-  async close(sessionId: string, reason: string): Promise<boolean> {
+  // Logout invalidates a session too, so the gateway must hear about it on the same channel it
+  // already listens to for supersession — otherwise a logged-out client keeps its live stream.
+  async close(playerId: string, sessionId: string, reason: string): Promise<boolean> {
     const closed = await this.store.closeSession(sessionId, reason);
     await this.cache.drop(sessionId);
+    if (closed) await this.events.invalidated(playerId, sessionId, null, reason);
     return closed;
   }
 }

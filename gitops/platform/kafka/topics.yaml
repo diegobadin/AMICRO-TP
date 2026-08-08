@@ -1,0 +1,17 @@
+# Topics from the event catalog (docs/architecture/10-api-event-catalog.md), declared as the
+# services that produce them become real. Partition counts are the kind-sized values, not the
+# catalog's production sizing (64 partitions on a single broker buys nothing) — that is a values
+# change, not a design change.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: identity.session-events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: unoarena
+spec:
+  topicName: identity.session-events
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 259200000 # 3 days, per persistence-layer §7.2

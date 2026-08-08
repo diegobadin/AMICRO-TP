@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { handle, Identity } from "../src/app.js";
+import type { SessionEvents } from "../src/events.js";
 import { MemoryCache, Sessions } from "../src/sessions.js";
 import { MemoryStore, type Store } from "../src/store.js";
 
-function newApp(): { app: Identity; store: Store; cache: MemoryCache } {
+class RecordingEvents implements SessionEvents {
+  readonly published: Array<{ playerId: string; oldSessionId: string; newSessionId: string | null; reason: string }> = [];
+  async invalidated(playerId: string, oldSessionId: string, newSessionId: string | null, reason: string): Promise<void> {
+    this.published.push({ playerId, oldSessionId, newSessionId, reason });
+  }
+}
+
+function newApp(): { app: Identity; store: Store; cache: MemoryCache; events: RecordingEvents } {
   const store = new MemoryStore();
   const cache = new MemoryCache();
-  return { app: new Identity(store, new Sessions(store, cache, "test-secret", 60)), store, cache };
+  const events = new RecordingEvents();
+  return { app: new Identity(store, new Sessions(store, cache, "test-secret", 60, events)), store, cache, events };
 }
 
 const post = (a: Identity, path: string, body: Record<string, unknown>, token?: string) =>
@@ -99,6 +108,25 @@ describe("identity sessions", () => {
     await store.closeSession(sid, "revoked-elsewhere");
     await cache.drop(sid);
     expect((await get(app, "/auth/whoami", token)).status).toBe(401);
+  });
+
+  it("announces the invalidation so the gateway can kill the old stream", async () => {
+    const { app, events, token: first } = await registered("hugo");
+    await post(app, "/auth/login", { user: "hugo", pass: "pw" });
+    expect(events.published).toHaveLength(1);
+    expect(events.published[0].reason).toBe("superseded");
+    expect(events.published[0].newSessionId).not.toBeNull();
+
+    await post(app, "/auth/logout", {}, first); // already superseded — nothing left to announce
+    expect(events.published).toHaveLength(1);
+  });
+
+  it("announces a logout too, with no successor session", async () => {
+    const { app, events, token } = await registered("iris");
+    await post(app, "/auth/logout", {}, token);
+    expect(events.published).toEqual([
+      expect.objectContaining({ reason: "logout", newSessionId: null }),
+    ]);
   });
 
   it("a token signed with another secret is rejected", async () => {
