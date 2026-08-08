@@ -35,5 +35,17 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # A service ships its own ServiceMonitor, whose CRD arrives with kube-prometheus-stack in a
+      # different app. On a cluster created minutes ago that is a race, and Argo gives up after
+      # five attempts — leaving the service permanently down with nothing but a stale SyncError to
+      # show for it. Same convergence posture the platform apps got in P1: skip the dry run for a
+      # kind the cluster does not know yet, and retry long enough for the operator to land.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
 {{- end }}
 {{- end }}
