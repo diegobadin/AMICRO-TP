@@ -1,4 +1,7 @@
-build
-.gradle
+# Subproject build output too: `build` alone leaves engine/build in the context (plan D1 split it
+# into a module), which is megabytes of class files the image build has no use for.
+**/build
+**/.gradle
+**/.kotlin
 chart
 .gitlab-ci.yml
