@@ -132,6 +132,62 @@
         username: gitlab-ci-token
         password: $CI_JOB_TOKEN
       EOF
+    # 4b) identity is a real service now: it needs a Postgres and a Redis. Two throwaway pods, not
+    #     the operators — the operator path is what the from-empty cluster drills cover
+    #     (specs/2026-08-08-p2-identity-auth), and this job's value is exercising the auth slice.
+    - 'kubectl create namespace unoarena-staging'
+    - |
+      cat <<'EOF' | kubectl apply -n unoarena-staging -f -
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: postgres}
+      spec:
+        replicas: 1
+        selector: {matchLabels: {app: postgres}}
+        template:
+          metadata: {labels: {app: postgres}}
+          spec:
+            containers:
+              - name: postgres
+                image: postgres:16-alpine
+                # Ephemeral by design: the cluster dies with the job, so durability is dead weight.
+                args: ["-c", "fsync=off", "-c", "full_page_writes=off"]
+                env:
+                  - {name: POSTGRES_USER, value: identity}
+                  - {name: POSTGRES_PASSWORD, value: ci-smoke}
+                  - {name: POSTGRES_DB, value: identity}
+                ports: [{containerPort: 5432}]
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata: {name: postgres}
+      spec:
+        selector: {app: postgres}
+        ports: [{port: 5432, targetPort: 5432}]
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: redis}
+      spec:
+        replicas: 1
+        selector: {matchLabels: {app: redis}}
+        template:
+          metadata: {labels: {app: redis}}
+          spec:
+            containers:
+              - name: redis
+                image: redis:7.4.10-alpine
+                ports: [{containerPort: 6379}]
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata: {name: redis}
+      spec:
+        selector: {app: redis}
+        ports: [{port: 6379, targetPort: 6379}]
+      EOF
+    - 'kubectl -n unoarena-staging rollout status deploy/postgres --timeout=180s'
+    - 'kubectl -n unoarena-staging rollout status deploy/redis --timeout=120s'
     - |
       cat <<EOF | kubectl apply -f -
       apiVersion: argoproj.io/v1alpha1
@@ -149,13 +205,21 @@
           targetRevision: $CI_COMMIT_SHA
           path: services/identity/chart
           helm:
-            parameters:
-              - {name: image.repository, value: ci-identity}
-              - {name: image.tag, value: smoke}
-              - {name: image.digest, value: ""}
-              - {name: service.type, value: NodePort}
-              - {name: service.nodePort, value: "30080"}
-              - {name: secretName, value: ""}
+            # KAFKA_BROKERS deliberately points nowhere: this job doubles as the standing proof
+            # that a missing broker degrades to a counted failure instead of breaking auth.
+            values: |
+              image: {repository: ci-identity, tag: smoke, digest: ""}
+              service: {type: NodePort, nodePort: 30080}
+              secretName: ""
+              serviceMonitor: {enabled: false}
+              env:
+                - {name: DATABASE_HOST, value: postgres}
+                - {name: DATABASE_USER, value: identity}
+                - {name: DATABASE_NAME, value: identity}
+                - {name: IDENTITY_DB_PASSWORD, value: ci-smoke}
+                - {name: IDENTITY_JWT_SECRET, value: ci-smoke-secret}
+                - {name: REDIS_URL, value: "redis://redis:6379"}
+                - {name: KAFKA_BROKERS, value: "no-broker-here:9092"}
         syncPolicy:
           syncOptions:
             - CreateNamespace=true
@@ -166,12 +230,22 @@
     - 'argocd app sync identity-staging --core --timeout 240'
     - 'argocd app wait identity-staging --core --health --sync --timeout 240'
     - 'kubectl -n unoarena-staging rollout status deploy/identity --timeout=120s'
-    # 6) Client-CLI smoke against the NodePort (register -> whoami -> assert)
+    # 6) Client-CLI smoke against the NodePort. The whole auth slice, driven through the same
+    #    command surface the faculty uses: register, whoami, a second login that must kill the
+    #    first session, logout, and seed. The 401s are expected, so they do not fail the shell —
+    #    assert-smoke.js is what decides whether the run was correct.
     - 'cd clients/cli && npm ci && npm run build && cd "$CI_PROJECT_DIR"'
-    - 'export UNOARENA_API_URL=http://docker:30080 UNOARENA_SESSION=/tmp/s.json'
-    - 'node clients/cli/dist/cli.js register --user "smoke-$CI_PIPELINE_ID" --pass pw --json | tee /tmp/reg.json'
-    - 'node clients/cli/dist/cli.js whoami --json | tee /tmp/who.json'
-    - 'node clients/cli/scripts/assert-smoke.js /tmp/reg.json /tmp/who.json "smoke-$CI_PIPELINE_ID"'
+    - 'export UNOARENA_API_URL=http://docker:30080 OUT=/tmp/smoke && mkdir -p $OUT'
+    - 'U="smoke-$CI_PIPELINE_ID"'
+    - 'UNOARENA_SESSION=/tmp/s1.json node clients/cli/dist/cli.js register --user "$U" --pass pw --json | tee $OUT/register.json'
+    - 'UNOARENA_SESSION=/tmp/s1.json node clients/cli/dist/cli.js whoami --json | tee $OUT/whoami.json'
+    - 'UNOARENA_SESSION=/tmp/s2.json node clients/cli/dist/cli.js login --user "$U" --pass pw --json | tee $OUT/relogin.json'
+    - 'UNOARENA_SESSION=/tmp/s1.json node clients/cli/dist/cli.js whoami --json > $OUT/stale.json || true'
+    - 'UNOARENA_SESSION=/tmp/s2.json node clients/cli/dist/cli.js logout --json | tee $OUT/logout.json'
+    - 'UNOARENA_SESSION=/tmp/s2.json node clients/cli/dist/cli.js whoami --json > $OUT/after-logout.json || true'
+    - 'node clients/cli/dist/cli.js seed --count 3 --prefix "seed-$CI_PIPELINE_ID" --json | tee $OUT/seed.json'
+    - 'node clients/cli/dist/cli.js seed --count 3 --prefix "seed-$CI_PIPELINE_ID" --json | tee $OUT/reseed.json'
+    - 'node clients/cli/scripts/assert-smoke.js $OUT "$U"'
     # 7) Observability hook (consigna §6.8): the structured JSON log line the smoke just caused,
     #    retrieved the way an operator would.
     - 'kubectl -n unoarena-staging logs deploy/identity --tail=5'
