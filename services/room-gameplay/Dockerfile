@@ -4,7 +4,9 @@ FROM gradle:8.8-jdk21 AS build
 WORKDIR /app
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY src ./src
-RUN gradle --no-daemon installDist
+# -XX:-UsePerfData: the JVM writes /tmp/hsperfdata_root/<pid> and deletes it on exit, which
+# races Kaniko's filesystem snapshot and fails the image build after a successful compile.
+RUN GRADLE_OPTS="-XX:-UsePerfData" gradle --no-daemon -Dorg.gradle.jvmargs=-XX:-UsePerfData installDist
 
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
