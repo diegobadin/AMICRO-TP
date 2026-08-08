@@ -8,6 +8,16 @@ metadata:
   namespace: postgres
 spec:
   instances: 1
+  # Per-service login roles: each real service owns its database with its own credentials, so a
+  # compromised service cannot read another context's data. The password arrives as a SealedSecret
+  # (basic-auth type, which is what CNPG expects) — see gitops/secrets/README.md.
+  managed:
+    roles:
+      - name: identity
+        ensure: present
+        login: true
+        passwordSecret:
+          name: identity-db-role
   storage:
     size: 2Gi
   resources:

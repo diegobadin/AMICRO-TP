@@ -38,3 +38,10 @@ seal() { # seal <namespace> <name> <output> <kubectl-create-secret-args...>
 seal unoarena-staging identity-secrets "$HERE/staging/identity-secrets.yaml" \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=IDENTITY_DB_PASSWORD="$IDENTITY_DB_PASSWORD"
+
+# CNPG reads the role password from the postgres namespace, and SealedSecrets are namespace-scoped,
+# so the one plaintext is sealed twice. This copy lives next to the Cluster CR that consumes it.
+seal postgres identity-db-role "$HERE/../platform/postgres/identity-db-role.yaml" \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=identity \
+  --from-literal=password="$IDENTITY_DB_PASSWORD"
