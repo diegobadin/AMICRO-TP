@@ -123,3 +123,24 @@ For the design package **as a whole**, every Design Checkpoint non-negotiable gu
 changed by the DevOps checkpoint. The placeholders carry no domain behaviour except the small
 `identity` `register`/`whoami` slice (the fully-wired demonstrator), which does not encode any
 domain invariant.
+
+---
+
+## 7. Final delivery — P2 deltas (identity becomes a real service)
+
+> The first phase that replaces a placeholder with real behaviour
+> (`specs/2026-08-08-p2-identity-auth/`). Anything the running service does differently from
+> `docs/architecture/` is recorded here rather than by editing the architecture.
+
+| # | Delta | Rationale | Invariant impact |
+|---|-------|-----------|------------------|
+| 7.1 | REST surface is `POST /auth/register`, `/auth/login`, `/auth/logout` and `GET /auth/whoami`. The catalog (Architecture §5.3) lists login/refresh/logout plus gRPC `ValidateToken`. | Registration exists in the domain (`PlayerRegistered`) but had no REST endpoint, and the Client CLI needs one. `whoami` is the REST shape of `ValidateToken` for a client that has no gRPC channel; the gateway can still use gRPC when it arrives. | **None.** Same operations, one extra entry point each. |
+| 7.2 | `/auth/refresh` is not implemented. Identity issues one short-lived JWT (~1h) and a client whose token expires logs in again. | No flow the exam exercises outlives the token, and refresh tokens are a second credential to store, rotate and revoke. Documented as a gap in `clients/cli/README.md`. | **None.** Single-active-session is enforced at login, which is exactly where refresh would have had to enforce it too. |
+| 7.3 | `players` omits `email`; `sessions` omits `ip_address` (Architecture §4 lists both). | The CLI supplies neither, and the Identity context is the only one holding PII — storing a field nobody sets would widen the PII surface for nothing. Both are additive later. | **None.** |
+| 7.4 | Single-active-session is enforced in the database and announced on both transports, but no consumer kills a live connection yet. | The connection-owning tier (gateway + SSE) arrives in P4; the event contract is published now so P3/P4 consume it without changing it. Today a superseded session dies at the next request (`401`), which is the belt-and-suspenders path Architecture §5.5 already describes. | **Partially deferred, deliberately.** The DB half of the invariant (atomic replacement, enforced by a partial unique index) is live; the live-kill half lands with the tier that owns the connections. |
+| 7.5 | `identity.session-events` is created with 3 partitions instead of the catalog's 64. | 64 partitions on a single-broker kind cluster buys nothing. It is a values-level number, not a design choice. | **None.** |
+
+**Affirmation.** No bounded-context boundary, aggregate, event, or invariant was weakened. The
+single-active-session non-negotiable is now enforced by a database constraint rather than argued
+in prose, and `SessionInvalidated` reaches both the low-latency and the durable transport the
+architecture assigns it.

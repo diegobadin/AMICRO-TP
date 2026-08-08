@@ -205,3 +205,18 @@ graph TB
     TO -- "TournamentCompleted" --> RK
     TO -- "RoundStarted, RoundCompleted, RoomResultRecorded" --> AB
 ```
+
+---
+
+## Running the system
+
+The design and architecture above are the *what*; these are the entry points for the *running*
+system. The final-delivery program that builds it phase by phase lives in
+[`specs/2026-07-26-final-delivery-northstar/`](./specs/2026-07-26-final-delivery-northstar/).
+
+| Entry point | What it does |
+|---|---|
+| [`gitops/bootstrap/install.sh`](./gitops/bootstrap/) | One command from an empty Kubernetes cluster to the whole platform (Kafka, Postgres, Redis, Prometheus/Grafana) plus the services, via Argo CD. Works against kind or a freshly created EKS cluster. |
+| [`clients/cli/`](./clients/cli/) | The Client CLI — the command surface the teaching staff uses to drive the backend. Every canonical command, the endpoint it maps to, the seeding procedure and the gaps we chose not to fill are documented there. |
+| [`gitops/secrets/`](./gitops/secrets/) | How secrets reach a cluster that has never existed before, with no plaintext in the repo. |
+| [`devops-checkpoint/README.md`](./devops-checkpoint/README.md) | The delivery pipeline: stages, change detection, promotion by digest, drills and their evidence. |
