@@ -44,8 +44,17 @@ kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 # The operator-held encryption key is restored FIRST: a controller that boots without it generates
 # a fresh one, and every SealedSecret committed under gitops/secrets/ stays sealed forever on this
 # cluster. See gitops/secrets/README.md.
+# Restored with `create`, not `apply`: the backup still carries the resourceVersion it had when it
+# was taken, which makes a second `apply` conflict — and overwriting a key a controller is already
+# using is not something a re-run should ever do silently.
 if [ -f "$SEALING_KEY_FILE" ]; then
-  kubectl apply -f "$SEALING_KEY_FILE"
+  want="$(kubectl create -f "$SEALING_KEY_FILE" --dry-run=client -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)"
+  have="$(kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)"
+  case "$have" in
+    "")            kubectl create -f "$SEALING_KEY_FILE" ;;
+    *"$want"*)     echo "Sealing key already present." ;;
+    *)             echo "WARNING: this cluster holds a different sealing key ($have, expected $want); committed SealedSecrets will not decrypt. Delete it and re-run to restore the backup." >&2 ;;
+  esac
 else
   echo "WARNING: no sealing key at $SEALING_KEY_FILE — the controller will generate its own and the committed SealedSecrets will not decrypt here." >&2
 fi
