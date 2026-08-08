@@ -61,15 +61,17 @@ EOF
 fi
 
 # Register the projects and both app-of-apps (repoURL already configured to the course repo).
-# The platform root gets its git revision rewritten so a rehearsal cluster can track a branch;
-# the service root always tracks main (untouched, AC-P1.5).
+# Both roots get their git revision rewritten so a drill cluster can track a feature branch end to
+# end — the services root needs it as much as the platform one, otherwise a drill deploys the code
+# on main instead of the branch under test.
 kubectl apply -f "$(dirname "$0")/../projects/unoarena.yaml"
-kubectl apply -f "$(dirname "$0")/../root-app.yaml"
 kubectl apply -f "$(dirname "$0")/../projects/unoarena-platform.yaml"
-sed -e "s|targetRevision: main|targetRevision: ${TARGET_REVISION}|" \
-    -e "s|value: main|value: ${TARGET_REVISION}|" \
-    "$(dirname "$0")/../platform-root.yaml" | kubectl apply -f -
+for root in root-app platform-root; do
+  sed -e "s|targetRevision: main|targetRevision: ${TARGET_REVISION}|" \
+      -e "s|value: main|value: ${TARGET_REVISION}|" \
+      "$(dirname "$0")/../${root}.yaml" | kubectl apply -f -
+done
 
-echo "Bootstrap complete. Argo CD is reconciling gitops/applications + gitops/platform (${TARGET_REVISION})."
+echo "Bootstrap complete. Argo CD is reconciling gitops/apps-root + gitops/platform (${TARGET_REVISION})."
 echo "Get the initial admin password:"
 echo "  kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"

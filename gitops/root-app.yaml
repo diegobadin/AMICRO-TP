@@ -1,5 +1,7 @@
-# App-of-apps: registers every per-service Application under gitops/applications.
-# Replace https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git with the GitLab repo URL once the project is created.
+# App-of-apps for the services: renders one Argo Application per service per environment from
+# gitops/apps-root. The chart passes targetRevision down to every child, so a drill cluster can
+# track a feature branch end to end — install.sh rewrites both revisions below via TARGET_REVISION
+# (default main).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,9 +12,11 @@ spec:
   source:
     repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
     targetRevision: main
-    path: gitops/applications
-    directory:
-      recurse: false
+    path: gitops/apps-root
+    helm:
+      parameters:
+        - name: targetRevision
+          value: main
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

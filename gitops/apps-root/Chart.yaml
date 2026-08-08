@@ -1,0 +1,5 @@
+apiVersion: v2
+name: unoarena-apps
+description: App-of-apps chart rendering one Argo Application per service per environment
+type: application
+version: 0.1.0

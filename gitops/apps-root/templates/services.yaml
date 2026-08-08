@@ -1,0 +1,39 @@
+{{- $root := . }}
+{{- range $env := .Values.environments }}
+{{- range $svc := $root.Values.services }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $svc }}-{{ $env }}
+  namespace: argocd
+  # Removing a service (or an environment) from values.yaml must remove it from the cluster too:
+  # the root prunes this Application, and the finalizer cascades that deletion to its resources
+  # instead of orphaning them.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: unoarena
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unoarena-{{ $env }}
+  # Two sources: the chart, and the same repo again as a `ref` so the environment overlay can be
+  # referenced as $values/... without vendoring it into the chart.
+  sources:
+    - repoURL: {{ $root.Values.repoURL }}
+      targetRevision: {{ $root.Values.targetRevision }}
+      path: services/{{ $svc }}/chart
+      helm:
+        valueFiles:
+          - $values/gitops/apps/{{ $svc }}/overlays/{{ $env }}/values.yaml
+    - repoURL: {{ $root.Values.repoURL }}
+      targetRevision: {{ $root.Values.targetRevision }}
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
+{{- end }}

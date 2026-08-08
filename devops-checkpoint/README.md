@@ -55,7 +55,7 @@ specs/                         # Spec-Driven Development: mission, tech-stack, r
 **Path convention (uniform for all 10).** For service `<svc>`:
 - Source: `services/<svc>/` · Pipeline fragment: `services/<svc>/.gitlab-ci.yml` · Helm chart:
   `services/<svc>/chart/` · GitOps overlay: `gitops/apps/<svc>/overlays/<env>/values.yaml` ·
-  Argo app: `<svc>-staging` / `<svc>-production` (manifests in `gitops/applications/`).
+  Argo app: `<svc>-staging` / `<svc>-production` (rendered from `gitops/apps-root/`).
 
 **Image name & versioning scheme.** Image: `registry.gitlab.com/<group>/unoarena/<svc>`. Versioning
 is **hybrid**: a human-readable tag `<ref-slug>-<short-sha>` (provenance) **plus** the

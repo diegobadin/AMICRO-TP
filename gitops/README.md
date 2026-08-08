@@ -9,20 +9,24 @@ commits; **Argo CD** reconciles the cluster to match. This is the single deploy 
 gitops/
   projects/unoarena.yaml          # AppProject for services (allowed repos/destinations)
   projects/unoarena-platform.yaml # AppProject for platform infra (kafka/postgres/redis/monitoring)
-  root-app.yaml                   # app-of-apps → registers everything in applications/
+  root-app.yaml                   # app-of-apps → renders the services chart below
   platform-root.yaml              # app-of-apps → renders the platform chart below
   platform/                       # Helm chart: one child Application per template
     templates/{strimzi-operator,kafka,cnpg-operator,postgres,redis,monitoring}.yaml
     values/                       # pinned chart values per component (kind-sized requests)
     kafka/ postgres/ redis/       # raw CRs / manifests the instance apps point at
-  applications/<svc>-<env>.yaml   # one Argo Application per service per environment (20)
+  apps-root/                      # Helm chart: one Application per service per environment
+    values.yaml                   # the service list and which environments to register
   apps/<svc>/overlays/<env>/values.yaml   # env overlay; image.digest pinned here by CI
   apps/identity/overlays/staging/sealed-secret.example.yaml   # secret pattern (no plaintext)
   bootstrap/                      # kind + Argo CD + Sealed Secrets installer (vendor-neutral)
 ```
 
-The platform root is **Helm-typed** so its `targetRevision` helm parameter cascades into every
-child Application — a rehearsal cluster can track a feature branch end to end. Operators sync at
+Both roots are **Helm-typed** so their `targetRevision` helm parameter cascades into every child
+Application — a drill cluster can track a feature branch end to end, code included. The services
+root also decides *which* environments exist on a cluster: `production` is a promotion target
+(pinned digests, no sealed secrets, no databases), so it is left unregistered until a production
+cluster exists. Operators sync at
 wave 0 and instance CRs at wave 1 with `SkipDryRunOnMissingResource` + retry: the guarantee is
 **convergence** (a from-scratch install or a deleted namespace self-heals with no manual steps).
 Operator charts apply **server-side** — their CRDs exceed the client-side annotation limit.
@@ -62,7 +66,7 @@ which Argo auto-reconciles — restores the last healthy image.
 GITOPS_REPO_TOKEN=<token> gitops/bootstrap/install.sh   # kind + Argo CD + Sealed Secrets + both app-of-apps
 ```
 
-The repoURL (in `root-app.yaml`, `platform-root.yaml` and `applications/*.yaml`) and the registry
+The repoURL (in `root-app.yaml`, `platform-root.yaml` and both charts' `values.yaml`) and the registry
 group (in the overlays) are already set to the course repo
 `itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp`. Knobs:
 

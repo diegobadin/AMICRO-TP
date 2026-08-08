@@ -1,0 +1,26 @@
+# Shared by every rendered service Application. targetRevision is overridden per-cluster by the
+# root app's helm parameter (see gitops/root-app.yaml and install.sh TARGET_REVISION), which is
+# what lets a drill cluster track a feature branch end to end.
+repoURL: https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git
+targetRevision: main
+
+# The 10 deployables of docs/architecture/09-local-topology.md, one Helm chart each under
+# services/<name>/chart with per-environment values in gitops/apps/<name>/overlays/<env>/.
+services:
+  - analytics-api
+  - analytics-workers
+  - gateway
+  - identity
+  - outbox-relay
+  - ranking
+  - room-gameplay
+  - spectator
+  - timer-worker
+  - tournament
+
+# Which environments get registered on a cluster. `production` is a promotion target, not a live
+# environment: its overlays carry pinned digests (that is the artifact promotion produces) but no
+# sealed secrets and no databases, so registering it would add 10 apps that cannot start. Add it
+# here the day a production cluster exists.
+environments:
+  - staging
