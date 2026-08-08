@@ -54,9 +54,11 @@
 3. **Logout also publishes `SessionInvalidated`.** The architecture describes the supersession
    path; a logged-out client whose stream stays open is the same bug, so it goes out on the same
    channel with `newSessionId: null`.
-4. **Two defects the drills caught**, both fixed and both invisible to unit tests: service apps
-   could not converge through the ServiceMonitor CRD race, and `install.sh` stopped being
-   idempotent once it restored the sealing key. Details in `validation.md`.
+4. **Three defects the drills caught**, all fixed and all invisible to unit tests: service apps
+   could not converge through the ServiceMonitor CRD race; `install.sh` stopped being idempotent
+   once it restored the sealing key; and the JVM image builds raced Kaniko over
+   `/tmp/hsperfdata_root` (pre-existing, and it took a wrong fix before the right one). Details
+   in `validation.md`.
 
 ## Known gaps, owned by later phases
 

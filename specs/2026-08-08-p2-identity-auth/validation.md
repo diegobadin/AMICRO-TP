@@ -174,6 +174,23 @@ to ~5 minutes after Postgres is ready before its next attempt. It self-heals wit
 intervention, which is the acceptance criterion — but it is why the total is 34 minutes rather
 than the ~9 P1 measured for the platform alone.
 
+## AC-P2.7 — the merge pipeline (2026-08-08)
+
+Branch pipeline `2743701127` (30 jobs) green before the merge; `main` pipeline **`2743729885`**
+green after it: **33 success + 3 manual gates, 36 jobs**, stage list identical to P1's.
+`integration-staging:identity` passes the extended flow (register → login → whoami → second login
+→ `401` → logout → seed) against the ephemeral Postgres and Redis, with `KAFKA_BROKERS` pointing
+nowhere.
+
+Two earlier `main` runs were red, both from the same pre-existing defect the branch never hit:
+`gradle installDist` leaves `/tmp/hsperfdata_root/<pid>` behind, the JVM deletes it on exit, and
+Kaniko fails while snapshotting it — after `BUILD SUCCESSFUL`. It reproduced on retry, so it was
+not a flake. The first fix (`--ignore-path=/tmp` in the shared build template) was **wrong and
+made it worse**: Kaniko then dropped `/tmp` entirely and every Go build died on
+`go: creating work dir: stat /tmp`. Reverted, and fixed at the root instead —
+`-XX:-UsePerfData` in the two JVM Dockerfiles, which is narrower, does not touch the shared
+template, and only rebuilds the two services that have the problem.
+
 ## AC-P2.4 — degradation drill (2026-08-08)
 
 With Argo's auto-sync suspended (it reverts the fault injection within seconds, which is itself
