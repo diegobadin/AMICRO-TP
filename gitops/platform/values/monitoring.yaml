@@ -20,6 +20,11 @@ coreDns:
 prometheus:
   prometheusSpec:
     retention: 24h
+    # Scrape every ServiceMonitor in the cluster, not only the ones labelled with this chart's
+    # release. Services ship their own ServiceMonitor from their first real phase and should not
+    # have to know the name of the monitoring release to be discovered.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
     resources:
       requests:
         cpu: 200m

@@ -7,7 +7,8 @@ import pg from "pg";
 import { handle, Identity, SERVICE } from "./app.js";
 import { Kafka, logLevel } from "kafkajs";
 import { createRedis, RedisCache } from "./cache-redis.js";
-import { PublishingEvents } from "./events.js";
+import { PublishingEvents, type SessionEvents } from "./events.js";
+import * as metrics from "./metrics.js";
 import { migrate } from "./migrate.js";
 import { Sessions } from "./sessions.js";
 import { PgStore } from "./store.js";
@@ -37,9 +38,17 @@ const kafka = new Kafka({
   retry: { retries: 2, initialRetryTime: 200 },
   logLevel: logLevel.NOTHING,
 });
-const events = new PublishingEvents(redis, kafka, (transport) =>
-  log("session-event-publish-failed", 0, "-", { transport }),
-);
+const publishing = new PublishingEvents(redis, kafka, (transport) => {
+  metrics.publishFailures.inc({ transport });
+  log("session-event-publish-failed", 0, "-", { transport });
+});
+// Counting here rather than inside the domain keeps app.ts free of the metrics registry.
+const events: SessionEvents = {
+  async invalidated(playerId, oldSessionId, newSessionId, reason) {
+    if (reason === "superseded") metrics.supersessions.inc();
+    await publishing.invalidated(playerId, oldSessionId, newSessionId, reason);
+  },
+};
 const sessions = new Sessions(store, cache, process.env.IDENTITY_JWT_SECRET ?? "dev-secret", TOKEN_TTL_SECONDS, events);
 const app = new Identity(store, sessions);
 
@@ -71,11 +80,33 @@ try {
   process.exit(1);
 }
 
+// Only known paths become label values: an unbounded `route` label lets anyone hitting random
+// URLs grow the metric cardinality without limit.
+const ROUTES = new Set(["/health", "/auth/register", "/auth/login", "/auth/logout", "/auth/whoami"]);
+const routeLabel = (url: string) => (ROUTES.has(url) ? url : "unknown");
+
+// Business counters live out here so the domain handler stays a pure function of its ports.
+function countOutcome(method: string, route: string, status: number): void {
+  if (method !== "POST") return;
+  if (route === "/auth/register" && status === 201) metrics.registrations.inc();
+  if (route === "/auth/login") metrics.logins.inc({ result: status === 200 ? "ok" : "denied" });
+}
+
 createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const correlationId = (req.headers["x-correlation-id"] as string) ?? randomUUID();
   const url = (req.url ?? "/").split("?")[0];
+
+  if (req.method === "GET" && url === "/metrics") {
+    res.writeHead(200, { "content-type": metrics.registry.contentType });
+    res.end(await metrics.registry.metrics());
+    return;
+  }
+
+  const done = metrics.requestDuration.startTimer();
   const body = req.method === "POST" ? await readBody(req) : {};
   const reply = await handle(app, req.method ?? "GET", url, req.headers as Record<string, string | undefined>, body);
+  done({ route: routeLabel(url), status: reply.status });
+  countOutcome(req.method ?? "GET", url, reply.status);
   log(`${req.method} ${url}`, reply.status, correlationId, { user: body.user });
   res.writeHead(reply.status, { "content-type": "application/json", "x-correlation-id": correlationId });
   res.end(JSON.stringify(reply.json));

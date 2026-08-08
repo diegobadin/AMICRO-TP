@@ -7,6 +7,8 @@ imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
 secretName: identity-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
 # The connection parts are plain config; only the password is a secret, and it arrives through
 # secretName above. The role and the database are identity's own (gitops/platform/postgres/).

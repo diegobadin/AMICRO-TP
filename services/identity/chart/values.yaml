@@ -22,6 +22,12 @@ service:
   type: ClusterIP
   nodePort: ""
 
+# Prometheus scraping of /metrics. Off by default so the chart still renders on a cluster without
+# the kube-prometheus CRDs; the environment overlays turn it on.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
 # Optional: name of a Secret (delivered as a SealedSecret via GitOps) injected as env. Empty = none.
 secretName: ""
 
