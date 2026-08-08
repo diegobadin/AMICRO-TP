@@ -80,4 +80,35 @@ argocd app list -o name | sort | diff /tmp/apps-before.txt -   # only production
 
 ## Phase gates
 
-_(F1–F9 record their evidence here as they land.)_
+- **F1 (passed 2026-08-08).** `gitops/apps-root` renders the same 10 staging Applications the 20
+  hand-written files did — compared structurally, not by eye: the rendered specs are identical to
+  the old ones except for the added `resources-finalizer`. On a fresh kind with
+  `TARGET_REVISION=feat/p2-identity-auth`, all 10 report `TARGET feat/p2-identity-auth` (they used
+  to be pinned to `main`, so no P2 drill could ever have tested P2's own code), and no
+  `*-production` app is registered. `kubeseal` 0.38.4 and `argocd` v3.4.5 installed in `~/bin`.
+- **F2 (passed 2026-08-08).** Sealing key backed up and restored by `install.sh` before the
+  controller. Verified that `kubectl apply` of the backup works on a create (a stale `uid` in the
+  manifest is ignored by the API server), so no sanitizing step is needed. `secrets-staging` app
+  `Synced/Healthy`; the committed `identity-secrets` blob decrypted in-cluster with both keys
+  present.
+- **F3 (passed 2026-08-08).** CNPG reconciled the managed role (`managedRolesStatus.reconciled:
+  ["identity"]`) and the `identity` database is owned by `identity`. Proof it is a real login, not
+  just a row: `psql -h 127.0.0.1 -U identity -d identity` over TCP with the sealed password returns
+  `current_user=identity`.
+- **F4 (passed 2026-08-08).** Deploy token `registry-pull-bot` created with the `read_registry`
+  scope only, no expiry (user-authorized). Sealed as `gitlab-registry`, decrypted in-cluster as
+  `kubernetes.io/dockerconfigjson` for `registry.gitlab.com`. The digest pin now runs without a
+  live cluster: branch pipeline `2743475115` went test → build → deliver → deploy-staging green and
+  pushed `e6a3cb7` pinning `sha256:7e7a19e6…`. The pod's `imageID` shows that exact digest pulled
+  from the private registry — the ImagePullBackOff P1 left behind is closed.
+  - Found en route: `build:ranking` and `build:analytics-workers` had a hard `needs` on
+    `test:contract:game-completed`, whose rules do not include `ci/templates/**`. Editing a shared
+    template made the whole pipeline a config error (`2743448945`). Pre-existing since P0, only
+    reachable from a feature branch. Fixed with `optional: true`, which keeps the gate whenever the
+    check is actually in the pipeline.
+- **F5 (passed 2026-08-08).** 6 unit tests green against the in-memory store (no database in the
+  test stage). In-cluster: the pod ran its own migration (`players` + `players_username_lower_idx`
+  present in Postgres), then `register` → `ok`, `whoami` → the same user, `login` → 200, wrong
+  password → 401, duplicate register → 409. The stored credential starts with `scrypt$16384…`.
+
+_(F6–F10 record their evidence here as they land.)_
