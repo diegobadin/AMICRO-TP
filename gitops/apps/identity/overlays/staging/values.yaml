@@ -17,6 +17,8 @@ env:
     value: identity
   - name: DATABASE_USER
     value: identity
+  - name: REDIS_URL
+    value: redis://redis.redis.svc.cluster.local:6379
 service:
   type: NodePort
   nodePort: 30080 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → staging URL host:30080

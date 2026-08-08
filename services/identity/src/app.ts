@@ -1,15 +1,16 @@
 // Identity & Session — the real service.
 //
-// Accounts live in Postgres with scrypt-hashed credentials, behind the HTTP surface the
-// architecture names (docs/architecture/01-service-architecture.md §5.3). The request handler is
-// a pure function over an injected Store, so the unit tests exercise register -> login -> whoami
-// without a database and without a socket.
+// Accounts live in Postgres with scrypt-hashed credentials and sessions are JWTs backed by the
+// `sessions` table, behind the HTTP surface the architecture names
+// (docs/architecture/01-service-architecture.md §5.3). The request handler is a pure function over
+// injected ports, so the unit tests exercise the whole flow without a database, a Redis or a
+// socket.
 
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { hashPassword, verifyPassword } from "./passwords.js";
+import type { Sessions } from "./sessions.js";
 import type { Player, Store } from "./store.js";
 
-const TOKEN_SECRET = process.env.IDENTITY_JWT_SECRET ?? "dev-secret";
 const SERVICE = "identity";
 
 export interface Reply {
@@ -18,13 +19,16 @@ export interface Reply {
 }
 
 export class Identity {
-  constructor(private readonly store: Store) {}
+  constructor(
+    private readonly store: Store,
+    private readonly sessions: Sessions,
+  ) {}
 
   async register(username: string, pass: string): Promise<Reply> {
     if (!username || !pass) return { status: 400, json: { error: "user and pass required" } };
     const player = await this.store.createPlayer(randomUUID(), username, await hashPassword(pass));
     if (!player) return { status: 409, json: { error: "user exists" } };
-    return { status: 201, json: this.session(player) };
+    return { status: 201, json: await this.session(player) };
   }
 
   async login(username: string, pass: string): Promise<Reply> {
@@ -32,33 +36,27 @@ export class Identity {
     if (!player || !(await verifyPassword(pass, player.passwordHash))) {
       return { status: 401, json: { error: "invalid credentials" } };
     }
-    return { status: 200, json: this.session(player) };
+    return { status: 200, json: await this.session(player) };
   }
 
   async whoami(token: string | undefined): Promise<Reply> {
-    const playerId = token ? this.verify(token) : undefined;
-    const player = playerId ? await this.store.findById(playerId) : undefined;
+    const session = await this.sessions.resolve(token);
+    const player = session ? await this.store.findById(session.playerId) : undefined;
     if (!player) return { status: 401, json: { error: "unauthenticated" } };
     return { status: 200, json: { result: "ok", userId: player.playerId, user: player.username } };
   }
 
-  private session(player: Player): Record<string, unknown> {
-    return { result: "ok", userId: player.playerId, user: player.username, token: this.mint(player.playerId) };
+  // Idempotent on purpose: a client whose session was already superseded should still be able to
+  // clean up without the CLI reporting a failure.
+  async logout(token: string | undefined): Promise<Reply> {
+    const session = await this.sessions.resolve(token);
+    const closed = session ? await this.sessions.close(session.sessionId, "logout") : false;
+    return { status: 200, json: { result: "ok", closed } };
   }
 
-  private mint(playerId: string): string {
-    const sig = createHmac("sha256", TOKEN_SECRET).update(playerId).digest("hex");
-    return Buffer.from(`${playerId}:${sig}`).toString("base64url");
-  }
-
-  private verify(token: string): string | undefined {
-    try {
-      const [playerId, sig] = Buffer.from(token, "base64url").toString().split(":");
-      const expected = createHmac("sha256", TOKEN_SECRET).update(playerId).digest("hex");
-      return sig === expected ? playerId : undefined;
-    } catch {
-      return undefined;
-    }
+  private async session(player: Player): Promise<Record<string, unknown>> {
+    const { token } = await this.sessions.open(player.playerId);
+    return { result: "ok", userId: player.playerId, user: player.username, token };
   }
 }
 
@@ -79,6 +77,9 @@ export async function handle(
   }
   if (method === "POST" && path === "/auth/login") {
     return app.login(String(body.user ?? ""), String(body.pass ?? ""));
+  }
+  if (method === "POST" && path === "/auth/logout") {
+    return app.logout(bearer);
   }
   if (method === "GET" && path === "/auth/whoami") {
     return app.whoami(bearer);

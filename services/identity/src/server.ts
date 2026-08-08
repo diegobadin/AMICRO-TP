@@ -5,10 +5,13 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { handle, Identity, SERVICE } from "./app.js";
+import { createRedis, RedisCache } from "./cache-redis.js";
 import { migrate } from "./migrate.js";
+import { Sessions } from "./sessions.js";
 import { PgStore } from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 8085);
+const TOKEN_TTL_SECONDS = Number(process.env.IDENTITY_TOKEN_TTL_SECONDS ?? 3600);
 
 const pool = new pg.Pool({
   host: process.env.DATABASE_HOST ?? "localhost",
@@ -18,7 +21,11 @@ const pool = new pg.Pool({
   password: process.env.IDENTITY_DB_PASSWORD,
   max: 10,
 });
-const app = new Identity(new PgStore(pool));
+const store = new PgStore(pool);
+const redis = createRedis(process.env.REDIS_URL ?? "redis://localhost:6379");
+const cache = new RedisCache(redis, () => log("cache-unavailable", 0, "-"));
+const sessions = new Sessions(store, cache, process.env.IDENTITY_JWT_SECRET ?? "dev-secret", TOKEN_TTL_SECONDS);
+const app = new Identity(store, sessions);
 
 function log(action: string, status: number, correlationId: string, extra: Record<string, unknown> = {}) {
   process.stdout.write(

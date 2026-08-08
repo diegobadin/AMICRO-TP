@@ -17,6 +17,8 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "ioredis": "^6.0.0",
+    "jose": "^6.2.8",
     "pg": "^8.22.0"
   }
 }
