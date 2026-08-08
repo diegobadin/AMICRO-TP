@@ -1,20 +1,16 @@
-// Identity & Session — real slice for the fully-wired service.
+// Identity & Session — the real service.
 //
-// Implements the small piece the Client CLI asserts against (faculty steer: "1 servicio, una
-// parte, que valide además de los tests"): register -> login -> whoami, plus /health. Storage is
-// an in-memory map (no real DB needed for the checkpoint). The HTTP handling is a pure function
-// so unit tests exercise register->whoami without sockets.
+// Accounts live in Postgres with scrypt-hashed credentials, behind the HTTP surface the
+// architecture names (docs/architecture/01-service-architecture.md §5.3). The request handler is
+// a pure function over an injected Store, so the unit tests exercise register -> login -> whoami
+// without a database and without a socket.
 
 import { createHmac, randomUUID } from "node:crypto";
+import { hashPassword, verifyPassword } from "./passwords.js";
+import type { Player, Store } from "./store.js";
 
-const TOKEN_SECRET = process.env.IDENTITY_TOKEN_SECRET ?? "dev-secret";
+const TOKEN_SECRET = process.env.IDENTITY_JWT_SECRET ?? "dev-secret";
 const SERVICE = "identity";
-
-interface User {
-  userId: string;
-  user: string;
-  pass: string;
-}
 
 export interface Reply {
   status: number;
@@ -22,41 +18,44 @@ export interface Reply {
 }
 
 export class Identity {
-  private byName = new Map<string, User>();
-  private byUserId = new Map<string, User>();
+  constructor(private readonly store: Store) {}
 
-  register(user: string, pass: string): Reply {
-    if (!user || !pass) return { status: 400, json: { error: "user and pass required" } };
-    if (this.byName.has(user)) return { status: 409, json: { error: "user exists" } };
-    const u: User = { userId: randomUUID(), user, pass };
-    this.byName.set(user, u);
-    this.byUserId.set(u.userId, u);
-    return { status: 201, json: { result: "ok", userId: u.userId, user: u.user, token: this.mint(u) } };
+  async register(username: string, pass: string): Promise<Reply> {
+    if (!username || !pass) return { status: 400, json: { error: "user and pass required" } };
+    const player = await this.store.createPlayer(randomUUID(), username, await hashPassword(pass));
+    if (!player) return { status: 409, json: { error: "user exists" } };
+    return { status: 201, json: this.session(player) };
   }
 
-  login(user: string, pass: string): Reply {
-    const u = this.byName.get(user);
-    if (!u || u.pass !== pass) return { status: 401, json: { error: "invalid credentials" } };
-    return { status: 200, json: { result: "ok", userId: u.userId, user: u.user, token: this.mint(u) } };
+  async login(username: string, pass: string): Promise<Reply> {
+    const player = await this.store.findByUsername(username);
+    if (!player || !(await verifyPassword(pass, player.passwordHash))) {
+      return { status: 401, json: { error: "invalid credentials" } };
+    }
+    return { status: 200, json: this.session(player) };
   }
 
-  whoami(token: string | undefined): Reply {
-    const u = token ? this.verify(token) : undefined;
-    if (!u) return { status: 401, json: { error: "unauthenticated" } };
-    return { status: 200, json: { result: "ok", userId: u.userId, user: u.user } };
+  async whoami(token: string | undefined): Promise<Reply> {
+    const playerId = token ? this.verify(token) : undefined;
+    const player = playerId ? await this.store.findById(playerId) : undefined;
+    if (!player) return { status: 401, json: { error: "unauthenticated" } };
+    return { status: 200, json: { result: "ok", userId: player.playerId, user: player.username } };
   }
 
-  private mint(u: User): string {
-    const sig = createHmac("sha256", TOKEN_SECRET).update(u.userId).digest("hex");
-    return Buffer.from(`${u.userId}:${sig}`).toString("base64url");
+  private session(player: Player): Record<string, unknown> {
+    return { result: "ok", userId: player.playerId, user: player.username, token: this.mint(player.playerId) };
   }
 
-  private verify(token: string): User | undefined {
+  private mint(playerId: string): string {
+    const sig = createHmac("sha256", TOKEN_SECRET).update(playerId).digest("hex");
+    return Buffer.from(`${playerId}:${sig}`).toString("base64url");
+  }
+
+  private verify(token: string): string | undefined {
     try {
-      const [userId, sig] = Buffer.from(token, "base64url").toString().split(":");
-      const expected = createHmac("sha256", TOKEN_SECRET).update(userId).digest("hex");
-      if (sig !== expected) return undefined;
-      return this.byUserId.get(userId);
+      const [playerId, sig] = Buffer.from(token, "base64url").toString().split(":");
+      const expected = createHmac("sha256", TOKEN_SECRET).update(playerId).digest("hex");
+      return sig === expected ? playerId : undefined;
     } catch {
       return undefined;
     }
@@ -64,24 +63,24 @@ export class Identity {
 }
 
 // Pure request handler — testable without a server.
-export function handle(
+export async function handle(
   app: Identity,
   method: string,
   path: string,
   headers: Record<string, string | undefined>,
   body: Record<string, unknown>,
-): Reply {
+): Promise<Reply> {
   const bearer = headers["authorization"]?.replace(/^Bearer\s+/i, "");
   if (method === "GET" && path === "/health") {
     return { status: 200, json: { status: "ok", service: SERVICE } };
   }
-  if (method === "POST" && path === "/register") {
+  if (method === "POST" && path === "/auth/register") {
     return app.register(String(body.user ?? ""), String(body.pass ?? ""));
   }
-  if (method === "POST" && path === "/login") {
+  if (method === "POST" && path === "/auth/login") {
     return app.login(String(body.user ?? ""), String(body.pass ?? ""));
   }
-  if (method === "GET" && path === "/whoami") {
+  if (method === "GET" && path === "/auth/whoami") {
     return app.whoami(bearer);
   }
   return { status: 404, json: { error: "not found" } };

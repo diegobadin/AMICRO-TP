@@ -7,7 +7,17 @@ imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
 logLevel: debug
-secretName: identity-secrets # SealedSecret in this overlay (sealed-secret.example.yaml)
+secretName: identity-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
+
+# The connection parts are plain config; only the password is a secret, and it arrives through
+# secretName above. The role and the database are identity's own (gitops/platform/postgres/).
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: identity
+  - name: DATABASE_USER
+    value: identity
 service:
   type: NodePort
   nodePort: 30080 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → staging URL host:30080
