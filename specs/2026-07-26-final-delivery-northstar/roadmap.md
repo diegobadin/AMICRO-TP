@@ -37,7 +37,11 @@ is where the connections will be.
 - Why now: every other flow authenticates through it; smallest real service, already fully wired.
 - Depends on: P1 (Postgres, Redis).
 
-## P3 — Uno engine + room-gameplay core — **next**
+## P3 — Uno engine + room-gameplay core — **next (spec'd, not implemented)**
+
+Triad: [`../2026-08-08-p3-room-gameplay/`](../2026-08-08-p3-room-gameplay/) — decisions E1–E8
+locked and review-passed 2026-08-08; implementation starts from its
+[`kickoff.md`](../2026-08-08-p3-room-gameplay/kickoff.md).
 
 - Ships (a): rooms — create/join/list/leave, membership REST per Architecture §2.3.1, Postgres
   event store scaffold. (b): the game — pure Uno rules engine (Kotlin module, property +
