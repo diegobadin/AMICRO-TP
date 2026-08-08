@@ -24,7 +24,9 @@ green (kind drills, EKS rehearsal with empty sweep, pipeline unaffected); eviden
   boring, repeatable drill before any real service exists.
 - Infra it debuts: everything. Depends on: P0 pipeline.
 
-## P2 — Identity for real
+## P2 — Identity for real — **next**
+
+Triad: [`../2026-08-08-p2-identity-auth/`](../2026-08-08-p2-identity-auth/).
 
 - Ships: Postgres-backed accounts, JWT sessions, single-active-session kill via Redis pub/sub
   (the domain non-negotiable), `logout`, `seed --count N`.
