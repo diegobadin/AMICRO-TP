@@ -3,6 +3,7 @@
 FROM gradle:8.8-jdk21 AS build
 WORKDIR /app
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY engine ./engine
 COPY src ./src
 # -XX:-UsePerfData: the JVM writes /tmp/hsperfdata_root/<pid> and deletes it on exit, which
 # races Kaniko's filesystem snapshot and fails the image build after a successful compile.
