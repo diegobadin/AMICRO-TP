@@ -24,9 +24,12 @@ green (kind drills, EKS rehearsal with empty sweep, pipeline unaffected); eviden
   boring, repeatable drill before any real service exists.
 - Infra it debuts: everything. Depends on: P0 pipeline.
 
-## P2 — Identity for real — **next**
+## P2 — Identity for real — **SHIPPED 2026-08-08**
 
-Triad: [`../2026-08-08-p2-identity-auth/`](../2026-08-08-p2-identity-auth/).
+Triad: [`../2026-08-08-p2-identity-auth/`](../2026-08-08-p2-identity-auth/) — all eight ACs green
+(empty-cluster drill, both invalidation transports observed, degradation drill); evidence in its
+`validation.md`, closure in its `ESTADO-FINAL.md`. The live SSE kill waits for P4's gateway, which
+is where the connections will be.
 
 - Ships: Postgres-backed accounts, JWT sessions, single-active-session kill via Redis pub/sub
   (the domain non-negotiable), `logout`, `seed --count N`.
@@ -34,7 +37,7 @@ Triad: [`../2026-08-08-p2-identity-auth/`](../2026-08-08-p2-identity-auth/).
 - Why now: every other flow authenticates through it; smallest real service, already fully wired.
 - Depends on: P1 (Postgres, Redis).
 
-## P3 — Uno engine + room-gameplay core
+## P3 — Uno engine + room-gameplay core — **next**
 
 - Ships (a): rooms — create/join/list/leave, membership REST per Architecture §2.3.1, Postgres
   event store scaffold. (b): the game — pure Uno rules engine (Kotlin module, property +

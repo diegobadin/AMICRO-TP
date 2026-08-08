@@ -71,12 +71,13 @@ argocd app list -o name | sort | diff /tmp/apps-before.txt -   # only production
 
 ## Definition of done
 
-- [ ] AC-P2.1 … AC-P2.8 all green, with transcripts below.
-- [ ] `npm test` in `services/identity` and `clients/cli` passes with no database required.
-- [ ] No plaintext secret in the repo; `git log -p` on the branch shows no token or password.
-- [ ] README documents every canonical CLI command, its endpoint, the seeding procedure, and the
-      two deliberate gaps (`/auth/refresh`, live SSE kill in P4).
-- [ ] `ESTADO-FINAL.md` written and the north-star roadmap marks P2 **SHIPPED**.
+- [x] AC-P2.1 … AC-P2.8 all green, with transcripts above.
+- [x] `npm test` in `services/identity` (14) and `clients/cli` (5) passes with no database required.
+- [x] No plaintext secret in the repo; the sealed blobs and the git-ignored key/plaintext files are
+      the only places credentials exist.
+- [x] `clients/cli/README.md` documents every canonical command, its endpoint, the seeding
+      procedure, and the two deliberate gaps (`/auth/refresh`, live SSE kill in P4).
+- [x] `ESTADO-FINAL.md` written and the north-star roadmap marks P2 **SHIPPED**.
 
 ## Phase gates
 
@@ -111,4 +112,74 @@ argocd app list -o name | sort | diff /tmp/apps-before.txt -   # only production
   present in Postgres), then `register` → `ok`, `whoami` → the same user, `login` → 200, wrong
   password → 401, duplicate register → 409. The stored credential starts with `scrypt$16384…`.
 
-_(F6–F10 record their evidence here as they land.)_
+- **F6 (passed 2026-08-08).** 12 unit tests green, including the ones that matter: a second login
+  invalidates the first token, logout is idempotent, a token signed with another cluster's secret
+  is refused, and — the design decision worth proving — an empty cache falls back to Postgres and
+  **still refuses a revoked session**. No database or Redis in the test stage.
+- **F7 (passed 2026-08-08).** 14 unit tests. In-cluster drill, both transports watched live while
+  the same player logs in twice:
+  - old token → `401`, new token → `200`;
+  - `sessions` holds exactly two rows, `is_active=f / superseded` and `is_active=t`;
+  - Redis `session:invalidated:fd20870d-…` carried
+    `{"oldSessionId":"7a5c38ec-…","newSessionId":"5a4c1ce6-…"}`;
+  - Kafka `identity.session-events` carried
+    `{"playerId":"fd20870d-…","oldSessionId":"7a5c38ec-…","reason":"superseded"}`.
+  The `KafkaTopic` CR reconciled `READY=True` with 3 partitions (the Topic Operator was enabled
+  for it, since a declared topic beats an auto-created one).
+- **F8 (passed 2026-08-08).** After one register, one good login and one bad one:
+  `identity_registrations_total 1`, `identity_logins_total{result="ok"} 1`,
+  `{result="denied"} 1`, `identity_sessions_superseded_total 1`. Prometheus lists the `identity`
+  target as `up` at `http://10.244.0.47:8085/metrics` — it needed
+  `serviceMonitorSelectorNilUsesHelmValues: false` on the platform side, otherwise only
+  ServiceMonitors labelled with the monitoring release are ever scraped.
+- **F9 (passed 2026-08-08).** The full slice driven through the CLI against the cluster —
+  register → whoami → second login → stale token `401` → logout → `401`, plus `seed --count 3`
+  run twice — ends in `SMOKE OK`. `assert-smoke.js` checks the outcomes *and* the §6 field set on
+  every line. The CI job now stands up an ephemeral Postgres and Redis and points
+  `KAFKA_BROKERS` at a host that does not exist, so every pipeline re-proves E7 for free.
+- **F10 (passed 2026-08-08).** Full drill from `kind delete cluster` — see below.
+
+## AC-P2.6 — from an empty cluster (drill, 2026-08-08)
+
+`kind delete cluster` → `install.sh` (`TARGET_REVISION=feat/p2-identity-auth`) → **2027 s** to
+platform + identity all `Synced/Healthy`, with no manual step at any point.
+
+| Probe | Result |
+|---|---|
+| Argo apps | 8 platform/secrets/identity apps + both roots `Synced/Healthy` |
+| Image | pulled by digest `…@sha256:4a22cbf4…` from the private registry |
+| Secrets | `identity-secrets` (Opaque), `gitlab-registry` (dockerconfigjson), `identity-db-role` (basic-auth) — all decrypted from committed blobs |
+| Schema | `players`, `sessions` created by the pod itself |
+| Kafka | `identity.session-events` `READY=True`, 3 partitions |
+| CLI | full flow + double seed → `SMOKE OK` |
+| Re-run | `install.sh` again: exit 0, 0 resources created, `Sealing key already present.` |
+
+Two real defects the drill caught, both of which would have failed on demo day:
+
+1. **Service apps could not converge through a CRD race.** `identity-staging` ships a
+   ServiceMonitor whose CRD arrives with kube-prometheus-stack, in a different app. On a
+   minutes-old cluster Argo hit `one or more synchronization tasks are not valid`, retried five
+   times and gave up — leaving identity permanently down behind a stale `SyncError`. Fixed by
+   giving the service apps the convergence posture P1 gave the platform ones
+   (`SkipDryRunOnMissingResource=true` + retry to a 3 min backoff).
+2. **`install.sh` was not idempotent any more.** The sealing-key backup carries the
+   `resourceVersion` it had when it was taken, so the second `kubectl apply` failed with a
+   Conflict. Restoring with `create`, only when no key is present, fixes it and is the safer
+   semantic: a re-run must never overwrite a key a controller is already using. A mismatched key
+   now warns loudly instead of silently leaving the secrets unopenable.
+
+Also observed and accepted: identity crash-loops until Postgres finishes electing its primary
+(the migration cannot run without it), and the kubelet's exponential backoff means it can idle up
+to ~5 minutes after Postgres is ready before its next attempt. It self-heals with no
+intervention, which is the acceptance criterion — but it is why the total is 34 minutes rather
+than the ~9 P1 measured for the platform alone.
+
+## AC-P2.4 — degradation drill (2026-08-08)
+
+With Argo's auto-sync suspended (it reverts the fault injection within seconds, which is itself
+worth noting):
+
+| Fault | Result |
+|---|---|
+| `KAFKA_BROKERS=black.hole:9092` | register `201`, login `200`, stale token `401` — all unaffected; `identity_session_event_publish_failures_total{transport="kafka"} 1`; one WARN log line carrying `"transport":"kafka"` |
+| `REDIS_URL=redis://black.hole:6379` | register `201`, whoami `200` (served from Postgres), logout `200`, **whoami after logout `401`** — the revocation check does not fail open when the cache is gone |
