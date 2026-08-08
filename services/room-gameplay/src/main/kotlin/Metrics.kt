@@ -21,7 +21,10 @@ object Metrics {
         ProcessorMetrics().bindTo(it)
     }
 
-    val roomsCreated: Counter = Counter.builder("roomgameplay.rooms.created")
+    // "opened", not "created": OpenMetrics reserves the `_created` suffix for the creation-timestamp
+    // series, so the Prometheus client rewrites roomgameplay_rooms_created_total into the ambiguous
+    // roomgameplay_rooms_total. A deviation from plan D7's name, forced by the exposition format.
+    val roomsCreated: Counter = Counter.builder("roomgameplay.rooms.opened")
         .description("Rooms created").register(registry)
 
     val gamesStarted: Counter = Counter.builder("roomgameplay.games.started")

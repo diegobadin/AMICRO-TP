@@ -21,6 +21,7 @@ import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.system.exitProcess
 
 @Serializable
 data class ErrorBody(val error: String)
@@ -56,7 +57,7 @@ private val Observability = createApplicationPlugin("Observability") {
     }
 }
 
-fun Application.module(config: Config) {
+fun Application.module(config: Config, rooms: Rooms) {
     install(ContentNegotiation) { json() }
     install(Observability)
     install(StatusPages) {
@@ -75,14 +76,27 @@ fun Application.module(config: Config) {
         get("/metrics") {
             call.respondText(Metrics.registry.scrape(), ContentType.Text.Plain)
         }
-        roomRoutes()
+        roomRoutes(rooms)
     }
 }
 
 fun main() {
     val config = Config.fromEnv()
+    val dataSource = pool(config)
+    // Migrate before listening. If Postgres is not there the process exits and the kubelet retries:
+    // a pod that never becomes ready is a far better failure than one answering against no schema.
+    try {
+        migrate(dataSource)
+    } catch (e: Exception) {
+        System.err.println(
+            """{"ts":"${Instant.now()}","level":"error","service":"$SERVICE","action":"migrate","error":"$e"}""",
+        )
+        exitProcess(1)
+    }
+    val rooms = Rooms(EventStore(dataSource), config)
+
     println(
         """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE","msg":"listening","port":${config.port}}""",
     )
-    embeddedServer(Netty, port = config.port) { module(config) }.start(wait = true)
+    embeddedServer(Netty, port = config.port) { module(config, rooms) }.start(wait = true)
 }

@@ -1,4 +1,3 @@
-import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.util.UUID
 import kotlin.test.AfterTest
@@ -33,7 +32,7 @@ class EventStoreTest {
 
     @BeforeTest
     fun setUp() {
-        dataSource = connect()
+        dataSource = testPool()
         migrate(dataSource)
         store = EventStore(dataSource)
     }
@@ -192,22 +191,5 @@ class EventStoreTest {
 
     private companion object {
         val NOW: java.time.Instant = java.time.Instant.parse("2026-08-08T12:00:00Z")
-
-        fun connect(): HikariDataSource {
-            val url = System.getenv("TEST_DATABASE_URL")
-                ?: error(
-                    "TEST_DATABASE_URL is not set. AC-P3.3 cannot be proved against a fake, so this " +
-                        "suite refuses to pass by skipping. Point it at a Postgres, e.g. " +
-                        "jdbc:postgresql://localhost:55432/room_gameplay",
-                )
-            return HikariDataSource(
-                HikariConfig().apply {
-                    jdbcUrl = url
-                    username = System.getenv("TEST_DATABASE_USER") ?: "room_gameplay"
-                    password = System.getenv("TEST_DATABASE_PASSWORD") ?: "test"
-                    maximumPoolSize = 4
-                },
-            )
-        }
     }
 }

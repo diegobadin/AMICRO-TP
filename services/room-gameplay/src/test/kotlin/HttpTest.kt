@@ -4,6 +4,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.util.Date
 import kotlin.test.Test
@@ -12,7 +13,7 @@ import kotlin.test.assertTrue
 
 // Through fromEnv rather than the constructor, so the defaults the container relies on are the
 // same ones these tests run against.
-private val config = Config.fromEnv(mapOf("IDENTITY_JWT_SECRET" to "test-secret"))
+val config: Config = Config.fromEnv(mapOf("IDENTITY_JWT_SECRET" to "test-secret"))
 
 fun token(
     playerId: String = "11111111-1111-1111-1111-111111111111",
@@ -27,37 +28,52 @@ fun token(
 
 class HttpTest {
 
+    // Even the auth checks go through the real wiring: a 401 that is really a 404 because a route
+    // was never registered is exactly the kind of pass this suite must not hand out.
+    private val dataSource = testPool().also { migrate(it) }
+    private fun ApplicationTestBuilder.wire() = application { module(config, Rooms(EventStore(dataSource), config)) }
+
     @Test
     fun `health is open and names the service`() = testApplication {
-        application { module(config) }
+        wire()
         val res = client.get("/health")
         assertEquals(HttpStatusCode.OK, res.status)
         assertEquals("""{"status":"ok","service":"room-gameplay"}""", res.bodyAsText())
     }
 
+    /**
+     * The exact exposed names, not just "some metrics came back". P8 builds dashboards on these and
+     * a rename is a silent break — and the Prometheus client does rewrite names it dislikes, which
+     * is how roomgameplay_rooms_created_total quietly became roomgameplay_rooms_total.
+     */
     @Test
-    fun `metrics exposes the business counters`() = testApplication {
-        application { module(config) }
+    fun `metrics exposes the business counters under the names P8 will chart`() = testApplication {
+        wire()
         val body = client.get("/metrics").bodyAsText()
-        assertTrue(body.contains("roomgameplay_command_duration_seconds"), "missing command duration histogram")
+        listOf(
+            "roomgameplay_rooms_opened_total",
+            "roomgameplay_games_started_total",
+            "roomgameplay_games_completed_total",
+            "roomgameplay_command_duration_seconds",
+        ).forEach { assertTrue(body.contains(it), "missing $it") }
     }
 
     @Test
     fun `a room read without a token is rejected`() = testApplication {
-        application { module(config) }
+        wire()
         assertEquals(HttpStatusCode.Unauthorized, client.get("/rooms").status)
     }
 
     @Test
     fun `a token signed by another cluster's secret is rejected`() = testApplication {
-        application { module(config) }
+        wire()
         val res = client.get("/rooms") { header("Authorization", "Bearer ${token(secret = "someone-else")}") }
         assertEquals(HttpStatusCode.Unauthorized, res.status)
     }
 
     @Test
     fun `an expired token is rejected`() = testApplication {
-        application { module(config) }
+        wire()
         val expired = token(expiresAt = Date(System.currentTimeMillis() - 1_000))
         val res = client.get("/rooms") { header("Authorization", "Bearer $expired") }
         assertEquals(HttpStatusCode.Unauthorized, res.status)
@@ -65,14 +81,14 @@ class HttpTest {
 
     @Test
     fun `a valid identity token is accepted`() = testApplication {
-        application { module(config) }
+        wire()
         val res = client.get("/rooms") { header("Authorization", "Bearer ${token()}") }
         assertEquals(HttpStatusCode.OK, res.status)
     }
 
     @Test
     fun `the correlation id the client sent comes back`() = testApplication {
-        application { module(config) }
+        wire()
         val res = client.get("/health") { header("X-Correlation-Id", "abc-123") }
         assertEquals("abc-123", res.headers["X-Correlation-Id"])
     }

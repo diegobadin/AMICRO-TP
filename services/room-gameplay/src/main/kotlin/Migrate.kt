@@ -51,12 +51,15 @@ private val STATEMENTS = listOf(
     // has to find every active room a player sits in, and that is the only query that needs it.
     "create index if not exists rooms_players_idx on rooms using gin (players)",
     "create index if not exists rooms_status_idx on rooms (status)",
+    // Keyed by (player, key), not by key alone: the header is client-generated, so two players are
+    // free to pick the same string and neither may block the other.
     """create table if not exists idempotency_keys (
-         key         text primary key,
          player_id   text not null,
+         key         text not null,
          room_id     uuid not null,
          response    jsonb not null,
-         created_at  timestamptz not null default now()
+         created_at  timestamptz not null default now(),
+         primary key (player_id, key)
        )""",
     "create index if not exists idempotency_keys_created_idx on idempotency_keys (created_at)",
 )
