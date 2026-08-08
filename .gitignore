@@ -23,3 +23,8 @@ build/
 # CI / local artifacts
 *.digest
 build.env
+
+# Operator-held secret material (never in the repo)
+.amicro_sealing_key
+.amicro_sealing_cert.pem
+.amicro_secrets.env

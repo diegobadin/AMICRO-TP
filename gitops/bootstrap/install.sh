@@ -15,6 +15,8 @@ TARGET_REVISION="${TARGET_REVISION:-main}"
 # token; locally use your PAT). Empty = skip, useful if the repo secret already exists.
 GITOPS_REPO_TOKEN="${GITOPS_REPO_TOKEN:-}"
 GITOPS_REPO_USER="${GITOPS_REPO_USER:-oauth2}"
+# Sealed-secrets encryption key backup, so committed SealedSecrets decrypt on a brand-new cluster.
+SEALING_KEY_FILE="${SEALING_KEY_FILE:-$HOME/.amicro_sealing_key}"
 REPO_URL="https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp.git"
 
 if command -v kind >/dev/null && [ "${USE_KIND:-true}" = "true" ]; then
@@ -38,7 +40,15 @@ kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
 kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.5/manifests/install.yaml
 kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
-# Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason
+# Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason.
+# The operator-held encryption key is restored FIRST: a controller that boots without it generates
+# a fresh one, and every SealedSecret committed under gitops/secrets/ stays sealed forever on this
+# cluster. See gitops/secrets/README.md.
+if [ -f "$SEALING_KEY_FILE" ]; then
+  kubectl apply -f "$SEALING_KEY_FILE"
+else
+  echo "WARNING: no sealing key at $SEALING_KEY_FILE — the controller will generate its own and the committed SealedSecrets will not decrypt here." >&2
+fi
 kubectl apply -f https://github.com/bitnami/sealed-secrets/releases/download/v0.38.4/controller.yaml
 kubectl -n kube-system rollout status deploy/sealed-secrets-controller --timeout=120s || true
 

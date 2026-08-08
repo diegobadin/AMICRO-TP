@@ -18,7 +18,7 @@ gitops/
   apps-root/                      # Helm chart: one Application per service per environment
     values.yaml                   # the service list and which environments to register
   apps/<svc>/overlays/<env>/values.yaml   # env overlay; image.digest pinned here by CI
-  apps/identity/overlays/staging/sealed-secret.example.yaml   # secret pattern (no plaintext)
+  secrets/<env>/                  # committed SealedSecrets (no plaintext) + seal.sh, README.md
   bootstrap/                      # kind + Argo CD + Sealed Secrets installer (vendor-neutral)
 ```
 
