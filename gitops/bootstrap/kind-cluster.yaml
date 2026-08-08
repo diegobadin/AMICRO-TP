@@ -8,3 +8,7 @@ nodes:
     extraPortMappings:
       - containerPort: 30080 # ingress/nodeport for the identity staging URL
         hostPort: 30080
+      # Port mappings are fixed when the cluster is created, so a cluster made before this line
+      # existed cannot reach room-gameplay — recreate it. P4's gateway collapses both back into one.
+      - containerPort: 30081 # room-gameplay (UNOARENA_ROOMS_URL)
+        hostPort: 30081

@@ -18,6 +18,11 @@ spec:
         login: true
         passwordSecret:
           name: identity-db-role
+      - name: room_gameplay
+        ensure: present
+        login: true
+        passwordSecret:
+          name: room-gameplay-db-role
   storage:
     size: 2Gi
   resources:

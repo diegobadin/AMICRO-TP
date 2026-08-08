@@ -10,9 +10,11 @@ RUN GRADLE_OPTS="-XX:-UsePerfData" gradle --no-daemon -Dorg.gradle.jvmargs=-XX:-
 
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+# Numeric uid, and USER given numerically: with a named user the kubelet cannot verify runAsNonRoot
+# and refuses to start the container.
+RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app
 COPY --from=build /app/build/install/room-gameplay ./
 ENV PORT=8081
 EXPOSE 8081
-USER app
+USER 65532
 CMD ["./bin/room-gameplay"]

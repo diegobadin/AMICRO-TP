@@ -1,6 +1,6 @@
 apiVersion: v2
 name: room-gameplay
-description: UnoArena Room & Gameplay service (placeholder with canned responses)
+description: UnoArena Room & Gameplay service (event-sourced Uno engine, rooms and moves)
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

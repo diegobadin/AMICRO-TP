@@ -7,9 +7,29 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# The project registry is private: without a pull secret every pod on a fresh cluster sits in
+# ImagePullBackOff. Delivered as a SealedSecret by the secrets-<env> app (gitops/secrets/).
+imagePullSecrets: []
+
 replicas: 1
 port: 8081
 healthPath: /health
 logLevel: info
+
+# Service exposure. Staging overlay sets type=NodePort + nodePort=30081 (matching the kind
+# extraPortMapping) so the CLI reaches gameplay at UNOARENA_ROOMS_URL. identity owns 30080; P4's
+# gateway collapses both behind one entry point.
+service:
+  type: ClusterIP
+  nodePort: ""
+
+# Prometheus scraping of /metrics. Off by default so the chart still renders on a cluster without
+# the kube-prometheus CRDs; the environment overlays turn it on.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+# Optional: name of a Secret (delivered as a SealedSecret via GitOps) injected as env. Empty = none.
+secretName: ""
 
 env: []

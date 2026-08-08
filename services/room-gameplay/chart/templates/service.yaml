@@ -5,8 +5,13 @@ metadata:
   labels:
     app: {{ include "svc.name" . }}
 spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
   selector:
     app: {{ include "svc.name" . }}
   ports:
     - port: 80
+      name: http # named so the ServiceMonitor can point at it
       targetPort: {{ .Values.port }}
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}

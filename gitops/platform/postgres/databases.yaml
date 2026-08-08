@@ -1,6 +1,7 @@
 # One database per Postgres-backed bounded context (docs/architecture/03-persistence-layer.md
 # §1-§6; Spectator is Redis-only). A context's database is owned by its own login role once the
-# real service exists (identity, P2); the rest stay on the bootstrap `app` role until their phase.
+# real service exists (identity P2, room-gameplay P3); the rest stay on the bootstrap `app` role
+# until their phase.
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
@@ -19,7 +20,7 @@ metadata:
   namespace: postgres
 spec:
   name: room_gameplay
-  owner: app
+  owner: room_gameplay
   cluster:
     name: unoarena-pg
 ---

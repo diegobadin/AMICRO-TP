@@ -15,16 +15,20 @@ if [ ! -f "$CERT" ]; then
   exit 1
 fi
 
-# First run generates the passwords we own; later runs read them back, so re-sealing is stable and
-# a cluster rebuilt from git still opens the database it was already using.
-if [ ! -f "$PLAINTEXT" ]; then
-  umask 077
-  {
-    echo "IDENTITY_JWT_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')"
-    echo "IDENTITY_DB_PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -d '=+/')"
-  } > "$PLAINTEXT"
-  echo "generated $PLAINTEXT — keep it; without it every secret has to be re-sealed"
-fi
+# The passwords we own are generated once and read back afterwards, so re-sealing is stable and a
+# cluster rebuilt from git still opens the database it was already using. A phase that adds a
+# service appends its password here; an existing one is never regenerated, or every cluster already
+# holding the old value would stop authenticating.
+umask 077
+touch "$PLAINTEXT"
+generate() { # generate <VAR> <byte-length>
+  grep -q "^$1=" "$PLAINTEXT" && return 0
+  echo "$1=$(head -c "$2" /dev/urandom | base64 | tr -d '=+/')" >> "$PLAINTEXT"
+  echo "generated $1 in $PLAINTEXT — keep the file; without it every secret has to be re-sealed"
+}
+generate IDENTITY_JWT_SECRET 32
+generate IDENTITY_DB_PASSWORD 24
+generate ROOM_GAMEPLAY_DB_PASSWORD 24
 set -a; . "$PLAINTEXT"; set +a
 
 # The registry credential is issued by GitLab, not by us, so it cannot be regenerated here.
@@ -46,6 +50,14 @@ seal "$HERE/staging/identity-secrets.yaml" \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=IDENTITY_DB_PASSWORD="$IDENTITY_DB_PASSWORD"
 
+# room-gameplay validates identity's JWTs itself until P4's gateway takes over that job, so it gets
+# a copy of the signing key — its own secret rather than a shared one, so it never sees identity's
+# database password. The coupling is real and is recorded in CHANGELOG-design.md.
+seal "$HERE/staging/room-gameplay-secrets.yaml" \
+  generic room-gameplay-secrets -n unoarena-staging \
+  --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
+  --from-literal=ROOM_GAMEPLAY_DB_PASSWORD="$ROOM_GAMEPLAY_DB_PASSWORD"
+
 # Read-only registry credential (deploy token, read_registry scope): without it every service sits
 # in ImagePullBackOff on a cluster that was just created, because the project registry is private.
 seal "$HERE/staging/registry-pull.yaml" \
@@ -61,3 +73,9 @@ seal "$HERE/../platform/postgres/identity-db-role.yaml" \
   --type=kubernetes.io/basic-auth \
   --from-literal=username=identity \
   --from-literal=password="$IDENTITY_DB_PASSWORD"
+
+seal "$HERE/../platform/postgres/room-gameplay-db-role.yaml" \
+  generic room-gameplay-db-role -n postgres \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=room_gameplay \
+  --from-literal=password="$ROOM_GAMEPLAY_DB_PASSWORD"

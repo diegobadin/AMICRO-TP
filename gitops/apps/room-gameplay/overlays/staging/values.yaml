@@ -3,5 +3,30 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/room-gameplay
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: room-gameplay-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
+# Connection parts are plain config; the database password and the shared JWT signing key arrive
+# through secretName above. The role and the database are room-gameplay's own
+# (gitops/platform/postgres/). ROOM_MIN_PLAYERS and TURN_TIMEOUT_SECONDS are levers a drill or the
+# exam demo can turn without a rebuild (plan D11).
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: room_gameplay
+  - name: DATABASE_USER
+    value: room_gameplay
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+  - name: ROOM_MIN_PLAYERS
+    value: "2"
+  - name: TURN_TIMEOUT_SECONDS
+    value: "30"
+service:
+  type: NodePort
+  nodePort: 30081 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → UNOARENA_ROOMS_URL

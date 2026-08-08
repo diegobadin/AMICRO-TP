@@ -15,3 +15,33 @@ spec:
   replicas: 1
   config:
     retention.ms: 259200000 # 3 days, per persistence-layer §7.2
+---
+# room-gameplay fills its outbox from P3 on, but nothing drains it until P5's relay. Declaring the
+# destinations now keeps the catalog in git and means the relay is the only thing P5 has to add.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: room.public.events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: unoarena
+spec:
+  topicName: room.public.events
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 259200000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: room.lifecycle.events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: unoarena
+spec:
+  topicName: room.lifecycle.events
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000 # 7 days: Ranking and Tournament replay these, Spectator does not

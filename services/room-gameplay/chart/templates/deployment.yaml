@@ -14,8 +14,13 @@ spec:
       labels:
         app: {{ include "svc.name" . }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532 # matches the Dockerfile's numeric USER — kubelet cannot verify a named one
       containers:
         - name: {{ include "svc.name" . }}
           image: {{ include "svc.image" . | quote }}
@@ -30,6 +35,20 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          {{- end }}
+          # The schema migration runs before the server listens, and on a cold cluster Postgres may
+          # still be electing its primary. Without this, the liveness probe would kill the pod
+          # mid-migration and never let it converge.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.healthPath }}
+              port: {{ .Values.port }}
+            periodSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
               path: {{ .Values.healthPath }}
