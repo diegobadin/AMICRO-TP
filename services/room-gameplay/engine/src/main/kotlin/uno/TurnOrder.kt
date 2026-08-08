@@ -1,5 +1,6 @@
 package uno
 
+@kotlinx.serialization.Serializable
 enum class Direction(val step: Int) {
     CLOCKWISE(1), COUNTER_CLOCKWISE(-1);
 

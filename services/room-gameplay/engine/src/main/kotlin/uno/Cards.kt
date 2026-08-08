@@ -6,6 +6,7 @@ package uno
  * reads in the CLI is the same one in the API response and in the event store, with no translation
  * table to get wrong.
  */
+@kotlinx.serialization.Serializable
 enum class Color(val code: String) {
     RED("R"), YELLOW("Y"), GREEN("G"), BLUE("B"), WILD("");
 

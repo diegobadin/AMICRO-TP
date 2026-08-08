@@ -10,6 +10,10 @@ data class Config(
     // Shared with identity until P4's gateway owns validation; see CHANGELOG-design.md.
     val minPlayers: Int,
     val turnTimeoutSeconds: Long,
+    val databaseUrl: String,
+    val databaseUser: String,
+    val databasePassword: String?,
+    val kafkaBrokers: String,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): Config = Config(
@@ -17,6 +21,11 @@ data class Config(
             jwtSecret = env["IDENTITY_JWT_SECRET"] ?: "dev-secret",
             minPlayers = env["ROOM_MIN_PLAYERS"]?.toIntOrNull() ?: 2,
             turnTimeoutSeconds = env["TURN_TIMEOUT_SECONDS"]?.toLongOrNull() ?: 30,
+            databaseUrl = "jdbc:postgresql://${env["DATABASE_HOST"] ?: "localhost"}:" +
+                "${env["DATABASE_PORT"] ?: "5432"}/${env["DATABASE_NAME"] ?: "room_gameplay"}",
+            databaseUser = env["DATABASE_USER"] ?: "room_gameplay",
+            databasePassword = env["ROOM_GAMEPLAY_DB_PASSWORD"],
+            kafkaBrokers = env["KAFKA_BROKERS"] ?: "localhost:9092",
         )
     }
 }

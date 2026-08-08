@@ -1,5 +1,10 @@
+@file:UseSerializers(CardSerializer::class, InstantSerializer::class)
+
 package uno
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseSerializers
 import java.time.Instant
 
 /**
@@ -11,6 +16,7 @@ import java.time.Instant
  * replay rather than recomputed from the current clock, which is what keeps a rebuilt aggregate
  * identical to the one that was served.
  */
+@Serializable
 sealed interface Event {
     val at: Instant
 }
@@ -18,6 +24,8 @@ sealed interface Event {
 /** Events carrying deck order, hand contents or a seed never reach the outbox (§2.2). */
 sealed interface PrivateEvent
 
+@Serializable
+@SerialName("RoomCreated")
 data class RoomCreated(
     val roomType: RoomType,
     val creatorId: String,
@@ -25,6 +33,8 @@ data class RoomCreated(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("PlayerJoined")
 data class PlayerJoined(val playerId: String, val playerCount: Int, override val at: Instant) : Event
 
 /**
@@ -32,8 +42,12 @@ data class PlayerJoined(val playerId: String, val playerCount: Int, override val
  * and the architecture's resource table maps `DELETE /rooms/{id}/players/{pid}` to it. Additive,
  * recorded in CHANGELOG-design.md.
  */
+@Serializable
+@SerialName("PlayerLeft")
 data class PlayerLeft(val playerId: String, val playerCount: Int, override val at: Instant) : Event
 
+@Serializable
+@SerialName("GameStarted")
 data class GameStarted(
     val gameNumber: Int,
     val playerOrder: List<String>,
@@ -44,6 +58,8 @@ data class GameStarted(
     override val at: Instant,
 ) : Event, PrivateEvent
 
+@Serializable
+@SerialName("CardPlayed")
 data class CardPlayed(
     val playerId: String,
     val card: Card,
@@ -55,10 +71,16 @@ data class CardPlayed(
 ) : Event
 
 /** The card's identity stays out of the payload; replay takes it from the seeded deck (§4.1). */
+@Serializable
+@SerialName("CardDrawn")
 data class CardDrawn(val playerId: String, val newCardCount: Int, override val at: Instant) : Event
 
+@Serializable
+@SerialName("TurnPassed")
 data class TurnPassed(val playerId: String, val nextPlayerId: String, override val at: Instant) : Event
 
+@Serializable
+@SerialName("ForcedDraw")
 data class ForcedDraw(
     val targetPlayerId: String,
     val cardCount: Int,
@@ -67,12 +89,20 @@ data class ForcedDraw(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("DirectionReversed")
 data class DirectionReversed(val newDirection: Direction, override val at: Instant) : Event
 
+@Serializable
+@SerialName("TurnTimedOut")
 data class TurnTimedOut(val playerId: String, val autoAction: String, override val at: Instant) : Event
 
+@Serializable
+@SerialName("UnoCallMade")
 data class UnoCallMade(val playerId: String, override val at: Instant) : Event
 
+@Serializable
+@SerialName("ChallengeWindowOpened")
 data class ChallengeWindowOpened(
     val targetPlayerId: String,
     val targetCalledUno: Boolean,
@@ -80,18 +110,24 @@ data class ChallengeWindowOpened(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("ChallengeWindowClosed")
 data class ChallengeWindowClosed(
     val targetPlayerId: String,
     val reason: String,
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("UnoChallengeIssued")
 data class UnoChallengeIssued(
     val challengerId: String,
     val targetPlayerId: String,
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("UnoChallengeResolved")
 data class UnoChallengeResolved(
     val challengerId: String,
     val targetPlayerId: String,
@@ -101,6 +137,8 @@ data class UnoChallengeResolved(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("TurnSkipped")
 data class TurnSkipped(
     val skippedPlayerId: String,
     val nextPlayerId: String,
@@ -108,16 +146,24 @@ data class TurnSkipped(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("DeckRecycled")
 data class DeckRecycled(val newDeckSize: Int, val seed: Long, override val at: Instant) : Event, PrivateEvent
 
+@Serializable
+@SerialName("PlayerDisconnected")
 data class PlayerDisconnected(
     val playerId: String,
     val reconnectionDeadline: Instant,
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("PlayerReconnected")
 data class PlayerReconnected(val playerId: String, override val at: Instant) : Event
 
+@Serializable
+@SerialName("PlayerForfeited")
 data class PlayerForfeited(
     val playerId: String,
     val reason: String,
@@ -125,6 +171,8 @@ data class PlayerForfeited(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("GameCompleted")
 data class GameCompleted(
     val roomType: RoomType,
     val gameNumber: Int,
@@ -135,6 +183,8 @@ data class GameCompleted(
     override val at: Instant,
 ) : Event
 
+@Serializable
+@SerialName("RoomCompleted")
 data class RoomCompleted(
     val roomType: RoomType,
     val finalResults: List<String>,

@@ -1,11 +1,24 @@
-# room-gameplay — placeholder service fragment (test → build → deliver → deploy-staging stub).
-# NOT fully-wired: no integration-staging job, deploy-staging is manual/allow_failure.
+# room-gameplay — event-sourced Uno engine, rooms and moves (P3).
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
 
+# The engine's property and replay suites need nothing, but AC-P3.3 (a failed command leaves no
+# events, no outbox rows and no consumed sequence) cannot be proved against a fake — so the job
+# brings up an ephemeral Postgres and the store suite runs against that. Without TEST_DATABASE_URL
+# the suite fails instead of skipping: a silently-skipped proof is worse than no proof.
 "test:room-gameplay":
   stage: test
   image: gradle:8.8-jdk21
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: room_gameplay
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: room_gameplay
+    TEST_DATABASE_URL: "jdbc:postgresql://postgres:5432/room_gameplay"
+    TEST_DATABASE_USER: room_gameplay
+    TEST_DATABASE_PASSWORD: test
   script:
     - cd services/room-gameplay
     - gradle --no-daemon test

@@ -2,6 +2,7 @@ package uno
 
 import java.time.Instant
 
+@kotlinx.serialization.Serializable
 enum class RoomType { CASUAL, TOURNAMENT }
 enum class RoomStatus { WAITING, IN_PROGRESS, COMPLETED }
 enum class GameStatus { IN_PROGRESS, COMPLETED }

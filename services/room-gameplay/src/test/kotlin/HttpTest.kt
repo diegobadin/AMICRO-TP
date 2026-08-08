@@ -10,7 +10,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private val config = Config(port = 0, jwtSecret = "test-secret", minPlayers = 2, turnTimeoutSeconds = 30)
+// Through fromEnv rather than the constructor, so the defaults the container relies on are the
+// same ones these tests run against.
+private val config = Config.fromEnv(mapOf("IDENTITY_JWT_SECRET" to "test-secret"))
 
 fun token(
     playerId: String = "11111111-1111-1111-1111-111111111111",
