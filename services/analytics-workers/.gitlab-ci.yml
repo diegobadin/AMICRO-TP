@@ -20,7 +20,13 @@
 
 "build:analytics-workers":
   extends: .build-image
-  needs: ["test:analytics-workers", "test:contract:game-completed"]
+  # optional: the contract check only enters the pipeline when the schema or one of the paired
+  # services changes. Editing a shared CI template pulls this build in without it, and a `needs`
+  # on an absent job is a pipeline config error. When the check IS present it still gates.
+  needs:
+    - "test:analytics-workers"
+    - job: "test:contract:game-completed"
+      optional: true
   variables:
     SVC: analytics-workers
   rules:

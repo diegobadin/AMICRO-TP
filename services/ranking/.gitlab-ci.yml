@@ -20,7 +20,13 @@
 
 "build:ranking":
   extends: .build-image
-  needs: ["test:ranking", "test:contract:game-completed"]
+  # optional: the contract check only enters the pipeline when the schema or one of the paired
+  # services changes. Editing a shared CI template pulls this build in without it, and a `needs`
+  # on an absent job is a pipeline config error. When the check IS present it still gates.
+  needs:
+    - "test:ranking"
+    - job: "test:contract:game-completed"
+      optional: true
   variables:
     SVC: ranking
   rules:
