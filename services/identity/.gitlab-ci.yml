@@ -39,11 +39,11 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/identity/**/*", "ci/templates/**/*"]
 
-# ── Phase 2 (fully-wired). These run AUTOMATICALLY on the default branch once the local kind/k3d
-# staging cluster (stood up by gitops/bootstrap/, no cloud) is wired via the $ARGOCD_SERVER /
-# $IDENTITY_STAGING_URL CI variables. Until then the variables are unset and these jobs are simply
-# skipped — the pipeline stays green through deliver. No code change is needed to activate: just set
-# the CI variables.
+# ── Phase 2 (fully-wired). Pinning the built digest into the staging overlay is what makes a
+# from-empty cluster deployable, so it runs whether or not a persistent cluster is wired up; the
+# push-based `argocd sync` half only happens when $ARGOCD_SERVER is set (see .deploy-gitops).
+# It runs on feature branches too, so a drill cluster tracking the branch deploys the branch's own
+# image instead of whatever main last built.
 # needs build:identity too, so the IMAGE/IMAGE_DIGEST dotenv (from the build job) is inherited.
 "deploy-staging:identity":
   extends: .deploy-gitops
@@ -53,8 +53,9 @@
     SVC: identity
     ENV: staging
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $ARGOCD_SERVER'
-      changes: ["services/identity/**/*"]
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - changes: ["services/identity/**/*"]
       when: on_success
 
 # Self-contained GitOps green run (consigna §9): stands up kind + Argo CD inside the CI runner

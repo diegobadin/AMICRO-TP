@@ -7,6 +7,10 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# The project registry is private: without a pull secret every pod on a fresh cluster sits in
+# ImagePullBackOff. Delivered as a SealedSecret by the secrets-<env> app (gitops/secrets/).
+imagePullSecrets: []
+
 replicas: 1
 port: 8085
 healthPath: /health

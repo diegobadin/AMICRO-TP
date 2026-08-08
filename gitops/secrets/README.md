@@ -30,6 +30,10 @@ Sealing is offline (`kubeseal --cert`), so it needs no cluster and cannot accide
 blobs to whatever cluster happens to be up. Argo applies them through the `secrets-<env>` app at
 sync wave -1, ahead of the services that consume them.
 
+Every run rewrites every blob even when the values did not change — sealing draws a fresh session
+key each time. A diff here means "re-sealed", not "rotated"; the decrypted Secret is what to check
+if you need to know whether a value actually moved.
+
 ## If the key is lost
 
 Nothing is unrecoverable, but everything must be re-issued:

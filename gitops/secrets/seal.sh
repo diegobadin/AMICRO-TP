@@ -15,8 +15,8 @@ if [ ! -f "$CERT" ]; then
   exit 1
 fi
 
-# First run generates the plaintexts; later runs read them back, so re-sealing is stable and a
-# cluster rebuilt from git still opens the database it was already using.
+# First run generates the passwords we own; later runs read them back, so re-sealing is stable and
+# a cluster rebuilt from git still opens the database it was already using.
 if [ ! -f "$PLAINTEXT" ]; then
   umask 077
   {
@@ -27,21 +27,37 @@ if [ ! -f "$PLAINTEXT" ]; then
 fi
 set -a; . "$PLAINTEXT"; set +a
 
-seal() { # seal <namespace> <name> <output> <kubectl-create-secret-args...>
-  local ns="$1" name="$2" out="$3"; shift 3
+# The registry credential is issued by GitLab, not by us, so it cannot be regenerated here.
+if [ -z "${REGISTRY_PULL_TOKEN:-}" ]; then
+  echo "ERROR: REGISTRY_PULL_USER/REGISTRY_PULL_TOKEN missing from $PLAINTEXT." >&2
+  echo "       Create a project deploy token with the read_registry scope and add it there." >&2
+  exit 1
+fi
+
+seal() { # seal <output-file> <kubectl-create-secret-args...>
+  local out="$1"; shift
   mkdir -p "$(dirname "$out")"
-  kubectl create secret generic "$name" -n "$ns" --dry-run=client -o yaml "$@" \
-    | kubeseal --cert "$CERT" --format yaml > "$out"
+  kubectl create secret "$@" --dry-run=client -o yaml | kubeseal --cert "$CERT" --format yaml > "$out"
   echo "sealed $out"
 }
 
-seal unoarena-staging identity-secrets "$HERE/staging/identity-secrets.yaml" \
+seal "$HERE/staging/identity-secrets.yaml" \
+  generic identity-secrets -n unoarena-staging \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=IDENTITY_DB_PASSWORD="$IDENTITY_DB_PASSWORD"
 
+# Read-only registry credential (deploy token, read_registry scope): without it every service sits
+# in ImagePullBackOff on a cluster that was just created, because the project registry is private.
+seal "$HERE/staging/registry-pull.yaml" \
+  docker-registry gitlab-registry -n unoarena-staging \
+  --docker-server=registry.gitlab.com \
+  --docker-username="$REGISTRY_PULL_USER" \
+  --docker-password="$REGISTRY_PULL_TOKEN"
+
 # CNPG reads the role password from the postgres namespace, and SealedSecrets are namespace-scoped,
 # so the one plaintext is sealed twice. This copy lives next to the Cluster CR that consumes it.
-seal postgres identity-db-role "$HERE/../platform/postgres/identity-db-role.yaml" \
+seal "$HERE/../platform/postgres/identity-db-role.yaml" \
+  generic identity-db-role -n postgres \
   --type=kubernetes.io/basic-auth \
   --from-literal=username=identity \
   --from-literal=password="$IDENTITY_DB_PASSWORD"
