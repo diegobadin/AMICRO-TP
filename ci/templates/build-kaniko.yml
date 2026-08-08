@@ -4,6 +4,10 @@
 # services/$SVC/Dockerfile, pushes a hybrid tag (<ref-slug>-<short-sha>), and captures the
 # resulting content-addressable DIGEST into a dotenv artifact so downstream jobs (deliver,
 # deploy) pin the SAME built artifact — build once, promote by digest (consigna §5.4 / §6.4).
+#
+# /tmp is excluded from the snapshot: a Gradle build leaves the JVM's /tmp/hsperfdata_root behind
+# and the file vanishes while Kaniko is stat-ing it, which fails the build after a perfectly
+# successful compile. Nothing under /tmp belongs in an image layer anyway.
 
 .build-image:
   stage: build
@@ -22,6 +26,7 @@
       /kaniko/executor \
         --context "$CI_PROJECT_DIR/services/$SVC" \
         --dockerfile "$CI_PROJECT_DIR/services/$SVC/Dockerfile" \
+        --ignore-path=/tmp \
         --destination "$IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA" \
         --digest-file /tmp/digest
     - echo "IMAGE=$IMAGE" >> build.env
