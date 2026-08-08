@@ -23,7 +23,8 @@ Verification drills with their own linked runs: §9.
 `integration-staging:identity` job stands up a **kind** cluster + **Argo CD** inside the CI runner
 (dind), loads the exact image the pipeline built (pulled by digest), lets **Argo deploy `identity`
 from the repo** (`services/identity/chart`), waits for Argo **Synced + Healthy** (the readiness
-gate), then drives the **Client CLI** (`register` → `whoami` → assert). Because the kind cluster is
+gate), then drives the **Client CLI** (`register` → `whoami` → re-login → stale-token `401` →
+`logout` → `seed`, all asserted). Because the kind cluster is
 job-scoped, deploy + smoke share this one job; the `gitops/` Applications + `deploy-staging:identity`
 describe the same GitOps flow against a persistent cluster.
 
@@ -37,7 +38,8 @@ ci/
   templates/                   # reusable hidden jobs (extends:)
     build-kaniko.yml           #   .build-image  — build+push, capture digest
     deploy-gitops.yml          #   .deploy-gitops — pin digest in overlay + argocd sync/wait
-    smoke-cli.yml              #   .smoke-cli    — CLI-driven staging smoke test
+                               #   (the CLI-driven smoke lives in the identity fragment, which
+                               #    stands up its own cluster and dependencies)
   contracts/
     game-completed.schema.json #   published async contract (GameCompleted)
     validate.py                #   producer-conformance + consumer back-compat check
@@ -48,7 +50,7 @@ services/<svc>/                # one folder per deployable (source + Dockerfile 
   chart/                       #   Helm chart (one image = one chart)
   .gitlab-ci.yml               #   the service's stage-spine fragment
 gitops/                        # Argo CD AppProject, app-of-apps, per-svc Applications + overlays, bootstrap
-clients/cli/                   # Client CLI (register/whoami/--json) used by the smoke test
+clients/cli/                   # Client CLI (register/login/whoami/logout/seed, --json) — the smoke harness
 specs/                         # Spec-Driven Development: mission, tech-stack, roadmap, feature spec
 ```
 
@@ -81,7 +83,7 @@ and production point at the same built artifact (build once, promote — consign
 
 | Service | Canned surface |
 |---|---|
-| `identity` ⭐ | **real**: `register`, `login`, `whoami` + `/health` |
+| `identity` ⭐ | **real** (P2): `/auth/register|login|logout|whoami` + `/health`, `/metrics` |
 | `gateway` | `GET /rooms → []` |
 | `spectator` | `GET /spectate → {"spectators":0}` |
 | `room-gameplay` | `GET /rooms/sample/state` |

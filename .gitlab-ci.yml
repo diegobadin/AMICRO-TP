@@ -24,7 +24,6 @@ include:
   # Shared templates (hidden jobs consumed via `extends`)
   - local: ci/templates/build-kaniko.yml
   - local: ci/templates/deploy-gitops.yml
-  - local: ci/templates/smoke-cli.yml
   - local: ci/contracts/contract.gitlab-ci.yml
 
   # Per-service fragments (one image = one chart = one fragment)
