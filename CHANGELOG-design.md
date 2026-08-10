@@ -173,3 +173,29 @@ All 14 Room invariants of §3.2.1 are implemented and property-tested; log-befor
 single database transaction verified against a real Postgres by forcing the outbox insert to fail;
 stale-command rejection is the `412` of §1.2 above, enforced by a unique index rather than argued.
 The one narrowing is §8.6, recorded with its reason.
+
+## 9. Final delivery — P4 deltas (the gateway and the realtime tier)
+
+> The phase that gives the casual loop one entry point and a real event stream
+> (`specs/2026-08-10-p4-gateway-sse/`). As in §8, anything the running system does differently from
+> `docs/architecture/` is recorded here rather than by editing that document.
+>
+> **§8.9 and §8.10 close here**: room-gameplay holds no signing key and owns no NodePort.
+
+| # | Delta | Rationale | Invariant impact |
+|---|-------|-----------|------------------|
+| 9.1 | **The player SSE stream is fed from Redis Streams, not from the outbox relay.** Architecture §2.5 sketches the gateway's push as piggybacked on the response or fed by the relay. | Decision E1. room-gameplay `XADD`s each committed event to `room:{roomId}:events` after the transaction commits; the gateway tails it. This keeps P4 independent of P5 (the relay), gives sub-second delivery, and leaves the outbox untouched for the consumer that owns it. The publish is best-effort and counted (`roomgameplay_stream_publish_failures_total`) — the events are already durable, so a lost frame costs a repaint, never a move. | **None.** Log-before-broadcast is unchanged: the commit still happens first, and Redis is a second, transient copy. |
+| 9.2 | **The SSE entry id is the room's `sequenceNumber`** (`XADD` with an explicit `{seq}-0`). | It makes `Last-Event-ID` a stream position with no lookup table, so resume and per-room ordering are properties of Redis rather than of gateway code. Room sequence numbers are strictly increasing — that is P3's primary key — which is exactly what an explicit XADD id requires. | **Strengthened.** One ordering, enforced in two places by the same number. |
+| 9.3 | **The control channel is folded into the room stream.** Architecture §1.1 lists a separate session-scoped control channel. | `session-invalidated` and the gateway's own `heartbeat`/`resync` frames ride the room stream the player is already holding. A second connection per player would buy nothing in P4, where the room stream is the client's only stream. Control frames are hyphenated and carry no `id`, so they are never mistaken for domain events. | **None.** The kill path of §5.5 is unchanged; only which socket carries it. |
+| 9.4 | **The gateway verifies identity's tokens with the same HS256 key** rather than a public key. | One signer, one verifier — the smallest blast radius a symmetric key has. RS256 + JWKS is the upgrade the day a second verifier exists; it would mean changing identity, which P4 deliberately does not. | **None.** §8.9's two-service key sharing is what this replaces. |
+| 9.5 | **Room membership for the stream is checked once, at subscribe.** | The gateway asks room-gameplay (`GET /rooms/{id}`) rather than keeping a second copy of who is seated. A player who leaves keeps the stream until the room ends, which is safe precisely because the frames are public-only — a stale subscriber learns nothing it could not read from the same endpoint. | **None.** The privacy boundary is the payload filter, not the subscription. |
+| 9.6 | **No rate limiting, no TLS termination at the gateway.** Architecture §2.1 maps four limiter layers to deployables. | P4 makes the gateway an entry point, not yet a policy enforcement point. The layers are described in the architecture and none of the exam's functional requirements depend on them; adding them now would be scope with no demo behind it. | **None.** Nothing is weakened; a documented control is simply not implemented yet. |
+| 9.7 | **The revoked-session set is per pod and in memory.** | Fed by the Redis pub/sub identity has published to since P2, so a killed session loses its stream and its next REST call within a second. A gateway restart forgets it, and a superseded token would be accepted again until it expires — accepted for P4 and written down: room-gameplay still disconnects the player through `identity.session-events`, and the authoritative alternative costs an introspection hop on every request. | **None**, and it is the first time §5.5's kill path is real end to end. |
+| 9.8 | **The CLI narrates events and re-reads state when the player can act**, rather than projecting events onto a local board. | The client holds one authoritative snapshot plus a feed. A second copy of the game on the client is the thing most likely to disagree with the engine, and a board drawn from it showed a turn prompt in the middle of a multi-event batch — inviting the player into a `409`. Reads happen on turn arrival, on a challenge window, when the player's own cards change, and when a gap or heartbeat says the picture cannot be trusted. | **None.** `playable` is still the server's legality check, which is what the board promises. |
+
+**Affirmation.** No bounded-context boundary, aggregate or non-negotiable invariant was weakened.
+The trust boundary moved outward as the architecture always described it (§1.3): the gateway is the
+only holder of client connections and the only validator of sessions, and room-gameplay — now
+`ClusterIP` — trusts headers it can only receive from inside the cluster. The spectator privacy
+boundary is stronger than in P3, not weaker: the room stream carries `publicPayload(event)`, the
+same filter the outbox row goes through, so the RNG seed never reaches a player.

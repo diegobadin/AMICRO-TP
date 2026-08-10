@@ -1,91 +1,114 @@
 # Kickoff — P4: Gateway + Realtime Fan-out (SSE)
 
-> The triad here was written and review-passed on 2026-08-10, in the session that closed P3.
-> Implementation starts in a fresh session. This file is the bridge: everything the next session
-> needs that is not already in `requirements.md` / `plan.md` / `validation.md`.
+> Written 2026-08-10 when the triad was, rewritten the same day when F0–F6 landed. This is the
+> bridge between sessions: what is done, what is left, and everything the next session needs that
+> is not already in `requirements.md` / `plan.md` / `validation.md`.
 
 ## Where things stand
 
-- `main` = `ea1ab15` (P3 closure + the roadmap handoff). Branch `feat/p4-gateway-sse` exists and
-  holds only these four files.
-- `services/gateway/` is still the P0 placeholder: `handle(method, path)` with a canned
-  `/health` and an empty `GET /rooms`. Its chart, Dockerfile, overlay and CI fragment exist —
-  but the chart's `service.yaml` has **no** `type`/`nodePort` support and no ServiceMonitor, and
-  `deploy-staging:gateway` is still the manual stub. F1 fixes all four by copying identity's.
-- identity already publishes `SessionInvalidated` on **both** transports
-  (`services/identity/src/events.ts`): Redis `session:invalidated:{playerId}` — written for this
-  gateway and with **no subscriber until F2** — and Kafka `identity.session-events`, which
-  room-gameplay already consumes. Nothing in identity has to change this phase.
-- room-gameplay has **no Redis client and no Redis config** today (`Config.kt` carries
-  `IDENTITY_JWT_SECRET`, DB and Kafka only). F3 adds both.
-- The CLI's poll loop is a closure inside `interactive()` (`clients/cli/src/rooms.ts`) and every
-  update funnels through one `adopt(next: GameView)`. F5 replaces the closure and **reshapes
-  `adopt`** — frames are events, not whole views — so "re-wired, not rewritten" is true of `play`'s
-  command handling and the board, not of `adopt` itself. Budget for that honestly.
-- No kind cluster is guaranteed to be running. Recreate with
-  `TARGET_REVISION=feat/p4-gateway-sse GITOPS_REPO_TOKEN="$(cat ~/.amicro_gitlab_token)" gitops/bootstrap/install.sh`.
-  Expect ~35 min from empty on a cold image cache. **No `kind-cluster.yaml` change is needed this
-  phase** — `30080` is already published, which is why the gateway takes that port and not a third.
+Branch `feat/p4-gateway-sse`, **eight commits, not pushed**. `main` is still `ea1ab15` (P3).
 
-## Copy identity, do not reinvent
+| Phase | State |
+|-------|-------|
+| F0 triad | done — `123152d` |
+| F1 gateway made real | done — `58465ce` (route table, HS256 validation, header injection, `/metrics`, chart, CI, `gateway-secrets`) |
+| F2 proxy + session kill | done — `1b9fa94` |
+| F3 publisher | done — `1c1f16c` (`Streams.kt`, entry id = `sequenceNumber`, 6 h TTL, failure counter) |
+| F4 SSE endpoint | done — `a030e28` (replay, `resync`, heartbeat, `session-invalidated`) |
+| F6 the collapse | done — `b39d6ae` — **landed before F5**, see the plan for why |
+| F5 CLI on the stream | done — `0da0926` |
+| review pass | done — `ec0944a`, recorded in `plan.md` |
+| **F7 `bot --casual`** | **next** |
+| **F8 drill + closure** | after F7 |
 
-| Concern | Where to copy from |
-|---|---|
-| Pure `handle`/route shape, testable without sockets | `services/identity/src/app.ts` |
-| Redis client that fails fast instead of queueing | `services/identity/src/cache-redis.ts` (`enableOfflineQueue: false`, an `error` listener, every op swallows-and-counts) |
-| JWT verify with `jose` | `services/identity/src/sessions.ts` `resolve()` |
-| Metrics naming + where counters are incremented | `services/identity/src/metrics.ts` + `server.ts` |
-| Chart: `imagePullSecrets`, `startupProbe`, ServiceMonitor, `service.type`/`nodePort` | `services/identity/chart/` |
-| Sealed secret + digest pin + overlay shape | `gitops/apps/identity/overlays/staging/values.yaml`, `gitops/secrets/seal.sh` |
-| A real `deploy-staging` job | `services/room-gameplay/.gitlab-ci.yml` |
+Tests: gateway 44, CLI 33, room-gameplay 61 (+ `gradle check`). All green at `ec0944a`.
 
-## Traps this phase can walk into
+## What is left
 
-- **`integration-staging:identity` must not be touched.** It builds its own Application with
-  **inline** helm values (`service: {type: NodePort, nodePort: 30080}`), so flipping the *staging
-  overlay* to `ClusterIP` does not affect it — as long as identity's routes and the CLI's
-  `UNOARENA_API_URL` semantics stay put. If that job needs an edit, something went wrong in F6.
-- **Redis stream ids are explicit.** `XADD room:{id}:events {seq}-0 …` only works while the room's
-  sequence numbers are strictly increasing (they are — it is P3's PK). A retry that re-adds an
-  existing id fails with `ERR The ID specified in XADD is equal or smaller`; that must be counted,
-  not retried into a loop.
-- **`XADD` goes *after* the commit, never inside the transaction.** Putting it inside would make a
-  Redis outage roll back a legal move — the exact inversion of log-before-broadcast.
-- **Publish `publicPayload(event)`, not `encodeEvent(event)`** (`Outbox.kt`). `GameStarted` and
-  `DeckRecycled` carry the RNG seed; the raw encoding on a player-visible stream hands out the deck
-  order. The `leaksPrivateData` test already exists — point it at the stream too.
-- **Node 20 has no `EventSource`.** Do not add a polyfill dependency; D7's reader over
-  `fetch`'s `ReadableStream` is smaller and can send `Authorization`, which `EventSource` cannot.
-- **Read the baseline, then subscribe *from that seq*** (D15). Subscribing at the tail and reading
-  the state afterwards silently drops whatever committed in between — invisible in a hand-played
-  test, and a frozen board in a two-process drill.
-- **Do not let the client do the player's job** (P3's drill lesson). The bot must *sometimes forget*
-  to call Uno! (D13's `--forget-uno`), or the challenge mechanic is never exercised again.
-- **Start the two drill processes simultaneously.** P3's convergence rule (lowest room id wins)
-  depends on both sides applying it at the same time; starting one after the other hides races.
-- **First push of the branch:** `git push -o ci.skip` (a new branch evaluates `rules:changes` as
-  all-changed → a full 30-job pipeline for nothing). CI pushes digest-pin commits back to the
-  branch, so `git pull --rebase` before every local commit.
-- **Argo self-heals fault injection within seconds.** For the Redis-outage bite test, suspend both
-  `unoarena-root` and the child app, or Argo scales Redis straight back up.
+**F7 — `bot --casual`** (plan D13). A subcommand of the same CLI and the same image: pick uniformly
+among the server-marked `playable` indices, declare a random colour for wilds, challenge whenever a
+window names someone else, and call Uno! when a play leaves it at one card *except* with probability
+`--forget-uno` (default `0.25`) — a bot that never forgets deletes the challenge mechanic from every
+drill. `--seed` makes a run reproducible. Output is the §6 contract: one JSON line per action, a
+final summary line, non-zero exit on failure. `clients/cli/scripts/casual-drill.js` is the shape to
+follow, and the bot should reuse `follow()` from `src/stream.ts` rather than growing a second client.
 
-## Suggested first moves
+**F8 — the drill and the closure.** `kind delete cluster` → `install.sh` → AC-P4.9 probes → a full
+casual game through the gateway; the session-kill drill (AC-P4.7); the Redis-outage bite test;
+transcripts into `validation.md`; `README.md` §9 evidence; `ESTADO-FINAL.md`; roadmap marked
+**SHIPPED** with a handoff block for P5.
 
-1. `git checkout feat/p4-gateway-sse` and read the triad end to end.
-2. F1 before anything clever: the gateway is a placeholder today, and getting it deployed, pinned,
-   scraped and Healthy while it still does nothing removes every plumbing question from the phases
-   that matter.
-3. F2 and F3 are independent — the proxy and the publisher touch different repos' worth of code.
-   Do F3 second anyway: F4 has nothing to read until events are in Redis.
-4. Resist landing F6 early. Everything before it is additive and reversible; F6 is the one-way door
-   (R3), and it should cross only when the proxy tests are green.
+Already written, so F8 does not have to: **`CHANGELOG-design.md` §9** (the eight P4 deltas, with
+§8.9/§8.10 closed) and `clients/cli/README.md`.
 
-## Open questions for the implementer (not blocking)
+## Running the whole thing locally
 
-- Whether the gateway's per-room tail should use `XREAD` on the raw stream (D4) or a consumer group
-  per pod. Groups buy per-pod acknowledgement nobody needs here; pick `XREAD` unless F4 shows
-  otherwise, and record it as a D-n either way.
-- Where the membership check's result is cached, if at all (D10 re-reads `GET /rooms/{id}` on every
-  subscribe — fine at demo scale, and a cache is a second source of truth about who is in a room).
-- Whether `bot --casual` should share `play`'s interactive loop with a scripted input source or run
-  its own loop. Decide in F7 when both shapes are concrete.
+Faster than a cluster for anything that is not the empty-cluster drill, and it is how F3–F6 were
+verified. Throwaway containers, three processes, one shared secret:
+
+```bash
+docker run -d --rm --name p4-pg -e POSTGRES_USER=room_gameplay -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=room_gameplay -p 55432:5432 postgres:16-alpine
+docker run -d --rm --name p4-redis -p 63790:6379 redis:7.4.10-alpine
+docker exec p4-pg psql -U room_gameplay -c "create database identity"
+
+# room-gameplay (takes ~45 s to compile and boot)
+cd services/room-gameplay && DATABASE_HOST=localhost DATABASE_PORT=55432 \
+  DATABASE_NAME=room_gameplay DATABASE_USER=room_gameplay ROOM_GAMEPLAY_DB_PASSWORD=test \
+  REDIS_URL=redis://localhost:63790 PORT=8081 ROOM_MIN_PLAYERS=2 KAFKA_BROKERS=no-broker:9092 \
+  ./gradlew --no-daemon -Pkotlin.compiler.execution.strategy=in-process run
+
+# identity
+cd services/identity && DATABASE_HOST=localhost DATABASE_PORT=55432 DATABASE_NAME=identity \
+  DATABASE_USER=room_gameplay IDENTITY_DB_PASSWORD=test IDENTITY_JWT_SECRET=local-p4-secret \
+  REDIS_URL=redis://localhost:63790 KAFKA_BROKERS=no-broker:9092 PORT=8085 node dist/server.js
+
+# gateway — the same secret identity signs with
+cd services/gateway && PORT=8099 IDENTITY_URL=http://localhost:8085 \
+  ROOM_GAMEPLAY_URL=http://localhost:8081 REDIS_URL=redis://localhost:63790 \
+  IDENTITY_JWT_SECRET=local-p4-secret node dist/server.js
+
+# then, from the repo root
+export UNOARENA_API_URL=http://localhost:8099
+node clients/cli/scripts/casual-drill.js /tmp/a.json /tmp/b.json   # after registering two players
+```
+
+`KAFKA_BROKERS=no-broker:9092` is deliberate: both services log a counted failure and keep serving,
+which is the degradation P2 and P3 already prove. Kill the processes by port (`ss -lptn 'sport =
+:8099'`) — a `pkill -f "dist/server.js"` also matches the container's own process.
+
+The Kotlin suites need both throwaway containers:
+`TEST_DATABASE_URL=jdbc:postgresql://localhost:55432/room_gameplay TEST_DATABASE_USER=room_gameplay
+TEST_DATABASE_PASSWORD=test TEST_REDIS_URL=redis://localhost:63790 ./gradlew test`.
+
+## Traps this phase already walked into
+
+Each of these cost real time and is now guarded by a test — do not undo them by accident.
+
+- **A Redis subscription made before the socket is ready never exists.** `psubscribe` on a client
+  with `enableOfflineQueue: false` is rejected outright and the process serves on, deaf. Subscribe
+  on `ready` (which re-fires after a reconnect), on a connection of its own.
+- **Never render a board from a locally-applied state.** One command commits several events, so
+  mid-batch the client legitimately believes it is its turn. That is how a player is handed a `409`.
+- **The drill harness dedupes on the board's `seq`,** not on the trailing output block: feed lines
+  grow the block under a turn prompt, and it re-types the same command.
+- **Node holds response headers until the first body byte** — an SSE response needs
+  `res.flushHeaders()` or a subscriber with nothing to replay leaves the client's `fetch` unresolved.
+- **Jedis 8 has no `JedisPooled`** — it is `RedisClient.create(URI)` over `UnifiedJedis`. `javap` on
+  the jar in `~/.gradle/caches` settles this kind of question faster than guessing.
+- **`XADD` goes after the commit, never inside the transaction**, and publishes
+  `publicPayload(event)` — the raw encoding leaks the RNG seed, which is the deck.
+- **Start the two drill processes simultaneously**, never one after the other (P3's lesson, still
+  true).
+
+## Working rules that still apply
+
+- First push of the branch: `git push -o ci.skip`; CI pushes digest-pin commits back, so
+  `git pull --rebase` before every local commit. Any change under `ci/templates/**` pulls all ten
+  services into the pipeline.
+- `test:room-gameplay` now needs a Redis service as well as Postgres — already in its CI fragment.
+- Argo reverts fault injection within seconds; suspend **both** `unoarena-root` and the child app
+  for the Redis-outage drill.
+- No kind cluster recreation is needed for P4: the gateway took the already-published `30080`.
+  On a *running* cluster the gateway's Service may fail to claim the port until identity's app syncs
+  to `ClusterIP`; Argo retries. From empty there is no conflict at all.

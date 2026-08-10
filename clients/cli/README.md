@@ -58,18 +58,27 @@ not apply to an action are `null` rather than absent.
 
 ## What is deliberately not here yet
 
-- **A real live event feed.** §5.C's feed is derived by diffing consecutive polls of the game
-  state, because P3's live view is polling with `If-None-Match` (decision E4). Two things happening
-  inside one poll interval collapse into a single line. **P4 replaces the polling loop with SSE**
-  over the same endpoint and the feed becomes the actual event stream.
-- **`spectate`, `bot`, `tournament`** — P4, P6, P7.
+- **`spectate`, `bot`, `tournament`** — P4 (bot), P6, P7.
 - **Lazy timers have a visible consequence.** P3 has no timer worker: deadlines live in the room
   aggregate and are evaluated when the *next* command arrives (decision E2). A turn that timed out
   while nobody was playing is settled the moment anyone acts — correct, but it can land late. P5's
   timer worker closes that gap; until then, a player who walks away is only penalised once someone
   else moves.
-- **Token refresh** and the `session_superseded` stream notice. A superseded session surfaces as a
-  `401`; inside `play` that ends the session with `error_code: "session_superseded"`.
+- **Token refresh.** A session that is superseded ends `play` with
+  `error_code: "session_superseded"` — from the stream's control frame if one is open, and from the
+  next `401` otherwise.
+
+## The live view (§5.C)
+
+`play` holds one SSE connection to `GET /rooms/{id}/stream` and prints one feed line per event, in
+the room's own order. It re-reads `GET /rooms/{id}/games/{n}` — the same endpoint P3 polled — only
+when the player can act on the answer: the turn arrives, a challenge window opens on someone else,
+their own cards change, the game starts or ends, or a gap, a `resync` frame or a heartbeat says the
+picture cannot be trusted. `state` asks for a fresh read, so it is always the room as it is now.
+
+The board is only ever drawn from a state the server sent. One command commits several events (a
+`+2` is `CardPlayed`, `ForcedDraw`, `TurnSkipped`), and a client drawing from its own running total
+would show a turn prompt in the middle of a batch that is still moving the turn on.
 
 ## Configuration
 
