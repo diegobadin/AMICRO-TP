@@ -5,9 +5,16 @@ WORKDIR /app
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY engine ./engine
 COPY src ./src
-# -XX:-UsePerfData: the JVM writes /tmp/hsperfdata_root/<pid> and deletes it on exit, which
-# races Kaniko's filesystem snapshot and fails the image build after a successful compile.
-RUN GRADLE_OPTS="-XX:-UsePerfData" gradle --no-daemon -Dorg.gradle.jvmargs=-XX:-UsePerfData installDist
+# Two JVM temp files vanish mid-build and both fail Kaniko's snapshot *after* a successful compile:
+#   -XX:-UsePerfData        stops /tmp/hsperfdata_root/<pid>
+#   execution.strategy      stops /root/.kotlin/daemon/*.run — `gradle --no-daemon` does not cover
+#                           this one, because the Kotlin compiler spawns a daemon of its own.
+# The rm is belt and braces: whatever is left there is not wanted in the image either.
+RUN GRADLE_OPTS="-XX:-UsePerfData" gradle --no-daemon \
+      -Dorg.gradle.jvmargs=-XX:-UsePerfData \
+      -Pkotlin.compiler.execution.strategy=in-process \
+      installDist \
+ && rm -rf /root/.kotlin /root/.gradle/daemon
 
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
