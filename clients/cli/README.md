@@ -73,10 +73,10 @@ not apply to an action are `null` rather than absent.
 
 ## Configuration
 
-- `UNOARENA_API_URL` — the `identity` target (e.g. `http://localhost:30080`). **Never hardcoded.**
-- `UNOARENA_ROOMS_URL` — the `room-gameplay` target (e.g. `http://localhost:30081`).
-  **Two URLs is a P3-only shape**: there is no gateway yet, so each service owns a NodePort. P4's
-  gateway becomes the single entry point and this variable goes away.
+- `UNOARENA_API_URL` — the gateway, and the only address the CLI knows (e.g.
+  `http://localhost:30080`). **Never hardcoded.** It routes `/auth/**` to identity and `/rooms/**`
+  to room-gameplay, and serves the room stream itself; neither service is reachable from outside
+  the cluster.
 - `UNOARENA_SESSION` — optional session-file path (default `~/.unoarena/session.json`). One file per
   session means one process equals one player identity, as the checkpoint requires.
 - `UNOARENA_POLL_MS` — poll interval inside `play` (default `1000`).
@@ -87,7 +87,6 @@ not apply to an action are `null` rather than absent.
 # Native
 npm install && npm run build
 export UNOARENA_API_URL=http://localhost:30080
-export UNOARENA_ROOMS_URL=http://localhost:30081
 
 UNOARENA_SESSION=/tmp/a.json node dist/cli.js register --user alice --pass pw
 UNOARENA_SESSION=/tmp/a.json node dist/cli.js play --casual     # terminal 1
@@ -97,7 +96,7 @@ UNOARENA_SESSION=/tmp/b.json node dist/cli.js play --casual     # terminal 2 —
 
 # Docker
 docker build -t unoarena-cli .
-docker run --rm -e UNOARENA_API_URL=... -e UNOARENA_ROOMS_URL=... unoarena-cli room list --json
+docker run --rm -e UNOARENA_API_URL=... unoarena-cli room list --json
 ```
 
 Two `play --casual` processes started at the same moment would each create a room and then wait for

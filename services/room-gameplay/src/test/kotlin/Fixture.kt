@@ -1,6 +1,7 @@
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -25,6 +26,16 @@ val BOB = "22222222-2222-2222-2222-222222222222"
 val CAROL = "33333333-3333-3333-3333-333333333333"
 
 val testJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * What the gateway puts on a request once it has validated the token. The session id is derived
+ * from the player so a test can tell two callers apart; nothing downstream reads it beyond
+ * requiring that it is there.
+ */
+fun HttpRequestBuilder.asPlayer(playerId: String = ALICE, sessionId: String = "session-$playerId") {
+    header(PLAYER_HEADER, playerId)
+    header(SESSION_HEADER, sessionId)
+}
 
 fun testPool(): HikariDataSource {
     val url = System.getenv("TEST_DATABASE_URL")
@@ -79,23 +90,23 @@ fun ApplicationTestBuilder.wire(dataSource: HikariDataSource, rooms: Rooms? = nu
 
 suspend fun HttpClient.createRoom(player: String, maxPlayers: Int = 10, key: String? = null): HttpResponse =
     post("/rooms") {
-        header("Authorization", "Bearer ${token(playerId = player)}")
+        asPlayer(player)
         key?.let { header("Idempotency-Key", it) }
         contentType(ContentType.Application.Json)
         setBody("""{"maxPlayers":$maxPlayers}""")
     }
 
 suspend fun HttpClient.joinRoom(roomId: String, player: String): HttpResponse =
-    post("/rooms/$roomId/players/$player") { header("Authorization", "Bearer ${token(playerId = player)}") }
+    post("/rooms/$roomId/players/$player") { asPlayer(player) }
 
 suspend fun HttpClient.gameView(roomId: String, player: String): GameView =
     testJson.decodeFromString(
-        get("/rooms/$roomId/games/1") { header("Authorization", "Bearer ${token(playerId = player)}") }.bodyAsText(),
+        get("/rooms/$roomId/games/1") { asPlayer(player) }.bodyAsText(),
     )
 
 suspend fun HttpClient.submitMove(roomId: String, player: String, body: String, ifMatch: Int?): HttpResponse =
     post("/rooms/$roomId/games/1/moves") {
-        header("Authorization", "Bearer ${token(playerId = player)}")
+        asPlayer(player)
         ifMatch?.let { header("If-Match", "\"$it\"") }
         contentType(ContentType.Application.Json)
         setBody(body)

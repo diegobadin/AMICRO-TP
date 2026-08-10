@@ -131,7 +131,7 @@ class MovesHttpTest {
         val seq = client.view(roomId, alice).sequenceNumber
 
         val unchanged = client.get("/rooms/$roomId/games/1") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             header("If-None-Match", "\"$seq\"")
         }
         assertEquals(HttpStatusCode.NotModified, unchanged.status)
@@ -140,7 +140,7 @@ class MovesHttpTest {
         client.move(roomId, client.view(roomId, alice).currentPlayerId!!, """{"type":"draw_card"}""", ifMatch = seq)
 
         val changed = client.get("/rooms/$roomId/games/1") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             header("If-None-Match", "\"$seq\"")
         }
         assertEquals(HttpStatusCode.OK, changed.status)
@@ -152,7 +152,7 @@ class MovesHttpTest {
         val roomId = client.startedRoom()
         val aliceHand = client.view(roomId, alice).hand
         val bobResponse = client.get("/rooms/$roomId/games/1") {
-            header("Authorization", "Bearer ${token(playerId = bob)}")
+            asPlayer(bob)
         }.bodyAsText()
         val bobView: GameView = json.decodeFromString(bobResponse)
 
@@ -179,7 +179,7 @@ class MovesHttpTest {
         wire()
         val roomId = client.startedRoom()
         val res = client.get("/rooms/$roomId/games/1") {
-            header("Authorization", "Bearer ${token(playerId = "99999999-9999-9999-9999-999999999999")}")
+            asPlayer("99999999-9999-9999-9999-999999999999")
         }
         assertEquals(HttpStatusCode.NotFound, res.status)
     }

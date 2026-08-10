@@ -1,26 +1,12 @@
-import com.auth0.jwt.JWT
-import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
-import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-
-fun token(
-    playerId: String = "11111111-1111-1111-1111-111111111111",
-    sessionId: String = "22222222-2222-2222-2222-222222222222",
-    secret: String = config.jwtSecret,
-    expiresAt: Date = Date(System.currentTimeMillis() + 60_000),
-): String = JWT.create()
-    .withSubject(playerId)
-    .withClaim("sid", sessionId)
-    .withExpiresAt(expiresAt)
-    .sign(Algorithm.HMAC256(secret))
 
 class HttpTest {
 
@@ -58,31 +44,34 @@ class HttpTest {
     }
 
     @Test
-    fun `a room read without a token is rejected`() = testApplication {
+    fun `a room read with no caller at all is rejected`() = testApplication {
         wire()
         assertEquals(HttpStatusCode.Unauthorized, client.get("/rooms").status)
     }
 
+    /**
+     * The one that would have caught a half-finished trust flip: this service no longer holds a
+     * signing key, so a bearer token means nothing to it. If this ever returns 200, something is
+     * still validating JWTs and the gateway is not the only way in.
+     */
     @Test
-    fun `a token signed by another cluster's secret is rejected`() = testApplication {
+    fun `a bearer token is not a way in — only the gateway's headers are`() = testApplication {
         wire()
-        val res = client.get("/rooms") { header("Authorization", "Bearer ${token(secret = "someone-else")}") }
+        val res = client.get("/rooms") { header("Authorization", "Bearer whatever.a.client.sends") }
         assertEquals(HttpStatusCode.Unauthorized, res.status)
     }
 
     @Test
-    fun `an expired token is rejected`() = testApplication {
+    fun `half the identity is no identity`() = testApplication {
         wire()
-        val expired = token(expiresAt = Date(System.currentTimeMillis() - 1_000))
-        val res = client.get("/rooms") { header("Authorization", "Bearer $expired") }
+        val res = client.get("/rooms") { header(PLAYER_HEADER, ALICE) }
         assertEquals(HttpStatusCode.Unauthorized, res.status)
     }
 
     @Test
-    fun `a valid identity token is accepted`() = testApplication {
+    fun `the gateway's headers are accepted`() = testApplication {
         wire()
-        val res = client.get("/rooms") { header("Authorization", "Bearer ${token()}") }
-        assertEquals(HttpStatusCode.OK, res.status)
+        assertEquals(HttpStatusCode.OK, client.get("/rooms") { asPlayer(ALICE) }.status)
     }
 
     @Test

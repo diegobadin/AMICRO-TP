@@ -58,7 +58,7 @@ class RoomsHttpTest {
         assertEquals(HttpStatusCode.Created, first.status)
         assertEquals(HttpStatusCode.OK, second.status, "a replay is not a creation")
         assertEquals(roomIdOf(first.bodyAsText()), roomIdOf(second.bodyAsText()))
-        assertEquals(1, client.get("/rooms") { header("Authorization", "Bearer ${token(playerId = alice)}") }
+        assertEquals(1, client.get("/rooms") { asPlayer(alice) }
             .bodyAsText().split("\"roomId\"").size - 1, "only one room exists")
     }
 
@@ -75,9 +75,9 @@ class RoomsHttpTest {
     fun `joining twice is refused the second time`() = testApplication {
         wire()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        val join = client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        val join = client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
         assertEquals(HttpStatusCode.Created, join.status)
-        val again = client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        val again = client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
         assertEquals(HttpStatusCode.Conflict, again.status)
         assertTrue(again.bodyAsText().contains("already_joined"))
     }
@@ -87,8 +87,8 @@ class RoomsHttpTest {
         wire()
         // minPlayers is 2, so bob's join auto-starts the game (E3).
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
-        val late = client.post("/rooms/$roomId/players/$carol") { header("Authorization", "Bearer ${token(playerId = carol)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
+        val late = client.post("/rooms/$roomId/players/$carol") { asPlayer(carol) }
         assertEquals(HttpStatusCode.Conflict, late.status)
         assertTrue(late.bodyAsText().contains("room_already_started"))
     }
@@ -97,7 +97,7 @@ class RoomsHttpTest {
     fun `the game starts by itself once the room has enough players`() = testApplication {
         wire()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        val joined = client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        val joined = client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
         assertTrue(joined.bodyAsText().contains(""""status":"IN_PROGRESS""""), joined.bodyAsText())
         assertTrue(joined.bodyAsText().contains(""""gameNumber":1"""))
     }
@@ -106,9 +106,9 @@ class RoomsHttpTest {
     fun `leaving is idempotent`() = testApplication {
         wire()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
         repeat(2) {
-            val res = client.delete("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+            val res = client.delete("/rooms/$roomId/players/$bob") { asPlayer(bob) }
             assertEquals(HttpStatusCode.NoContent, res.status, "attempt $it")
         }
     }
@@ -118,9 +118,9 @@ class RoomsHttpTest {
         wire()
         val open = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
         val started = roomIdOf(client.createRoom(carol, maxPlayers = 4).bodyAsText())
-        client.post("/rooms/$started/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$started/players/$bob") { asPlayer(bob) }
 
-        val listed = client.get("/rooms") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText()
+        val listed = client.get("/rooms") { asPlayer(alice) }.bodyAsText()
         assertTrue(listed.contains(open), "a waiting room should be listed")
         assertTrue(!listed.contains(started), "a room already playing is not joinable")
     }
@@ -129,7 +129,7 @@ class RoomsHttpTest {
     fun `a room that does not exist is a 404`() = testApplication {
         wire()
         val res = client.get("/rooms/44444444-4444-4444-4444-444444444444") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
         }
         assertEquals(HttpStatusCode.NotFound, res.status)
     }
@@ -138,7 +138,7 @@ class RoomsHttpTest {
     fun `a player cannot act on someone else's membership`() = testApplication {
         wire()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        val res = client.post("/rooms/$roomId/players/$carol") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        val res = client.post("/rooms/$roomId/players/$carol") { asPlayer(bob) }
         assertEquals(HttpStatusCode.Forbidden, res.status)
     }
 
@@ -146,7 +146,7 @@ class RoomsHttpTest {
     fun `starting a game explicitly needs enough players`() = testApplication {
         wire()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        val tooEarly = client.post("/rooms/$roomId/games") { header("Authorization", "Bearer ${token(playerId = alice)}") }
+        val tooEarly = client.post("/rooms/$roomId/games") { asPlayer(alice) }
         assertEquals(HttpStatusCode.Conflict, tooEarly.status)
         assertTrue(tooEarly.bodyAsText().contains("not_enough_players"))
     }
@@ -163,7 +163,7 @@ class RoomsHttpTest {
         val before = client.get("/metrics").bodyAsText()
 
         val left = client.delete("/rooms/$roomId/players/$bob") {
-            header("Authorization", "Bearer ${token(playerId = bob)}")
+            asPlayer(bob)
         }
         assertEquals(HttpStatusCode.NoContent, left.status)
         assertTrue(dataSource.eventTypes(roomId).contains("GameCompleted"), "leaving a two-player game ends it")
@@ -182,7 +182,7 @@ class RoomsHttpTest {
         wire()
         val before = client.get("/metrics").bodyAsText()
         val roomId = roomIdOf(client.createRoom(alice, maxPlayers = 4).bodyAsText())
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
         val after = client.get("/metrics").bodyAsText()
 
         fun value(body: String, metric: String) =

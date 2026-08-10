@@ -51,15 +51,15 @@ class DeadlinesTest {
         application { module(config, rooms) }
 
         val created = client.post("/rooms") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             contentType(ContentType.Application.Json)
             setBody("""{"maxPlayers":2}""")
         }
         val roomId = Regex(""""roomId":"([^"]+)"""").find(created.bodyAsText())!!.groupValues[1]
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
 
         val before: GameView = json.decodeFromString(
-            client.get("/rooms/$roomId/games/1") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText(),
+            client.get("/rooms/$roomId/games/1") { asPlayer(alice) }.bodyAsText(),
         )
         val waiting = if (before.currentPlayerId == alice) bob else alice
 
@@ -67,7 +67,7 @@ class DeadlinesTest {
         // ago; the expiry runs first, so by the time it is judged the turn is theirs.
         clock = clock.plusSeconds(31)
         val res = client.post("/rooms/$roomId/games/1/moves") {
-            header("Authorization", "Bearer ${token(playerId = waiting)}")
+            asPlayer(waiting)
             header("If-Match", "\"${before.sequenceNumber}\"")
             contentType(ContentType.Application.Json)
             setBody("""{"type":"draw_card"}""")
@@ -91,21 +91,21 @@ class DeadlinesTest {
         // Straight to the engine-shaped path: play until someone is at one card would take a whole
         // game, so this drives the room through the same submit() the routes use.
         val created = client.post("/rooms") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             contentType(ContentType.Application.Json)
             setBody("""{"maxPlayers":2}""")
         }
         val id = Regex(""""roomId":"([^"]+)"""").find(created.bodyAsText())!!.groupValues[1]
-        client.post("/rooms/$id/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$id/players/$bob") { asPlayer(bob) }
 
         var view: GameView = json.decodeFromString(
-            client.get("/rooms/$id/games/1") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText(),
+            client.get("/rooms/$id/games/1") { asPlayer(alice) }.bodyAsText(),
         )
         var guard = 0
         while (view.status == "IN_PROGRESS" && guard++ < 2000) {
             val actor = view.currentPlayerId!!
             val mine: GameView = json.decodeFromString(
-                client.get("/rooms/$id/games/1") { header("Authorization", "Bearer ${token(playerId = actor)}") }.bodyAsText(),
+                client.get("/rooms/$id/games/1") { asPlayer(actor) }.bodyAsText(),
             )
             if (log(id).contains("ChallengeWindowOpened")) break
             val body = when {
@@ -118,14 +118,14 @@ class DeadlinesTest {
                 else -> """{"type":"pass"}"""
             }
             client.post("/rooms/$id/games/1/moves") {
-                header("Authorization", "Bearer ${token(playerId = actor)}")
+                asPlayer(actor)
                 header("If-Match", "\"${mine.sequenceNumber}\"")
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }
             clock = clock.plusSeconds(1)
             view = json.decodeFromString(
-                client.get("/rooms/$id/games/1") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText(),
+                client.get("/rooms/$id/games/1") { asPlayer(alice) }.bodyAsText(),
             )
         }
 
@@ -133,10 +133,10 @@ class DeadlinesTest {
         // Past the five-second window; the next command has to close it first.
         clock = clock.plusSeconds(CHALLENGE_WINDOW + 1)
         val current: GameView = json.decodeFromString(
-            client.get("/rooms/$id/games/1") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText(),
+            client.get("/rooms/$id/games/1") { asPlayer(alice) }.bodyAsText(),
         )
         client.post("/rooms/$id/games/1/moves") {
-            header("Authorization", "Bearer ${token(playerId = current.currentPlayerId!!)}")
+            asPlayer(current.currentPlayerId!!)
             header("If-Match", "\"${current.sequenceNumber}\"")
             contentType(ContentType.Application.Json)
             setBody("""{"type":"draw_card"}""")
@@ -152,12 +152,12 @@ class DeadlinesTest {
         application { module(config, rooms) }
 
         val created = client.post("/rooms") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             contentType(ContentType.Application.Json)
             setBody("""{"maxPlayers":4}""")
         }
         val roomId = Regex(""""roomId":"([^"]+)"""").find(created.bodyAsText())!!.groupValues[1]
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
 
         val invalidations = SessionInvalidations(rooms, store)
         val event = SessionInvalidated(playerId = bob, oldSessionId = "session-1", reason = "superseded")
@@ -189,21 +189,21 @@ class DeadlinesTest {
         application { module(config, rooms) }
 
         val created = client.post("/rooms") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
+            asPlayer(alice)
             contentType(ContentType.Application.Json)
             setBody("""{"maxPlayers":2}""")
         }
         val roomId = Regex(""""roomId":"([^"]+)"""").find(created.bodyAsText())!!.groupValues[1]
-        client.post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
+        client.post("/rooms/$roomId/players/$bob") { asPlayer(bob) }
 
         rooms.submit(UUID.fromString(roomId), DisconnectPlayer(bob, "superseded"), null)
         clock = clock.plusSeconds(61)
 
         val view: GameView = json.decodeFromString(
-            client.get("/rooms/$roomId/games/1") { header("Authorization", "Bearer ${token(playerId = alice)}") }.bodyAsText(),
+            client.get("/rooms/$roomId/games/1") { asPlayer(alice) }.bodyAsText(),
         )
         client.post("/rooms/$roomId/games/1/moves") {
-            header("Authorization", "Bearer ${token(playerId = view.currentPlayerId!!)}")
+            asPlayer(view.currentPlayerId!!)
             header("If-Match", "\"${view.sequenceNumber}\"")
             contentType(ContentType.Application.Json)
             setBody("""{"type":"draw_card"}""")

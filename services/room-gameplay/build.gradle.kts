@@ -19,8 +19,9 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:3.5.2")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
     implementation("io.ktor:ktor-server-status-pages:3.5.2")
+    // ktor-server-auth only: the JWT provider left with the signing key when the gateway took over
+    // validation (P4). What is left is a provider that reads the gateway's headers.
     implementation("io.ktor:ktor-server-auth:3.5.2")
-    implementation("io.ktor:ktor-server-auth-jwt:3.5.2")
     implementation("io.micrometer:micrometer-registry-prometheus:1.17.0")
     // Ktor and Netty log through SLF4J. Without a provider they log nowhere, so an internal error
     // (a failed handshake, a rejected connection) disappears instead of surfacing.

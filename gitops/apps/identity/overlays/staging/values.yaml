@@ -23,6 +23,7 @@ env:
     value: redis://redis.redis.svc.cluster.local:6379
   - name: KAFKA_BROKERS
     value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+# No NodePort since P4: the gateway holds 30080 and is the only way in. Reach identity directly
+# with `kubectl port-forward svc/identity 8085:80` when a drill needs to bypass the gateway.
 service:
-  type: NodePort
-  nodePort: 30080 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → staging URL host:30080
+  type: ClusterIP

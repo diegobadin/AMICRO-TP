@@ -10,8 +10,8 @@ logLevel: debug
 serviceMonitor:
   enabled: true
 secretName: room-gameplay-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
-# Connection parts are plain config; the database password and the shared JWT signing key arrive
-# through secretName above. The role and the database are room-gameplay's own
+# Connection parts are plain config; the database password arrives through secretName above. The
+# JWT signing key left with P4 — the gateway validates, this service trusts its headers. The role and the database are room-gameplay's own
 # (gitops/platform/postgres/). ROOM_MIN_PLAYERS and TURN_TIMEOUT_SECONDS are levers a drill or the
 # exam demo can turn without a rebuild (plan D11).
 env:
@@ -31,6 +31,7 @@ env:
     value: "2"
   - name: TURN_TIMEOUT_SECONDS
     value: "30"
+# No NodePort since P4. It trusts `X-Player-Id` from the gateway and validates nothing itself, so
+# being unreachable from outside the cluster is part of the security argument, not an inconvenience.
 service:
-  type: NodePort
-  nodePort: 30081 # matches gitops/bootstrap/kind-cluster.yaml extraPortMapping → UNOARENA_ROOMS_URL
+  type: ClusterIP

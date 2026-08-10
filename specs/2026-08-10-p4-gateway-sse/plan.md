@@ -111,8 +111,8 @@
 | F2 | REST proxying for `/auth/**` and `/rooms/**` (D2) + the Redis pub/sub subscriber and revoked-session map (D11) | identity's half live against the real service, second login → `401 session_superseded`; the rooms half against a real HTTP backend in tests, and **re-run against room-gameplay at F6** — see below |
 | F3 | room-gameplay publishes committed events to `room:{id}:events` (D3/D5) + the failure counter | `XRANGE` after a played game shows one entry per event, ids equal to the sequence numbers |
 | F4 | Gateway SSE: `GET /rooms/{id}/stream`, membership check, tail per room, `Last-Event-ID` replay, `resync`, heartbeat, `session-invalidated` frame | `curl -N` shows frames arriving as moves are posted; reconnect replays exactly the missed ones |
-| F5 | CLI: stream client (D7) replaces the poll loop, resync rules (D8), `feed()` deleted, `session_superseded` surfaced | a full game played by hand against a local gateway + port-forwarded room-gameplay |
-| F6 | **The collapse**: gateway `NodePort 30080`, identity + room-gameplay `ClusterIP`, room-gameplay drops JWT validation and trusts the headers, `IDENTITY_JWT_SECRET` moves to `gateway-secrets`, CLI drops `UNOARENA_ROOMS_URL` | AC-P4.1, AC-P4.2 on a drill cluster |
+| F6 | **The collapse**: gateway `NodePort 30080`, identity + room-gameplay `ClusterIP`, room-gameplay drops JWT validation and trusts the headers, `IDENTITY_JWT_SECRET` leaves `room-gameplay-secrets`, CLI drops `UNOARENA_ROOMS_URL` | AC-P4.1, AC-P4.2 on a drill cluster |
+| F5 | CLI: stream client (D7) replaces the poll loop, resync rules (D8), `feed()` deleted, `session_superseded` surfaced | a full game played by hand through the gateway |
 | F7 | `bot --casual` (D13) + an N-bot drill script | two bots finish a game headless; §6 lines parse |
 | F8 | Empty-cluster drill (AC-P4.9), session-kill drill (AC-P4.7), transcripts, README / `clients/cli/README.md` / `CHANGELOG-design.md` §9 deltas, `ESTADO-FINAL.md` | recorded in `validation.md` |
 
@@ -120,6 +120,12 @@ F1–F5 are additive: the two NodePorts keep working and the CLI keeps polling u
 branch is never in a state where a drill cannot play a game. F5 is validated **locally** (gateway
 run with `npm start`, room-gameplay port-forwarded) because the gateway is not yet the cluster's
 door — the same ordering P3 used when it hand-played before the cluster drill.
+
+**F6 landed before F5** (reordered after F4). The flip is what makes the stack runnable end to end,
+and writing the CLI's stream client against a stack that answers `401` would mean debugging both
+halves at once, later, on a cluster. The precondition the ordering was protecting — "cross the
+one-way door only when the proxy tests are green" — was met by F2 and F4, so the door was safe to
+cross. Everything below about the flip still holds; only its position moved.
 
 **The trust flip cannot be verified in halves** (found in F2). The gateway stops sending the token
 the moment it starts injecting `X-Player-Id`, and room-gameplay only starts accepting that header at

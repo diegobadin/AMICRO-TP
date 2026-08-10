@@ -50,17 +50,15 @@ seal "$HERE/staging/identity-secrets.yaml" \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=IDENTITY_DB_PASSWORD="$IDENTITY_DB_PASSWORD"
 
-# room-gameplay validates identity's JWTs itself until P4's gateway takes over that job, so it gets
-# a copy of the signing key — its own secret rather than a shared one, so it never sees identity's
-# database password. The coupling is real and is recorded in CHANGELOG-design.md.
+# Its database password and nothing else. The copy of identity's signing key left in P4: the
+# gateway validates now, and room-gameplay trusts the headers it passes down (CHANGELOG-design.md
+# §8.9, closed).
 seal "$HERE/staging/room-gameplay-secrets.yaml" \
   generic room-gameplay-secrets -n unoarena-staging \
-  --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=ROOM_GAMEPLAY_DB_PASSWORD="$ROOM_GAMEPLAY_DB_PASSWORD"
 
-# The gateway is the verifier from P4 on: it validates the token and passes the identity downstream
-# as headers. The key lands here first and leaves room-gameplay's secret in the same commit that
-# makes the gateway the only entry point — until then both hold it and both work.
+# The gateway is the verifier: it validates the token and passes the identity downstream as headers.
+# One signer, one verifier — which is as small as a symmetric key's blast radius gets.
 seal "$HERE/staging/gateway-secrets.yaml" \
   generic gateway-secrets -n unoarena-staging \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET"

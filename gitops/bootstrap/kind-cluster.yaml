@@ -6,9 +6,10 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
     extraPortMappings:
-      - containerPort: 30080 # ingress/nodeport for the identity staging URL
+      - containerPort: 30080 # the gateway — the single entry point (UNOARENA_API_URL)
         hostPort: 30080
-      # Port mappings are fixed when the cluster is created, so a cluster made before this line
-      # existed cannot reach room-gameplay — recreate it. P4's gateway collapses both back into one.
-      - containerPort: 30081 # room-gameplay (UNOARENA_ROOMS_URL)
+      # Kept mapped and unused since P4 collapsed the two entry points into one. Port mappings are
+      # fixed when the cluster is created, so leaving it here is what lets an existing cluster pick
+      # up P4 without being recreated — and what leaves room for a second port if one is ever needed.
+      - containerPort: 30081
         hostPort: 30081

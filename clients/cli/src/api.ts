@@ -1,17 +1,15 @@
 // Shared plumbing for every command: where the backend is, where the session lives, and the one
 // request helper that carries a correlation id and surfaces conditional-request headers.
 //
-// Two base URLs is a P3-only shape. identity owns one NodePort and room-gameplay the other because
-// there is no gateway yet; P4 puts one in front and UNOARENA_ROOMS_URL goes away. Documented in the
-// README rather than left for the faculty to discover.
+// One base URL, because there is one way in: the gateway (P4). It validates the session, routes
+// `/auth/**` to identity and `/rooms/**` to room-gameplay, and serves the room stream itself.
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export const API = (process.env.UNOARENA_API_URL ?? "http://localhost:8085").replace(/\/$/, "");
-export const ROOMS = (process.env.UNOARENA_ROOMS_URL ?? "http://localhost:8081").replace(/\/$/, "");
+export const API = (process.env.UNOARENA_API_URL ?? "http://localhost:8080").replace(/\/$/, "");
 export const SESSION = process.env.UNOARENA_SESSION ?? join(homedir() || tmpdir(), ".unoarena", "session.json");
 
 export interface Session {

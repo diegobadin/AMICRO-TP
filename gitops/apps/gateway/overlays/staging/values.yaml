@@ -12,8 +12,6 @@ serviceMonitor:
 secretName: gateway-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
 # Where the backends live. Both are plain in-cluster Service URLs and plain config; the only secret
 # the gateway holds is the key it verifies identity's tokens with, and that arrives via secretName.
-# The Service still has no NodePort: the gateway becomes the single entry point in F6, and until
-# then the CLI keeps reaching identity and room-gameplay directly.
 env:
   - name: IDENTITY_URL
     value: http://identity.unoarena-staging.svc.cluster.local
@@ -23,3 +21,8 @@ env:
   # F4 the source of the room streams as well.
   - name: REDIS_URL
     value: redis://redis.redis.svc.cluster.local:6379
+# The single entry point. It takes over the port identity used to own, which is why no kind cluster
+# has to be recreated for P4 — 30080 was already published (gitops/bootstrap/kind-cluster.yaml).
+service:
+  type: NodePort
+  nodePort: 30080

@@ -6,7 +6,7 @@
 
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { ROOMS, Line, Reply, emit, line, loadSession, request, seqOf } from "./api.js";
+import { API, Line, Reply, emit, line, loadSession, request, seqOf } from "./api.js";
 import { GameView, board, feed } from "./board.js";
 
 const POLL_MS = Number(process.env.UNOARENA_POLL_MS ?? 1000);
@@ -37,7 +37,7 @@ function me(): string {
 }
 
 const call = (method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Reply> =>
-  request(ROOMS, method, path, { body, token: token(), headers });
+  request(API, method, path, { body, token: token(), headers });
 
 function resultLine(action: string, reply: Reply, extra: Partial<Line> = {}): Line {
   const ok = reply.status >= 200 && reply.status < 300;

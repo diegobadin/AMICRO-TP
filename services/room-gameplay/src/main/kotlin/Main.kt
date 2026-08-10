@@ -70,7 +70,7 @@ fun Application.module(config: Config, rooms: Rooms) {
             call.respond(HttpStatusCode.InternalServerError, ErrorBody("internal_error"))
         }
     }
-    installAuth(config)
+    installAuth()
 
     routing {
         get("/health") { call.respond(Health("ok", SERVICE)) }

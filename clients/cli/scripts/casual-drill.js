@@ -6,7 +6,7 @@
 // to render is something this cannot play, which is the point. The transcript goes to stdout and
 // gets pasted into validation.md.
 //
-//   UNOARENA_ROOMS_URL=http://localhost:30081 node scripts/casual-drill.js /tmp/a.json /tmp/b.json
+//   UNOARENA_API_URL=http://localhost:30080 node scripts/casual-drill.js /tmp/a.json /tmp/b.json
 
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";

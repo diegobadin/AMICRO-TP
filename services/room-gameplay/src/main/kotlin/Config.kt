@@ -6,8 +6,6 @@ const val SERVICE = "room-gameplay"
 
 data class Config(
     val port: Int,
-    val jwtSecret: String,
-    // Shared with identity until P4's gateway owns validation; see CHANGELOG-design.md.
     val minPlayers: Int,
     val turnTimeoutSeconds: Long,
     val databaseUrl: String,
@@ -19,7 +17,6 @@ data class Config(
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): Config = Config(
             port = env["PORT"]?.toIntOrNull() ?: 8081,
-            jwtSecret = env["IDENTITY_JWT_SECRET"] ?: "dev-secret",
             minPlayers = env["ROOM_MIN_PLAYERS"]?.toIntOrNull() ?: 2,
             turnTimeoutSeconds = env["TURN_TIMEOUT_SECONDS"]?.toLongOrNull() ?: 30,
             databaseUrl = "jdbc:postgresql://${env["DATABASE_HOST"] ?: "localhost"}:" +

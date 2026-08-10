@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // UnoArena Client CLI — the canonical command surface of Client-Checkpoint.md.
 //
-// §5.A authentication against identity, §5.B/§5.C rooms and interactive play against room-gameplay.
-// Both targets come from the environment (UNOARENA_API_URL, UNOARENA_ROOMS_URL) and never from a
-// hardcoded default; the token is held in a session file so one process is one player identity.
+// §5.A authentication, §5.B/§5.C rooms and interactive play — all through the gateway, which is the
+// one address the CLI knows (UNOARENA_API_URL, from the environment and never from a hardcoded
+// default); the token is held in a session file so one process is one player identity.
 // This CLI absorbs the wire protocol — the faculty only ever sees this command surface.
 
 import { existsSync, rmSync } from "node:fs";
