@@ -3,5 +3,19 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/gateway
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: gateway-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
+# Where the backends live. Both are plain in-cluster Service URLs and plain config; the only secret
+# the gateway holds is the key it verifies identity's tokens with, and that arrives via secretName.
+# The Service still has no NodePort: the gateway becomes the single entry point in F6, and until
+# then the CLI keeps reaching identity and room-gameplay directly.
+env:
+  - name: IDENTITY_URL
+    value: http://identity.unoarena-staging.svc.cluster.local
+  - name: ROOM_GAMEPLAY_URL
+    value: http://room-gameplay.unoarena-staging.svc.cluster.local

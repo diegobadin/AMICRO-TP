@@ -14,8 +14,13 @@ spec:
       labels:
         app: {{ include "svc.name" . }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532 # distroless 'nonroot' uid — kubelet needs a numeric user to verify non-root
       containers:
         - name: {{ include "svc.name" . }}
           image: {{ include "svc.image" . | quote }}
@@ -30,6 +35,19 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          {{- end }}
+          # Nothing here migrates, but on a cold cluster every service starts at once on one kind
+          # node; the startup gate keeps liveness from killing a pod that is merely waiting for CPU.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.healthPath }}
+              port: {{ .Values.port }}
+            periodSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
               path: {{ .Values.healthPath }}

@@ -1,6 +1,6 @@
-# gateway — a PLACEHOLDER service (not fully-wired): test → build → deliver → deploy-staging (stub).
-# Change detection: every job is guarded by `rules: changes:` on this service's path so editing
-# another service never runs these jobs (independent deployability).
+# gateway — the single entry point and the SSE tier (P4). Change detection: every job is guarded by
+# `rules: changes:` on this service's path so editing another service never runs these jobs
+# (independent deployability).
 
 "test:gateway":
   stage: test
@@ -38,16 +38,18 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/gateway/**/*", "ci/templates/**/*"]
 
-# Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
+# Real GitOps deploy now, like identity's and room-gameplay's: pin the delivered digest into the
+# staging overlay and let Argo reconcile. `needs` includes build:gateway for its dotenv ($IMAGE,
+# $IMAGE_DIGEST) — deliver alone does not carry them.
 "deploy-staging:gateway":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:gateway"]
+  needs: ["deliver:gateway", "build:gateway"]
   variables:
     SVC: gateway
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/gateway/**/*"]
-      when: manual
-      allow_failure: true
+      when: on_success
+    - changes: ["services/gateway/**/*"]
+      when: on_success

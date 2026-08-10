@@ -20,8 +20,12 @@
   invents a status code and never rewrites a payload: P3's `412`/`428`/`409`/`304` contract has to
   survive it byte for byte (AC-P4.3), and a gateway that "helps" is how contracts rot.
   **The whitelist is a security control, not tidiness** — once room-gameplay trusts `X-Player-Id`,
-  a client-supplied one that reached it would be an authentication bypass. `Authorization` is
-  consumed and dropped; any inbound `X-Player-Id`/`X-Session-Id` is overwritten, never merged.
+  a client-supplied one that reached it would be an authentication bypass, so any inbound
+  `X-Player-Id`/`X-Session-Id` is overwritten, never merged.
+  **`Authorization` is forwarded per target, not dropped outright** (corrected in F1): identity
+  *owns* sessions and resolves the token itself, so `/auth/**` carries it through and the gateway's
+  check is a fast rejection rather than a replacement. room-gameplay never sees a token at all —
+  it has no key to check one with.
 - **D3 — Stream key `room:{roomId}:events`, entry id `{sequenceNumber}-0`.** Redis accepts explicit
   entry ids, and room sequence numbers are already strictly increasing (the `(room_id,
   sequence_number)` PK is P3's concurrency mechanism), so the stream id **is** the sequence number.
@@ -74,7 +78,8 @@
 - **D11 — Revoked sessions are a `Map<sessionId, expiresAt>`, swept on read.** Entries die with the
   token, so the map cannot grow. Per-pod and lost on restart (R4).
 - **D12 — Metrics.** `gateway_requests_total{route,status}`,
-  `gateway_request_duration_seconds{route}`, `gateway_sse_connections_active`,
+  `gateway_http_request_duration_seconds{route,status}` (identity's naming, so the two read the
+  same on a dashboard), `gateway_sse_connections_active`,
   `gateway_sse_events_delivered_total`, `gateway_sessions_revoked_total`, plus
   `roomgameplay_stream_publish_failures_total`. `sse_connections_active` is Architecture §05's
   name carrying the service prefix the other two services use. Assert the **exact exposed strings**

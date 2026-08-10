@@ -58,6 +58,13 @@ seal "$HERE/staging/room-gameplay-secrets.yaml" \
   --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET" \
   --from-literal=ROOM_GAMEPLAY_DB_PASSWORD="$ROOM_GAMEPLAY_DB_PASSWORD"
 
+# The gateway is the verifier from P4 on: it validates the token and passes the identity downstream
+# as headers. The key lands here first and leaves room-gameplay's secret in the same commit that
+# makes the gateway the only entry point — until then both hold it and both work.
+seal "$HERE/staging/gateway-secrets.yaml" \
+  generic gateway-secrets -n unoarena-staging \
+  --from-literal=IDENTITY_JWT_SECRET="$IDENTITY_JWT_SECRET"
+
 # Read-only registry credential (deploy token, read_registry scope): without it every service sits
 # in ImagePullBackOff on a cluster that was just created, because the project registry is private.
 seal "$HERE/staging/registry-pull.yaml" \
