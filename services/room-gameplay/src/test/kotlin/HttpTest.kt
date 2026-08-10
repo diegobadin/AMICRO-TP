@@ -49,6 +49,9 @@ class HttpTest {
     @Test
     fun `metrics exposes the business counters under the names P8 will chart`() = testApplication {
         wire()
+        // The business counters are registered eagerly; the request timer carries route/status tags
+        // and so only exists once something has been served. Serve something first, then scrape.
+        client.get("/health")
         val body = client.get("/metrics").bodyAsText()
         listOf(
             "roomgameplay_rooms_opened_total",

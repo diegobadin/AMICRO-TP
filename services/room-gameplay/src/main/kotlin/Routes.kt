@@ -17,11 +17,19 @@ import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.UUID
+import uno.CallUno
+import uno.Card
+import uno.ChallengeUno
+import uno.Color
+import uno.Command
 import uno.CreateRoom
+import uno.DrawCard
 import uno.GameCompleted
 import uno.GameStarted
 import uno.JoinRoom
 import uno.LeaveRoom
+import uno.PassTurn
+import uno.PlayCard
 import uno.ReconnectPlayer
 import uno.Rejection
 import uno.RoomCreated
@@ -31,6 +39,37 @@ import uno.StartGame
 
 @Serializable
 data class CreateRoomBody(val roomType: String? = null, val maxPlayers: Int? = null)
+
+/**
+ * One move shape for the whole log (§2.3.1). `type` is the wire name; `card` is the §5.F notation,
+ * so what the player typed, what the API carries and what lands in `room_events` never diverge.
+ */
+@Serializable
+data class MoveBody(
+    val type: String,
+    val card: String? = null,
+    val chosenColor: String? = null,
+    val callingUno: Boolean = false,
+    val targetPlayerId: String? = null,
+)
+
+private fun MoveBody.toCommand(playerId: String): Command? = when (type) {
+    "play_card" -> Card.parse(card ?: return null)?.let {
+        PlayCard(playerId, it, chosenColor?.let { c -> runCatching { Color.valueOf(c.uppercase()) }.getOrNull() }, callingUno)
+    }
+    "draw_card" -> DrawCard(playerId)
+    "pass" -> PassTurn(playerId)
+    "call_uno" -> CallUno(playerId)
+    "challenge_uno" -> ChallengeUno(playerId, targetPlayerId ?: return null)
+    else -> null
+}
+
+/** `If-Match: "42"` and the weak form both mean sequence 42. */
+private fun parseETag(header: String?): Int? =
+    header?.trim()?.removePrefix("W/")?.trim('"')?.toIntOrNull()
+
+/** Ktor's enum stops at 426, and RFC 6585's 428 is what an absent If-Match has to answer. */
+private val PreconditionRequired = HttpStatusCode(428, "Precondition Required")
 
 /**
  * Engine rejections are domain conflicts, so they are `409` by default (Architecture §2.3.1). The
@@ -183,6 +222,84 @@ fun Route.roomRoutes(rooms: Rooms) {
                     }
                     is Outcome.Refused -> call.refuse(outcome.reason)
                     is Outcome.Stale -> call.stale(outcome.state)
+                }
+            }
+
+            /**
+             * The player-scoped view, and the client's resync point. `If-None-Match` makes the poll
+             * cheap (E4): while nothing has happened the answer is a `304` with no body, and P4
+             * replaces the polling loop with SSE while keeping this endpoint as the reconnect read.
+             */
+            get("/games/{gameNumber}") {
+                val roomId = call.roomId() ?: return@get call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
+                val player = call.player()
+                val loaded = rooms.load(roomId)
+                if (!loaded.found) return@get call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
+
+                val view = loaded.state.gameView(player.playerId)
+                    ?: return@get call.respond(HttpStatusCode.NotFound, ErrorBody("no_game"))
+                if (call.parameters["gameNumber"]?.toIntOrNull() != view.gameNumber) {
+                    return@get call.respond(HttpStatusCode.NotFound, ErrorBody("no_game"))
+                }
+                // Membership is what entitles you to a hand; a stranger gets nothing, not an empty one.
+                if (loaded.state.player(player.playerId) == null) {
+                    return@get call.respond(HttpStatusCode.NotFound, ErrorBody("not_a_member"))
+                }
+
+                val etag = "\"${loaded.state.sequenceNumber}\""
+                if (parseETag(call.request.headers["If-None-Match"]) == loaded.state.sequenceNumber) {
+                    call.response.header("ETag", etag)
+                    return@get call.respond(HttpStatusCode.NotModified)
+                }
+                call.response.header("ETag", etag)
+                call.respond(view)
+            }
+
+            /**
+             * A move is a row appended to the immutable log. `If-Match` is mandatory (§2.3.1): a
+             * client that does not say which state it was looking at cannot be told its move raced
+             * someone else's, and silently applying it is how a player loses a turn they never took.
+             */
+            post("/games/{gameNumber}/moves") {
+                val roomId = call.roomId() ?: return@post call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
+                val player = call.player()
+                val body = call.receiveNullable<MoveBody>()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("malformed_move"))
+
+                val expected = parseETag(call.request.headers["If-Match"])
+                    ?: return@post call.respond(PreconditionRequired, ErrorBody("if_match_required"))
+
+                val command = body.toCommand(player.playerId)
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("malformed_move"))
+
+                val outcome = rooms.submit(roomId, command, call.correlationId(), expectedSequence = expected)
+                countBusiness(outcome)
+                when (outcome) {
+                    is Outcome.Ok -> {
+                        Metrics.move(body.type, "ok").increment()
+                        val view = outcome.state.gameView(player.playerId)
+                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.response.header(
+                            "Location",
+                            "/rooms/$roomId/games/${view?.gameNumber ?: 1}/moves/${outcome.state.sequenceNumber}",
+                        )
+                        if (view != null) call.respond(HttpStatusCode.Created, view)
+                        else call.respond(HttpStatusCode.Created, outcome.state.view())
+                    }
+                    is Outcome.Refused -> {
+                        Metrics.move(body.type, "refused").increment()
+                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.refuse(outcome.reason)
+                    }
+                    // 412 carries the current state, so the loser of a race reconciles from the
+                    // response instead of having to go and fetch it.
+                    is Outcome.Stale -> {
+                        Metrics.move(body.type, "stale").increment()
+                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        val view = outcome.state.gameView(player.playerId)
+                        if (view != null) call.respond(HttpStatusCode.PreconditionFailed, view)
+                        else call.stale(outcome.state)
+                    }
                 }
             }
 
