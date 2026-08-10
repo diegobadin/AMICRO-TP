@@ -60,6 +60,10 @@ its existence.
 
 ## P4 — Realtime fan-out (SSE) — **next**
 
+Triad: [`../2026-08-10-p4-gateway-sse/`](../2026-08-10-p4-gateway-sse/) — decisions E1–E6 locked
+(2026-08-10), acceptance criteria AC-P4.1–AC-P4.10. Not implemented yet; `kickoff.md` bridges to the
+implementation session.
+
 - Ships: room state → Redis Streams delta patches; gateway/broadcaster SSE tier; per-room
   ordering, reconnect + resync from last seq.
 - CLI: interactive `play` view (live feed, turn board, play-by-index, wild colors, `draw`/`uno`/
