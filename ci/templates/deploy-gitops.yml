@@ -19,13 +19,36 @@
     #    the chart's placeholder default. Promotion = digest, no rebuild. The pin lands on the
     #    CURRENT remote head (not this pipeline's checkout) so the push fast-forwards even if the
     #    branch moved on since this pipeline ran.
+    #    Fetch-pin-push is retried, because every fully-wired service pins in the SAME stage: two of
+    #    them push to the branch within milliseconds and the loser is rejected with "cannot lock ref
+    #    ... incorrect old value". That is not a failure, it is a race — so re-read the head the
+    #    winner just wrote and pin on top of it. With one real service this never fired; with two it
+    #    fires on most pipelines.
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
-    - git fetch "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "$CI_COMMIT_REF_NAME"
-    - git checkout -B ci-deploy FETCH_HEAD
-    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
-    - git add "$OVERLAY"
-    - 'git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"'
-    - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
+    - |
+      REMOTE="https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      pinned=no
+      for attempt in 1 2 3 4 5; do
+        git fetch "$REMOTE" "$CI_COMMIT_REF_NAME"
+        git checkout -B ci-deploy FETCH_HEAD
+        yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
+        git add "$OVERLAY"
+        if ! git commit -m "deploy($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]"; then
+          echo "no change — $ENV already points at this digest"
+          pinned=yes
+          break
+        fi
+        if git push "$REMOTE" "HEAD:${CI_COMMIT_REF_NAME}"; then
+          pinned=yes
+          break
+        fi
+        echo "branch moved while pinning (another service won the race) — retry $attempt"
+        sleep $((attempt * 3))
+      done
+      if [ "$pinned" != "yes" ]; then
+        echo "could not pin $SVC/$ENV after 5 attempts" >&2
+        exit 1
+      fi
     # 2) Reconcile and WAIT for Argo to report Synced+Healthy (the readiness gate). Only when a
     #    persistent cluster is wired: without one the pin above is the whole deploy, and Argo picks
     #    it up whenever the cluster next syncs.
@@ -53,13 +76,32 @@
     OVERLAY: "gitops/apps/$SVC/overlays/$ENV/values.yaml"
   script:
     - apk add --no-cache git yq
+    # Same race as .deploy-gitops: promotion gates for two services can be clicked together.
     - git config user.email "ci@unoarena"; git config user.name "unoarena-ci-bot"
-    - git fetch "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "$CI_COMMIT_REF_NAME"
-    - git checkout -B ci-promote FETCH_HEAD
-    - yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
-    - git add "$OVERLAY"
-    - 'git commit -m "promote($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]" || echo "no change"'
-    - git push "https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
+    - |
+      REMOTE="https://oauth2:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      pinned=no
+      for attempt in 1 2 3 4 5; do
+        git fetch "$REMOTE" "$CI_COMMIT_REF_NAME"
+        git checkout -B ci-promote FETCH_HEAD
+        yq -i ".image.repository = \"$IMAGE\" | .image.digest = \"$IMAGE_DIGEST\"" "$OVERLAY"
+        git add "$OVERLAY"
+        if ! git commit -m "promote($SVC): pin $ENV to $IMAGE_DIGEST [skip ci]"; then
+          echo "no change — $ENV already points at this digest"
+          pinned=yes
+          break
+        fi
+        if git push "$REMOTE" "HEAD:${CI_COMMIT_REF_NAME}"; then
+          pinned=yes
+          break
+        fi
+        echo "branch moved while promoting — retry $attempt"
+        sleep $((attempt * 3))
+      done
+      if [ "$pinned" != "yes" ]; then
+        echo "could not promote $SVC to $ENV after 5 attempts" >&2
+        exit 1
+      fi
   environment:
     name: "$ENV/$SVC"
 
