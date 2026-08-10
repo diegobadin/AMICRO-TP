@@ -85,6 +85,18 @@ class EventStore(private val dataSource: DataSource) {
         }
     }
 
+    /** True the first time this key is seen; false for a redelivery (§4.7 consumer dedup). */
+    fun markConsumed(source: String, eventKey: String): Boolean =
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                "insert into consumed_events (source, event_key) values (?, ?) on conflict do nothing",
+            ).use { statement ->
+                statement.setString(1, source)
+                statement.setString(2, eventKey)
+                statement.executeUpdate() == 1
+            }
+        }
+
     fun findIdempotent(key: String, playerId: String): String? =
         dataSource.connection.use { connection ->
             connection.prepareStatement(

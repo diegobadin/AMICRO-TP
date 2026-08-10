@@ -93,7 +93,16 @@ fun main() {
         )
         exitProcess(1)
     }
-    val rooms = Rooms(EventStore(dataSource), config)
+    val store = EventStore(dataSource)
+    val rooms = Rooms(store, config)
+
+    fun event(action: String, fields: Map<String, Any?>) = println(
+        """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE","action":"$action",""" +
+            fields.entries.joinToString(",") { (k, v) -> """"$k":${if (v is Number) v else "\"$v\""}""" } + "}",
+    )
+
+    // A superseded session has to disconnect the player from any room they are sitting in (E1).
+    SessionEventsConsumer(config.kafkaBrokers, SessionInvalidations(rooms, store, ::event), ::event).start()
 
     println(
         """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE","msg":"listening","port":${config.port}}""",

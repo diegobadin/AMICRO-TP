@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":engine"))
     implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.postgresql:postgresql:42.7.13")
+    implementation("org.apache.kafka:kafka-clients:4.3.1")
     implementation("io.ktor:ktor-server-core:3.5.2")
     implementation("io.ktor:ktor-server-netty:3.5.2")
     implementation("io.ktor:ktor-server-content-negotiation:3.5.2")

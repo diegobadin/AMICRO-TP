@@ -62,6 +62,16 @@ private val STATEMENTS = listOf(
          primary key (player_id, key)
        )""",
     "create index if not exists idempotency_keys_created_idx on idempotency_keys (created_at)",
+    // A fifth table, where plan D5 named four. Kafka is at-least-once, and D8 requires the
+    // session-events consumer to be idempotent *by oldSessionId* — without somewhere to record what
+    // has been seen there is nothing to be idempotent by, and a redelivery would re-open a
+    // reconnection window that already expired. Generic on purpose: P5 and P6 consume too (§4.7).
+    """create table if not exists consumed_events (
+         source      text not null,
+         event_key   text not null,
+         consumed_at timestamptz not null default now(),
+         primary key (source, event_key)
+       )""",
 )
 
 fun migrate(dataSource: DataSource) {
