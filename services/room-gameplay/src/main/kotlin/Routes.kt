@@ -22,8 +22,8 @@ import uno.Card
 import uno.ChallengeUno
 import uno.Color
 import uno.Command
-import uno.CreateRoom
 import uno.DrawCard
+import uno.Event
 import uno.GameCompleted
 import uno.GameStarted
 import uno.JoinRoom
@@ -34,7 +34,6 @@ import uno.ReconnectPlayer
 import uno.Rejection
 import uno.RoomCreated
 import uno.RoomState
-import uno.RoomType
 import uno.StartGame
 
 @Serializable
@@ -85,21 +84,45 @@ private fun Rejection.status(): HttpStatusCode = when (this) {
 private suspend fun ApplicationCall.refuse(reason: Rejection) =
     respond(reason.status(), ErrorBody(reason.name.lowercase()))
 
-private suspend fun ApplicationCall.stale(state: RoomState) {
+/** The sequence number is the entity tag; every response that carries state carries it. */
+private fun ApplicationCall.tag(state: RoomState) =
     response.header("ETag", "\"${state.sequenceNumber}\"")
+
+private suspend fun ApplicationCall.stale(state: RoomState) {
+    tag(state)
     respond(HttpStatusCode.PreconditionFailed, state.view())
 }
 
 private fun ApplicationCall.roomId(): UUID? = runCatching { UUID.fromString(parameters["roomId"]) }.getOrNull()
 
 /**
+ * The three membership verbs share one guard: a real room id, and a URL that names the caller. A
+ * player may only assert their own membership — `{playerId}` is addressing, not authorisation.
+ * Answers the call and returns null when either fails, so each handler starts with one line.
+ */
+private suspend fun ApplicationCall.ownMembership(): Pair<UUID, String>? {
+    val roomId = roomId() ?: run {
+        respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
+        return null
+    }
+    val playerId = player().playerId
+    if (parameters["playerId"] != playerId) {
+        respond(HttpStatusCode.Forbidden, ErrorBody("not_your_membership"))
+        return null
+    }
+    return roomId to playerId
+}
+
+/**
  * Counted from the events that were actually committed, so a room created by an idempotent replay
  * or a game auto-started by someone else's join is counted once and in the right place. Two of
  * these are P8's required business metrics, so getting them from the log rather than from the
- * request that happened to trigger them matters.
+ * request that happened to trigger them matters — and it is why **every** mutating route calls
+ * this, including leave: leaving a two-player game forfeits, which ends the game (invariant 7) and
+ * emits a `GameCompleted` no one requested.
  */
-private fun countBusiness(outcome: Outcome) {
-    outcome.events.forEach { event ->
+private fun countBusiness(events: List<Event>, refused: Rejection? = null) {
+    events.forEach { event ->
         when (event) {
             is RoomCreated -> Metrics.roomsCreated.increment()
             is GameStarted -> Metrics.gamesStarted.increment()
@@ -107,8 +130,11 @@ private fun countBusiness(outcome: Outcome) {
             else -> Unit
         }
     }
-    if (outcome is Outcome.Refused) Metrics.rejection(outcome.reason.name.lowercase()).increment()
+    refused?.let { Metrics.rejection(it.name.lowercase()).increment() }
 }
+
+private fun countBusiness(outcome: Outcome) =
+    countBusiness(outcome.events, (outcome as? Outcome.Refused)?.reason)
 
 fun Route.roomRoutes(rooms: Rooms) {
     authenticate(PLAYER_AUTH) {
@@ -120,42 +146,24 @@ fun Route.roomRoutes(rooms: Rooms) {
         post("/rooms") {
             val player = call.player()
             val body = call.receiveNullable<CreateRoomBody>() ?: CreateRoomBody()
-            val key = call.request.headers["Idempotency-Key"]
-
-            // A replayed key returns the original representation as 200 rather than a second room.
-            key?.let { existing ->
-                rooms.findIdempotent(existing, player.playerId)?.let { stored ->
-                    return@post call.respond(HttpStatusCode.OK, Json.parseToJsonElement(stored))
-                }
-            }
-
-            val roomId = UUID.randomUUID()
-            val command = CreateRoom(
-                roomId = roomId.toString(),
-                creatorId = player.playerId,
-                roomType = RoomType.CASUAL,
+            val outcome = rooms.create(
+                playerId = player.playerId,
                 maxPlayers = body.maxPlayers?.coerceIn(2, 10) ?: 10,
-            )
-            val outcome = rooms.submit(
-                roomId = roomId,
-                command = command,
+                idempotencyKey = call.request.headers["Idempotency-Key"],
                 correlationId = call.correlationId(),
-                idempotency = key?.let { k -> { state -> IdempotentCreate(k, player.playerId, Json.encodeToString(state.view())) } },
+                render = { state -> Json.encodeToString(state.view()) },
             )
-            countBusiness(outcome)
             when (outcome) {
-                is Outcome.Ok -> {
-                    call.response.header("Location", "/rooms/$roomId")
-                    call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                is CreateOutcome.Created -> {
+                    countBusiness(outcome.events)
+                    call.response.header("Location", "/rooms/${outcome.roomId}")
+                    call.tag(outcome.state)
                     call.respond(HttpStatusCode.Created, outcome.state.view())
                 }
-                // Two requests carrying the same key raced; the winner's response is now stored.
-                is Outcome.Stale -> {
-                    val stored = key?.let { rooms.findIdempotent(it, player.playerId) }
-                    if (stored != null) call.respond(HttpStatusCode.OK, Json.parseToJsonElement(stored))
-                    else call.respond(HttpStatusCode.Conflict, ErrorBody("room_creation_conflict"))
-                }
-                is Outcome.Refused -> call.refuse(outcome.reason)
+                // A replayed key returns the original representation, as 200 rather than 201: the
+                // creation already happened, this request did not perform one.
+                is CreateOutcome.Replayed ->
+                    call.respond(HttpStatusCode.OK, Json.parseToJsonElement(outcome.response))
             }
         }
 
@@ -164,22 +172,18 @@ fun Route.roomRoutes(rooms: Rooms) {
                 val roomId = call.roomId() ?: return@get call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
                 val loaded = rooms.load(roomId)
                 if (!loaded.found) return@get call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
-                call.response.header("ETag", "\"${loaded.state.sequenceNumber}\"")
+                call.tag(loaded.state)
                 call.respond(loaded.state.view())
             }
 
             // Join = asserting a membership resource, so it is a PUT-shaped POST on the member URL.
             post("/players/{playerId}") {
-                val roomId = call.roomId() ?: return@post call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
-                val player = call.player()
-                if (call.parameters["playerId"] != player.playerId) {
-                    return@post call.respond(HttpStatusCode.Forbidden, ErrorBody("not_your_membership"))
-                }
-                val outcome = rooms.submit(roomId, JoinRoom(player.playerId), call.correlationId())
+                val (roomId, playerId) = call.ownMembership() ?: return@post
+                val outcome = rooms.submit(roomId, JoinRoom(playerId), call.correlationId())
                 countBusiness(outcome)
                 when (outcome) {
                     is Outcome.Ok -> {
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.tag(outcome.state)
                         call.respond(HttpStatusCode.Created, outcome.state.view())
                     }
                     is Outcome.Refused -> call.refuse(outcome.reason)
@@ -189,12 +193,10 @@ fun Route.roomRoutes(rooms: Rooms) {
 
             // Leaving is idempotent: deleting a membership that is not there still returns 204.
             delete("/players/{playerId}") {
-                val roomId = call.roomId() ?: return@delete call.respond(HttpStatusCode.NoContent)
-                val player = call.player()
-                if (call.parameters["playerId"] != player.playerId) {
-                    return@delete call.respond(HttpStatusCode.Forbidden, ErrorBody("not_your_membership"))
-                }
-                when (val outcome = rooms.submit(roomId, LeaveRoom(player.playerId), call.correlationId())) {
+                val (roomId, playerId) = call.ownMembership() ?: return@delete
+                val outcome = rooms.submit(roomId, LeaveRoom(playerId), call.correlationId())
+                countBusiness(outcome)
+                when (outcome) {
                     is Outcome.Ok -> call.respond(HttpStatusCode.NoContent)
                     is Outcome.Refused ->
                         if (outcome.reason == Rejection.NOT_A_MEMBER || outcome.reason == Rejection.ROOM_NOT_FOUND) {
@@ -209,15 +211,13 @@ fun Route.roomRoutes(rooms: Rooms) {
             // Reconnect: a partial state transition of the membership that returns the player-scoped
             // game state, so a client that dropped can rehydrate in one call.
             patch("/players/{playerId}") {
-                val roomId = call.roomId() ?: return@patch call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
-                val player = call.player()
-                if (call.parameters["playerId"] != player.playerId) {
-                    return@patch call.respond(HttpStatusCode.Forbidden, ErrorBody("not_your_membership"))
-                }
-                when (val outcome = rooms.submit(roomId, ReconnectPlayer(player.playerId), call.correlationId())) {
+                val (roomId, playerId) = call.ownMembership() ?: return@patch
+                val outcome = rooms.submit(roomId, ReconnectPlayer(playerId), call.correlationId())
+                countBusiness(outcome)
+                when (outcome) {
                     is Outcome.Ok -> {
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
-                        val game = outcome.state.gameView(player.playerId)
+                        call.tag(outcome.state)
+                        val game = outcome.state.gameView(playerId)
                         if (game != null) call.respond(game) else call.respond(outcome.state.view())
                     }
                     is Outcome.Refused -> call.refuse(outcome.reason)
@@ -236,22 +236,19 @@ fun Route.roomRoutes(rooms: Rooms) {
                 val loaded = rooms.load(roomId)
                 if (!loaded.found) return@get call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
 
-                val view = loaded.state.gameView(player.playerId)
-                    ?: return@get call.respond(HttpStatusCode.NotFound, ErrorBody("no_game"))
-                if (call.parameters["gameNumber"]?.toIntOrNull() != view.gameNumber) {
-                    return@get call.respond(HttpStatusCode.NotFound, ErrorBody("no_game"))
-                }
-                // Membership is what entitles you to a hand; a stranger gets nothing, not an empty one.
+                // Membership first: entitlement is checked before a hand is ever assembled, not
+                // after. A stranger gets nothing, not an empty one.
                 if (loaded.state.player(player.playerId) == null) {
                     return@get call.respond(HttpStatusCode.NotFound, ErrorBody("not_a_member"))
                 }
+                val view = loaded.state.gameView(player.playerId)
+                    ?.takeIf { it.gameNumber == call.parameters["gameNumber"]?.toIntOrNull() }
+                    ?: return@get call.respond(HttpStatusCode.NotFound, ErrorBody("no_game"))
 
-                val etag = "\"${loaded.state.sequenceNumber}\""
+                call.tag(loaded.state)
                 if (parseETag(call.request.headers["If-None-Match"]) == loaded.state.sequenceNumber) {
-                    call.response.header("ETag", etag)
                     return@get call.respond(HttpStatusCode.NotModified)
                 }
-                call.response.header("ETag", etag)
                 call.respond(view)
             }
 
@@ -278,7 +275,7 @@ fun Route.roomRoutes(rooms: Rooms) {
                     is Outcome.Ok -> {
                         Metrics.move(body.type, "ok").increment()
                         val view = outcome.state.gameView(player.playerId)
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.tag(outcome.state)
                         call.response.header(
                             "Location",
                             "/rooms/$roomId/games/${view?.gameNumber ?: 1}/moves/${outcome.state.sequenceNumber}",
@@ -288,14 +285,14 @@ fun Route.roomRoutes(rooms: Rooms) {
                     }
                     is Outcome.Refused -> {
                         Metrics.move(body.type, "refused").increment()
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.tag(outcome.state)
                         call.refuse(outcome.reason)
                     }
                     // 412 carries the current state, so the loser of a race reconciles from the
                     // response instead of having to go and fetch it.
                     is Outcome.Stale -> {
                         Metrics.move(body.type, "stale").increment()
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.tag(outcome.state)
                         val view = outcome.state.gameView(player.playerId)
                         if (view != null) call.respond(HttpStatusCode.PreconditionFailed, view)
                         else call.stale(outcome.state)
@@ -313,7 +310,7 @@ fun Route.roomRoutes(rooms: Rooms) {
                     is Outcome.Ok -> {
                         val gameNumber = outcome.state.game?.gameNumber ?: 1
                         call.response.header("Location", "/rooms/$roomId/games/$gameNumber")
-                        call.response.header("ETag", "\"${outcome.state.sequenceNumber}\"")
+                        call.tag(outcome.state)
                         call.respond(HttpStatusCode.Created, outcome.state.gameView(player.playerId) ?: outcome.state.view())
                     }
                     is Outcome.Refused -> call.refuse(outcome.reason)

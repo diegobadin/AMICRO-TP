@@ -11,10 +11,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-// Through fromEnv rather than the constructor, so the defaults the container relies on are the
-// same ones these tests run against.
-val config: Config = Config.fromEnv(mapOf("IDENTITY_JWT_SECRET" to "test-secret"))
-
 fun token(
     playerId: String = "11111111-1111-1111-1111-111111111111",
     sessionId: String = "22222222-2222-2222-2222-222222222222",
@@ -30,8 +26,8 @@ class HttpTest {
 
     // Even the auth checks go through the real wiring: a 401 that is really a 404 because a route
     // was never registered is exactly the kind of pass this suite must not hand out.
-    private val dataSource = testPool().also { migrate(it) }
-    private fun ApplicationTestBuilder.wire() = application { module(config, Rooms(EventStore(dataSource), config)) }
+    private val dataSource = freshDatabase()
+    private fun ApplicationTestBuilder.wire() = wire(dataSource)
 
     @Test
     fun `health is open and names the service`() = testApplication {
@@ -103,7 +99,7 @@ class RouteLabelTest {
     fun `ids collapse into their template so the metric label stays bounded`() {
         assertEquals("/rooms/{roomId}", routeLabel("/rooms/1c1b0b7e-0000-4000-8000-000000000000"))
         assertEquals(
-            "/rooms/{roomId}/games/{gameId}/moves",
+            "/rooms/{roomId}/games/{gameNumber}/moves",
             routeLabel("/rooms/abc/games/def/moves"),
         )
     }

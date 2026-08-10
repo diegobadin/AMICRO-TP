@@ -26,22 +26,16 @@ import uno.DisconnectPlayer
 class DeadlinesTest {
 
     private lateinit var dataSource: HikariDataSource
-    private val alice = "11111111-1111-1111-1111-111111111111"
-    private val bob = "22222222-2222-2222-2222-222222222222"
-    private val json = Json { ignoreUnknownKeys = true }
+    private val alice = ALICE
+    private val bob = BOB
+    private val json = testJson
 
     /** Advances only when a test says so, so a deadline can be crossed deliberately. */
     private var clock = Instant.parse("2026-08-10T12:00:00Z")
 
     @BeforeTest
     fun setUp() {
-        dataSource = testPool()
-        migrate(dataSource)
-        dataSource.connection.use { c ->
-            c.createStatement().use {
-                it.execute("truncate room_events, outbox, rooms, idempotency_keys, consumed_events")
-            }
-        }
+        dataSource = freshDatabase()
     }
 
     @AfterTest
@@ -49,13 +43,7 @@ class DeadlinesTest {
 
     private fun rooms() = Rooms(EventStore(dataSource), config, now = { clock }, seed = { 42L })
 
-    private fun log(roomId: String): List<String> =
-        dataSource.connection.use { c ->
-            c.prepareStatement("select type from room_events where room_id = ?::uuid order by sequence_number").use { s ->
-                s.setString(1, roomId)
-                s.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } }
-            }
-        }
+    private fun log(roomId: String): List<String> = dataSource.eventTypes(roomId)
 
     @Test
     fun `an overdue turn timer is settled before the next command is judged`() = testApplication {

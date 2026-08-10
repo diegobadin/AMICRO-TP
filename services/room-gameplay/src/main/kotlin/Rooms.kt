@@ -6,11 +6,13 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.random.Random
 import uno.Command
+import uno.CreateRoom
 import uno.Decision
 import uno.EngineConfig
 import uno.Event
 import uno.Rejection
 import uno.RoomState
+import uno.RoomType
 import uno.decide
 
 sealed interface Outcome {
@@ -60,15 +62,10 @@ class Rooms(
         command: Command,
         correlationId: String?,
         expectedSequence: Int? = null,
-        // Built from the resulting state, because the response it stores is the room representation
-        // and that is only known once the command has been decided — but it still has to be written
-        // inside the same transaction as the events, or a retry could find a key with no room.
-        idempotency: ((RoomState) -> IdempotentCreate)? = null,
         attempts: Int = 3,
     ): Outcome {
         repeat(attempts) {
-            val loaded = store.load(roomId)
-            val state = loaded.state
+            val state = store.load(roomId).state
             if (expectedSequence != null && expectedSequence != state.sequenceNumber) return Outcome.Stale(state)
 
             val decision = decide(state, command, now(), seed(), engine)
@@ -81,7 +78,7 @@ class Rooms(
                 }
             }
 
-            when (store.append(roomId, state.sequenceNumber, decision.events, after, correlationId, idempotency?.invoke(after))) {
+            when (store.append(roomId, state.sequenceNumber, decision.events, after, correlationId)) {
                 is AppendResult.Committed -> return when (decision) {
                     is Decision.Accepted -> Outcome.Ok(after, decision.events)
                     is Decision.Rejected -> Outcome.Refused(decision.reason, after, decision.events)
@@ -94,5 +91,43 @@ class Rooms(
         return Outcome.Stale(store.load(roomId).state)
     }
 
-    fun findIdempotent(key: String, playerId: String): String? = store.findIdempotent(key, playerId)
+    /**
+     * Creating a room is not `submit` with extra arguments: the id is brand new, so there is no
+     * sequence number to lose a race for and nothing to retry. The only way the append can conflict
+     * is another request having used the same `Idempotency-Key` first — in which case that request's
+     * response *is* the answer, which is the whole point of the header.
+     */
+    fun create(
+        playerId: String,
+        maxPlayers: Int,
+        idempotencyKey: String?,
+        correlationId: String?,
+        render: (RoomState) -> String,
+    ): CreateOutcome {
+        idempotencyKey?.let { key ->
+            store.findIdempotent(key, playerId)?.let { return CreateOutcome.Replayed(it) }
+        }
+
+        val roomId = UUID.randomUUID()
+        val empty = RoomState(roomId = roomId.toString())
+        val command = CreateRoom(roomId.toString(), playerId, RoomType.CASUAL, maxPlayers)
+        // A fresh room cannot refuse its own creation, so this is Accepted by construction.
+        val events = decide(empty, command, now(), seed(), engine).events
+        val state = empty.after(events)
+        val record = idempotencyKey?.let { IdempotentCreate(it, playerId, render(state)) }
+
+        return when (store.append(roomId, 0, events, state, correlationId, record)) {
+            is AppendResult.Committed -> CreateOutcome.Created(roomId, state, events)
+            AppendResult.Conflict -> idempotencyKey
+                ?.let { store.findIdempotent(it, playerId) }
+                ?.let { CreateOutcome.Replayed(it) }
+                ?: error("room $roomId conflicted on a fresh id with no idempotency key")
+        }
+    }
+}
+
+sealed interface CreateOutcome {
+    data class Created(val roomId: UUID, val state: RoomState, val events: List<Event>) : CreateOutcome
+    /** This player already used this key; the response they got the first time is returned verbatim. */
+    data class Replayed(val response: String) : CreateOutcome
 }

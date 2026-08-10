@@ -32,8 +32,7 @@ class EventStoreTest {
 
     @BeforeTest
     fun setUp() {
-        dataSource = testPool()
-        migrate(dataSource)
+        dataSource = freshDatabase()
         store = EventStore(dataSource)
     }
 
@@ -181,13 +180,7 @@ class EventStoreTest {
         migrate(dataSource)
     }
 
-    private fun count(table: String): Int =
-        dataSource.connection.use { connection ->
-            connection.prepareStatement("select count(*) from $table where room_id = ?").use { statement ->
-                statement.setObject(1, roomId)
-                statement.executeQuery().use { rows -> rows.next(); rows.getInt(1) }
-            }
-        }
+    private fun count(table: String): Int = dataSource.countIn(table, roomId)
 
     private companion object {
         val NOW: java.time.Instant = java.time.Instant.parse("2026-08-08T12:00:00Z")

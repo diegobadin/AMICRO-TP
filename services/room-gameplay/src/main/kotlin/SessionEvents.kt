@@ -15,8 +15,8 @@ import java.time.Duration
 import java.util.Properties
 import uno.DisconnectPlayer
 
+/** Also the dedup source key: one name for one stream (§2.3.3). */
 const val SESSION_EVENTS_TOPIC = "identity.session-events"
-private const val SOURCE = "identity.session-events"
 
 @Serializable
 data class SessionInvalidated(
@@ -38,7 +38,7 @@ class SessionInvalidations(
     fun handle(event: SessionInvalidated): Int {
         // D8: keyed by the invalidated session, so a redelivery cannot re-open a window that has
         // since expired — or disconnect a player who has already logged back in.
-        if (!store.markConsumed(SOURCE, event.oldSessionId)) {
+        if (!store.markConsumed(SESSION_EVENTS_TOPIC, event.oldSessionId)) {
             log("session-event-redelivered", mapOf("oldSessionId" to event.oldSessionId))
             return 0
         }

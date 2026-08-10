@@ -1,4 +1,3 @@
-import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
 import io.ktor.client.request.delete
@@ -25,40 +24,19 @@ class RoomsHttpTest {
 
     private lateinit var dataSource: HikariDataSource
 
-    private val alice = "11111111-1111-1111-1111-111111111111"
-    private val bob = "22222222-2222-2222-2222-222222222222"
-    private val carol = "33333333-3333-3333-3333-333333333333"
+    private val alice = ALICE
+    private val bob = BOB
+    private val carol = CAROL
 
     @BeforeTest
     fun setUp() {
-        dataSource = testPool()
-        migrate(dataSource)
-        dataSource.connection.use { connection ->
-            connection.createStatement().use {
-                it.execute("truncate room_events, outbox, rooms, idempotency_keys")
-            }
-        }
+        dataSource = freshDatabase()
     }
 
     @AfterTest
     fun tearDown() = dataSource.close()
 
-    private fun ApplicationTestBuilder.wire() {
-        application { module(config, Rooms(EventStore(dataSource), config)) }
-    }
-
-    private suspend fun HttpClient.createRoom(
-        player: String,
-        maxPlayers: Int = 10,
-        key: String? = null,
-    ): HttpResponse = post("/rooms") {
-        header("Authorization", "Bearer ${token(playerId = player)}")
-        key?.let { header("Idempotency-Key", it) }
-        contentType(ContentType.Application.Json)
-        setBody("""{"maxPlayers":$maxPlayers}""")
-    }
-
-    private fun roomIdOf(body: String) = Regex(""""roomId":"([^"]+)"""").find(body)!!.groupValues[1]
+    private fun ApplicationTestBuilder.wire() = wire(dataSource)
 
     @Test
     fun `creating a room returns 201 with a Location and an ETag`() = testApplication {
@@ -173,6 +151,32 @@ class RoomsHttpTest {
         assertTrue(tooEarly.bodyAsText().contains("not_enough_players"))
     }
 
+    /**
+     * The counter has to follow the log, not the request. Leaving a two-player game forfeits, which
+     * ends the game under invariant 7 — a `GameCompleted` nobody asked for, on a route that has
+     * nothing to do with completing games. It went uncounted until this test existed.
+     */
+    @Test
+    fun `a game ended by someone leaving still counts as completed`() = testApplication {
+        wire()
+        val roomId = client.startedRoom()
+        val before = client.get("/metrics").bodyAsText()
+
+        val left = client.delete("/rooms/$roomId/players/$bob") {
+            header("Authorization", "Bearer ${token(playerId = bob)}")
+        }
+        assertEquals(HttpStatusCode.NoContent, left.status)
+        assertTrue(dataSource.eventTypes(roomId).contains("GameCompleted"), "leaving a two-player game ends it")
+
+        fun value(body: String, metric: String) =
+            body.lineSequence().first { it.startsWith("$metric ") }.substringAfter(' ').toDouble()
+        val after = client.get("/metrics").bodyAsText()
+        assertTrue(
+            value(after, "roomgameplay_games_completed_total") > value(before, "roomgameplay_games_completed_total"),
+            "games_completed_total is one of P8's three business metrics; it cannot miss this path",
+        )
+    }
+
     @Test
     fun `the business counters move with the log`() = testApplication {
         wire()
@@ -189,19 +193,3 @@ class RoomsHttpTest {
     }
 }
 
-fun testPool(): HikariDataSource {
-    val url = System.getenv("TEST_DATABASE_URL")
-        ?: error(
-            "TEST_DATABASE_URL is not set. AC-P3.1/P3.3/P3.4 cannot be proved against a fake, so " +
-                "this suite refuses to pass by skipping. Point it at a Postgres, e.g. " +
-                "jdbc:postgresql://localhost:55432/room_gameplay",
-        )
-    return HikariDataSource(
-        HikariConfig().apply {
-            jdbcUrl = url
-            username = System.getenv("TEST_DATABASE_USER") ?: "room_gameplay"
-            password = System.getenv("TEST_DATABASE_PASSWORD") ?: "test"
-            maximumPoolSize = 4
-        },
-    )
-}

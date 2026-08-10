@@ -55,8 +55,8 @@ private val TEMPLATES = listOf(
     "/rooms/{roomId}",
     "/rooms/{roomId}/players/{playerId}",
     "/rooms/{roomId}/games",
-    "/rooms/{roomId}/games/{gameId}",
-    "/rooms/{roomId}/games/{gameId}/moves",
+    "/rooms/{roomId}/games/{gameNumber}",
+    "/rooms/{roomId}/games/{gameNumber}/moves",
 ).map { it.trim('/').split('/') }
 
 fun routeLabel(path: String): String {

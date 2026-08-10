@@ -99,37 +99,51 @@ export async function roomCommand(argv: string[], flags: Record<string, string |
   return 2;
 }
 
-/** List, take the first joinable room, and only create one if there is nothing to join. */
-async function enterCasualRoom(json: boolean, player: string): Promise<string | null> {
+async function joinable(): Promise<RoomSummary[]> {
   const listed = await call("GET", "/rooms");
-  const rooms = (Array.isArray(listed.payload) ? listed.payload : []) as unknown as RoomSummary[];
+  return (Array.isArray(listed.payload) ? listed.payload : []) as unknown as RoomSummary[];
+}
 
-  for (const room of rooms) {
-    const joined = await call("POST", `/rooms/${room.roomId}/players/${player}`);
-    if (joined.status < 300) {
-      emit(resultLine("room_join", joined, { room: room.roomId, player }), json);
-      return room.roomId;
-    }
-    // Someone filled or started it between the list and the join. Try the next one rather than
-    // failing: a race here is ordinary, not an error the player should have to read about.
+async function join(roomId: string, player: string, json: boolean): Promise<boolean> {
+  const joined = await call("POST", `/rooms/${roomId}/players/${player}`);
+  if (joined.status >= 300) return false;
+  emit(resultLine("room_join", joined, { room: roomId, player }), json);
+  return true;
+}
+
+/** List, take the first joinable room, and only create one if there is nothing to join. */
+async function enterCasualRoom(player: string, maxPlayers: number, json: boolean): Promise<string | null> {
+  for (const room of await joinable()) {
+    // Someone may have filled or started it between the list and the join. Try the next one rather
+    // than failing: a race here is ordinary, not an error the player should have to read about.
+    if (await join(room.roomId, player, json)) return room.roomId;
   }
 
-  const created = await call("POST", "/rooms", { maxPlayers: 4 }, { "idempotency-key": randomUUID() });
-  emit(resultLine("room_create", created, { room: created.payload.roomId ? String(created.payload.roomId) : null, player }), json);
-  return created.payload.roomId ? String(created.payload.roomId) : null;
+  const created = await call("POST", "/rooms", { maxPlayers }, { "idempotency-key": randomUUID() });
+  const roomId = created.payload.roomId ? String(created.payload.roomId) : null;
+  emit(resultLine("room_create", created, { room: roomId, player }), json);
+  return roomId;
 }
 
 /**
- * Waits for the backend's auto-start (E3) — and while waiting, keeps trying to converge on one
- * room.
+ * Waits for the backend's auto-start (E3), and — for `--casual` only — keeps trying to converge on
+ * one room while it waits.
  *
  * Two players running `play --casual` at the same moment both see an empty list and both create a
  * room, then sit in separate rooms waiting for each other forever. That is not hypothetical: it is
  * what happens every time the drill starts both processes together. Both clients apply the same
- * total order (lowest room id wins), so they pick the same room without a coordinator and without
- * a thundering herd.
+ * total order (lowest room id wins), so they pick the same room without a coordinator and without a
+ * thundering herd.
+ *
+ * `converge` is false for `play --room <id>`: a player who named a room means that room, and
+ * quietly moving them to another one would be a worse bug than the one this fixes.
  */
-async function waitForGame(roomId: string, player: string, json: boolean): Promise<{ roomId: string; view: GameView } | null> {
+async function waitForGame(
+  roomId: string,
+  player: string,
+  json: boolean,
+  converge: boolean,
+): Promise<{ roomId: string; view: GameView } | null> {
   let current = roomId;
   if (!json) process.stdout.write("waiting for another player...\n");
 
@@ -138,18 +152,12 @@ async function waitForGame(roomId: string, player: string, json: boolean): Promi
     if (game.status === 200) return { roomId: current, view: game.payload as unknown as GameView };
     if (game.status === 401) { process.stderr.write("session rejected (401) - log in again\n"); return null; }
 
-    const listed = await call("GET", "/rooms");
-    const rooms = (Array.isArray(listed.payload) ? listed.payload : []) as unknown as RoomSummary[];
-    const candidates = rooms.map((r) => r.roomId).filter((id) => id !== current);
-    if (candidates.length > 0) {
-      const winner = [current, ...candidates].sort()[0];
-      if (winner !== current) {
-        const joined = await call("POST", `/rooms/${winner}/players/${player}`);
-        if (joined.status < 300) {
-          await call("DELETE", `/rooms/${current}/players/${player}`);
-          emit(resultLine("room_join", joined, { room: winner, player }), json);
-          current = winner;
-        }
+    if (converge) {
+      const others = (await joinable()).map((r) => r.roomId).filter((id) => id !== current);
+      const winner = [current, ...others].sort()[0];
+      if (winner !== current && (await join(winner, player, json))) {
+        await call("DELETE", `/rooms/${current}/players/${player}`);
+        current = winner;
       }
     }
     await new Promise((r) => setTimeout(r, POLL_MS));
@@ -162,10 +170,12 @@ export async function play(flags: Record<string, string | boolean>, json: boolea
   const player = me();
   if (!player) { process.stderr.write("no session - run `login` first\n"); return 1; }
 
-  const entered = flags.room ? String(flags.room) : await enterCasualRoom(json, player);
+  const named = flags.room ? String(flags.room) : null;
+  const maxPlayers = Number(flags.max ?? 4);
+  const entered = named ?? (await enterCasualRoom(player, maxPlayers, json));
   if (!entered) return 1;
 
-  const started = await waitForGame(entered, player, json);
+  const started = await waitForGame(entered, player, json, named === null);
   if (!started) return 1;
   if (!json) process.stdout.write(board(started.view, player) + "\n");
 

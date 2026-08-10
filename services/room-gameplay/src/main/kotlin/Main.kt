@@ -18,9 +18,10 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.util.AttributeKey
 import kotlinx.serialization.Serializable
-import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import kotlin.system.exitProcess
 
 @Serializable
@@ -34,9 +35,8 @@ private val CorrelationId = AttributeKey<String>("correlationId")
 
 fun ApplicationCall.correlationId(): String = attributes[CorrelationId]
 
-// One structured JSON line per request, carrying the correlationId the client sent (or one we
-// minted) — the observability seam the README documents, and the same shape identity emits so a
-// `kubectl logs` across both services reads uniformly.
+// One request line each, carrying the correlationId the client sent (or one we minted) — the
+// observability seam the README documents.
 private val Observability = createApplicationPlugin("Observability") {
     onCall { call ->
         call.attributes.put(StartedAt, System.nanoTime())
@@ -49,10 +49,12 @@ private val Observability = createApplicationPlugin("Observability") {
         val status = call.response.status()?.value ?: 0
         val route = routeLabel(call.request.path())
         Metrics.commandDuration(route, status).record(elapsed, TimeUnit.NANOSECONDS)
-        println(
-            """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE",""" +
-                """"method":"${call.request.httpMethod.value}","route":"$route","status":$status,""" +
-                """"durationMs":${elapsed / 1_000_000},"correlationId":"${call.attributes[CorrelationId]}"}""",
+        logInfo(
+            "method" to call.request.httpMethod.value,
+            "route" to route,
+            "status" to status,
+            "durationMs" to elapsed / 1_000_000,
+            "correlationId" to call.attributes[CorrelationId],
         )
     }
 }
@@ -62,10 +64,7 @@ fun Application.module(config: Config, rooms: Rooms) {
     install(Observability)
     install(StatusPages) {
         exception<Throwable> { call, cause ->
-            System.err.println(
-                """{"ts":"${Instant.now()}","level":"error","service":"$SERVICE",""" +
-                    """"correlationId":"${call.correlationId()}","error":"${cause.toString().replace('"', '\'')}"}""",
-            )
+            logError("action" to "unhandled", "correlationId" to call.correlationId(), "error" to cause.toString())
             call.respond(HttpStatusCode.InternalServerError, ErrorBody("internal_error"))
         }
     }
@@ -73,11 +72,25 @@ fun Application.module(config: Config, rooms: Rooms) {
 
     routing {
         get("/health") { call.respond(Health("ok", SERVICE)) }
-        get("/metrics") {
-            call.respondText(Metrics.registry.scrape(), ContentType.Text.Plain)
-        }
+        get("/metrics") { call.respondText(Metrics.registry.scrape(), ContentType.Text.Plain) }
         roomRoutes(rooms)
     }
+}
+
+/**
+ * Idempotency keys are retained for 24 hours (persistence-layer §1.4) and then swept, so the table
+ * does not grow for the lifetime of the deployment. Once on startup and daily after that: a replay
+ * arriving a day late is a bug, not a retry, and should get a fresh room rather than a stale答案.
+ */
+private fun scheduleIdempotencySweep(dataSource: DataSource) {
+    val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "idempotency-sweep").apply { isDaemon = true }
+    }
+    scheduler.scheduleWithFixedDelay({
+        runCatching { sweepIdempotencyKeys(dataSource) }
+            .onSuccess { if (it > 0) logInfo("action" to "idempotency-swept", "rows" to it) }
+            .onFailure { logError("action" to "idempotency-sweep-failed", "error" to it.toString()) }
+    }, 0, 24, TimeUnit.HOURS)
 }
 
 fun main() {
@@ -88,24 +101,24 @@ fun main() {
     try {
         migrate(dataSource)
     } catch (e: Exception) {
-        System.err.println(
-            """{"ts":"${Instant.now()}","level":"error","service":"$SERVICE","action":"migrate","error":"$e"}""",
-        )
+        logError("action" to "migrate", "error" to e.toString())
         exitProcess(1)
     }
+
     val store = EventStore(dataSource)
     val rooms = Rooms(store, config)
-
-    fun event(action: String, fields: Map<String, Any?>) = println(
-        """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE","action":"$action",""" +
-            fields.entries.joinToString(",") { (k, v) -> """"$k":${if (v is Number) v else "\"$v\""}""" } + "}",
-    )
+    scheduleIdempotencySweep(dataSource)
 
     // A superseded session has to disconnect the player from any room they are sitting in (E1).
-    SessionEventsConsumer(config.kafkaBrokers, SessionInvalidations(rooms, store, ::event), ::event).start()
+    SessionEventsConsumer(
+        brokers = config.kafkaBrokers,
+        handler = SessionInvalidations(rooms, store, ::logJsonInfo),
+        log = ::logJsonInfo,
+    ).start()
 
-    println(
-        """{"ts":"${Instant.now()}","level":"info","service":"$SERVICE","msg":"listening","port":${config.port}}""",
-    )
+    logInfo("msg" to "listening", "port" to config.port)
     embeddedServer(Netty, port = config.port) { module(config, rooms) }.start(wait = true)
 }
+
+private fun logJsonInfo(action: String, fields: Map<String, Any?>) =
+    logJson("info", mapOf("action" to action) + fields)

@@ -28,53 +28,24 @@ import kotlin.test.assertTrue
 class MovesHttpTest {
 
     private lateinit var dataSource: HikariDataSource
-    private val alice = "11111111-1111-1111-1111-111111111111"
-    private val bob = "22222222-2222-2222-2222-222222222222"
-    private val json = Json { ignoreUnknownKeys = true }
+    private val alice = ALICE
+    private val bob = BOB
+    private val json = testJson
 
     @BeforeTest
     fun setUp() {
-        dataSource = testPool()
-        migrate(dataSource)
-        dataSource.connection.use { c ->
-            c.createStatement().use { it.execute("truncate room_events, outbox, rooms, idempotency_keys") }
-        }
+        dataSource = freshDatabase()
     }
 
     @AfterTest
     fun tearDown() = dataSource.close()
 
-    private fun ApplicationTestBuilder.wire() {
-        application { module(config, Rooms(EventStore(dataSource), config)) }
-    }
+    private fun ApplicationTestBuilder.wire() = wire(dataSource)
 
-    private suspend fun HttpClient.startedRoom(): String {
-        val created = post("/rooms") {
-            header("Authorization", "Bearer ${token(playerId = alice)}")
-            contentType(ContentType.Application.Json)
-            setBody("""{"maxPlayers":2}""")
-        }
-        val roomId = Regex(""""roomId":"([^"]+)"""").find(created.bodyAsText())!!.groupValues[1]
-        post("/rooms/$roomId/players/$bob") { header("Authorization", "Bearer ${token(playerId = bob)}") }
-        return roomId
-    }
+    private suspend fun HttpClient.view(roomId: String, player: String) = gameView(roomId, player)
 
-    private suspend fun HttpClient.view(roomId: String, player: String): GameView =
-        json.decodeFromString(
-            get("/rooms/$roomId/games/1") { header("Authorization", "Bearer ${token(playerId = player)}") }.bodyAsText(),
-        )
-
-    private suspend fun HttpClient.move(
-        roomId: String,
-        player: String,
-        body: String,
-        ifMatch: Int?,
-    ): HttpResponse = post("/rooms/$roomId/games/1/moves") {
-        header("Authorization", "Bearer ${token(playerId = player)}")
-        ifMatch?.let { header("If-Match", "\"$it\"") }
-        contentType(ContentType.Application.Json)
-        setBody(body)
-    }
+    private suspend fun HttpClient.move(roomId: String, player: String, body: String, ifMatch: Int?) =
+        submitMove(roomId, player, body, ifMatch)
 
     @Test
     fun `a move without If-Match is refused with 428`() = testApplication {
@@ -218,40 +189,13 @@ class MovesHttpTest {
     fun `two players can play a game to a winner through the API`() = testApplication {
         wire()
         val roomId = client.startedRoom()
-        var guard = 0
-        var view = client.view(roomId, alice)
-
-        while (view.status == "IN_PROGRESS" && guard++ < 2000) {
-            val actor = view.currentPlayerId!!
-            val mine = client.view(roomId, actor)
-            val body = when {
-                mine.playable.isNotEmpty() -> {
-                    val card = mine.hand[mine.playable.first()]
-                    val colour = if (card.startsWith("WILD")) ""","chosenColor":"RED"""" else ""
-                    val uno = if (mine.hand.size == 2) ""","callingUno":true""" else ""
-                    """{"type":"play_card","card":"$card"$colour$uno}"""
-                }
-                !mine.drewThisTurn -> """{"type":"draw_card"}"""
-                else -> """{"type":"pass"}"""
-            }
-            val res = client.move(roomId, actor, body, ifMatch = mine.sequenceNumber)
-            assertTrue(
-                res.status.value in 200..299,
-                "move $body by $actor was ${res.status}: ${res.bodyAsText()}",
-            )
-            view = client.view(roomId, alice)
-        }
+        val view = client.playOut(roomId)
 
         assertEquals("COMPLETED", view.status, "the game should have reached a winner")
         assertTrue(view.finishingOrder.isNotEmpty())
 
         // The log is the authority: it has to end with the completion, and the room closes with it.
-        val log = dataSource.connection.use { c ->
-            c.prepareStatement("select type from room_events where room_id = ?::uuid order by sequence_number").use { s ->
-                s.setString(1, roomId)
-                s.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } }
-            }
-        }
+        val log = dataSource.eventTypes(roomId)
         assertTrue(log.contains("GameCompleted"), "GameCompleted must be in the log")
         assertTrue(log.contains("RoomCompleted"), "a casual room closes with its only game")
         assertEquals("RoomCompleted", log.last())
