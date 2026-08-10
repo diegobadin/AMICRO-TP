@@ -66,9 +66,17 @@
   smaller and the only workable option.
 - **D8 — Resync rules, stated once and implemented once.** The CLI re-reads
   `GET /rooms/{id}/games/{n}` when: a `resync` frame arrives, a `seq` gap is detected, a heartbeat
-  reports a newer `seq` than it holds, or the frame changed **its own** hand
-  (`CardDrawn`/`ForcedDraw` naming it, `GameStarted`, `DeckRecycled`). Every other frame is applied
-  to the local board with no round trip.
+  reports a newer `seq` than it holds, the frame changed **its own** hand (`CardDrawn`/`ForcedDraw`
+  naming it, a challenge penalty against it, `GameStarted`), or **the turn just became theirs** —
+  because `playable` has to be the server's legality check and not the client's opinion of it.
+  Every other frame is applied to the local view with no round trip.
+  Two rules found by playing it (F5), both about *when to draw*, not when to read:
+  **the board is only ever rendered from a state the server sent.** One command commits several
+  events — a `+2` is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so between two frames the
+  applied view genuinely says it is your turn while the batch is still moving it on. A turn prompt
+  drawn there invites the player into a `409`.
+  And **frames whose sequence number the client already holds are narrated but not re-read**: the
+  response to your own command carried the newer state, so its frames are feed lines, nothing more.
 - **D9 — The gateway verifies with identity's HS256 key.** `IDENTITY_JWT_SECRET` moves from
   `room-gameplay-secrets` to `gateway-secrets`; identity is unchanged. The coupling shrinks from
   "two services hold a signing key" to "the signer and the one verifier" — intrinsic to symmetric

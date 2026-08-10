@@ -77,8 +77,13 @@ function act(player) {
   const blocks = player.buffer.split("-- room ");
   const block = blocks[blocks.length - 1];
   const state = parseBoard(block);
-  if (!state.yourTurn || player.acted === block) return;
-  player.acted = block;
+  // One action per board, keyed by the sequence number in its header. Keying on the block text
+  // instead means every feed line that lands under a turn prompt looks like a new prompt, and the
+  // same command gets typed again — which the server rightly refuses. Live events made that
+  // obvious; polling had merely hidden it behind a one-second interval.
+  const seq = /- seq (\d+)/.exec(block)?.[1];
+  if (!state.yourTurn || seq === undefined || player.acted === seq) return;
+  player.acted = seq;
 
   // An open window on a careless opponent is worth taking: it is the one path AC-P3.7 asks the
   // transcript to show, and it is only open until the turn moves on.

@@ -7,8 +7,10 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { API, Line, Reply, emit, line, loadSession, request, seqOf } from "./api.js";
-import { GameView, board, feed } from "./board.js";
+import { GameView, apply, board, describe, needsResync } from "./board.js";
+import { StreamEvent, follow } from "./stream.js";
 
+/** Only `waitForGame` polls now: before the game exists there is no room stream to subscribe to. */
 const POLL_MS = Number(process.env.UNOARENA_POLL_MS ?? 1000);
 
 interface RoomSummary {
@@ -194,46 +196,87 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
     const finish = (code: number) => {
       if (closed) return;
       closed = true;
-      clearInterval(timer);
       rl.close();
       resolve(code);
     };
 
-    const adopt = (next: GameView, quiet = false) => {
-      if (next.sequenceNumber === view.sequenceNumber) return;
-      const events = feed(view, next, player);
+    const setView = (next: GameView) => {
       view = next;
       etag = `"${next.sequenceNumber}"`;
-      if (json) {
-        for (const e of events) emit(line({ action: "event", result: "ok", room: roomId, player, seq: next.sequenceNumber, detail: e }), true);
-      } else {
-        for (const e of events) process.stdout.write(`  ${e}\n`);
-        if (!quiet && (next.yourTurn || next.status === "COMPLETED")) process.stdout.write(board(next, player) + "\n");
+    };
+
+    /**
+     * Renders, and only from a state the server sent. One command commits several events — a `+2`
+     * is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so between two frames the applied
+     * state genuinely says it is your turn when the batch is about to move it on again. Drawing a
+     * turn prompt there is how a player is invited into a `409`; the drill did exactly that, 22
+     * times in one game.
+     */
+    const adopt = (next: GameView, quiet = false) => {
+      setView(next);
+      if (!json && !quiet && (next.yourTurn || next.status === "COMPLETED")) {
+        process.stdout.write(board(next, player) + "\n");
       }
       if (next.status === "COMPLETED") finish(0);
     };
 
-    // Polling with If-None-Match (E4): while nothing has happened the answer is a 304 and costs
-    // almost nothing. P4 replaces this loop with an SSE stream and keeps the same endpoint as the
-    // reconnect read, so `play` is re-wired rather than rewritten.
-    const poll = async () => {
-      if (busy || closed) return;
-      busy = true;
-      try {
-        const reply = await call("GET", `/rooms/${roomId}/games/1`, undefined, { "if-none-match": etag });
-        if (reply.status === 200) adopt(reply.payload as unknown as GameView);
-        else if (reply.status === 401) {
-          // The only way a live session dies mid-game is a second login for the same player.
-          emit(line({ action: "play", result: "error", error_code: "session_superseded", room: roomId, player }), json);
-          finish(1);
-        }
-      } catch (e) {
-        if (!json) process.stderr.write(`  poll failed: ${String(e)}\n`);
-      } finally {
-        busy = false;
-      }
+    /** The resync read of E4 — the same endpoint P3 polled, now called only when it is needed. */
+    const resync = async () => {
+      const reply = await call("GET", `/rooms/${roomId}/games/1`, undefined, {});
+      if (reply.status === 200) adopt(reply.payload as unknown as GameView);
+      else if (reply.status === 401) superseded();
     };
-    const timer = setInterval(poll, POLL_MS);
+
+    const superseded = () => {
+      emit(line({ action: "play", result: "error", error_code: "session_superseded", room: roomId, player }), json);
+      finish(1);
+    };
+
+    const onEvent = (event: StreamEvent) => {
+      if (closed) return;
+      if (event.event === "session-invalidated") return superseded();
+      if (event.event === "heartbeat") {
+        // The one hole the gap check cannot see: a lost *last* frame, with nothing after it.
+        if (Number(event.data.seq ?? 0) > view.sequenceNumber) void resync();
+        return;
+      }
+      if (event.event === "resync") {
+        void resync();
+        return;
+      }
+      if (event.id === undefined) return;
+
+      const gap = event.id > view.sequenceNumber + 1;
+      // The frames for the player's own command arrive after its response, which already carried
+      // the authoritative state. Narrate them — that is the feed — but do not re-read or re-render
+      // a state we are holding a newer copy of.
+      const alreadyHeld = event.id <= view.sequenceNumber;
+      const before = view;
+      const next = { ...apply(view, event, player), sequenceNumber: event.id };
+      const text = describe(event, player);
+      if (text) {
+        if (json) emit(line({ action: "event", result: "ok", room: roomId, player, seq: event.id, detail: text }), true);
+        else process.stdout.write(`  ${text}\n`);
+      }
+      if (alreadyHeld) return;
+      // The applied state keeps `state` and the next resync honest, but it never reaches the
+      // screen: the board is rendered from the read below, which is the server's account.
+      setView(next);
+      if (gap || event.event === "GameCompleted" || needsResync(before, next, event, player)) void resync();
+    };
+
+    // The stream replaces the poll loop. It resumes from the sequence number of the state already
+    // in hand, so nothing committed between that read and this connection is lost (D15).
+    void follow({
+      url: `${API}/rooms/${roomId}/stream`,
+      token: token() ?? "",
+      from: initial.sequenceNumber,
+      onEvent,
+      onNotice: (text) => {
+        if (!json && !closed) process.stderr.write(`  ${text}\n`);
+      },
+      isOpen: () => !closed,
+    });
 
     const move = async (body: Record<string, unknown>, action: string) => {
       busy = true;

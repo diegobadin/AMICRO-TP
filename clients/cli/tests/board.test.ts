@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { GameView, board, feed } from "../src/board.js";
+import { GameView, apply, board, describe as narrate, needsResync } from "../src/board.js";
 import { seqOf } from "../src/api.js";
+import type { StreamEvent } from "../src/stream.js";
 
 const base: GameView = {
   roomId: "3f2a1b7c-0000-4000-8000-000000000000",
@@ -66,39 +67,104 @@ describe("turn board (Client-Checkpoint §5.C)", () => {
   });
 });
 
-describe("live feed derived from consecutive polls", () => {
-  it("reports a card played and a colour change", () => {
-    const after = { ...base, discardTop: "WILD", activeColor: "BLUE", sequenceNumber: 43 };
-    expect(feed(base, after, "someone-else")).toContain("alice-00 played WILD - color BLUE");
+const bob = "bob-000000-0000-0000-000000000000";
+const ev = (event: string, data: Record<string, unknown>, id = 43): StreamEvent => ({ id, event, data });
+
+describe("live feed, read from the room's own events", () => {
+  it("reports a card played, with the colour when one was declared", () => {
+    const played = ev("CardPlayed", { playerId: bob, card: "WILD", newDiscardTop: "WILD", chosenColor: "BLUE", playerCardCount: 2, nextPlayerId: me });
+    expect(narrate(played, me)).toBe("bob-0000 played WILD - color BLUE");
   });
 
-  it("reports an opponent drawing and calling uno", () => {
-    const after = {
-      ...base,
-      opponents: [
-        { ...base.opponents[0], cardCount: 5 },
-        { ...base.opponents[1], calledUno: true },
-      ],
-    };
-    expect(feed(base, after, me)).toContain("bob-0000 drew 2");
+  it("says when someone is down to their last card, because that is when the mechanic matters", () => {
+    const played = ev("CardPlayed", { playerId: bob, card: "R7", newDiscardTop: "R7", playerCardCount: 1, nextPlayerId: me });
+    expect(narrate(played, me)).toContain("one card left!");
   });
 
   it("names the player as 'you' rather than an id", () => {
-    const after = { ...base, hand: [...base.hand, "G9"] };
-    expect(feed(base, after, me)).toContain("you drew G9");
+    expect(narrate(ev("CardDrawn", { playerId: me, newCardCount: 5 }), me)).toBe("you drew a card");
+    expect(narrate(ev("UnoCallMade", { playerId: bob }), me)).toBe("bob-0000 called UNO!");
   });
 
   it("announces the winner when the game completes", () => {
-    const after = { ...base, status: "COMPLETED", finishingOrder: [me, "bob-000000-0000-0000-000000000000"] };
-    expect(feed(base, after, me)).toContain("game over - you win!");
+    expect(narrate(ev("GameCompleted", { finishingOrder: [me, bob] }), me)).toBe("game over - you win!");
   });
 
   it("reports a disconnection so the table knows why the turn is being skipped", () => {
-    const after = {
-      ...base,
-      opponents: [{ ...base.opponents[0], connection: "disconnected" }, base.opponents[1]],
-    };
-    expect(feed(base, after, me)).toContain("bob-0000 is disconnected");
+    expect(narrate(ev("PlayerDisconnected", { playerId: bob }), me)).toBe("bob-0000 disconnected");
+  });
+
+  it("gives one line per event — two things in the same instant are two lines, not one", () => {
+    // The P3 feed diffed two polls, so a draw and the play that followed it inside one interval
+    // collapsed into a single line. One frame in, one line out.
+    const burst = [
+      ev("CardDrawn", { playerId: bob, newCardCount: 4 }, 43),
+      ev("CardPlayed", { playerId: bob, card: "R5", newDiscardTop: "R5", playerCardCount: 3, nextPlayerId: me }, 44),
+    ];
+    expect(burst.map((e) => narrate(e, me))).toEqual(["bob-0000 drew a card", "bob-0000 played R5"]);
+  });
+
+  it("reads as English when the player is the subject", () => {
+    // "you was skipped" is what a line written for third parties looks like when it is handed to
+    // the player it is about. The drill transcript is read by the faculty, so it has to read.
+    expect(narrate(ev("TurnSkipped", { skippedPlayerId: me, nextPlayerId: bob }), me)).toBe("you were skipped");
+    expect(narrate(ev("TurnSkipped", { skippedPlayerId: bob, nextPlayerId: me }), me)).toBe("bob-0000 was skipped");
+    expect(narrate(ev("PlayerReconnected", { playerId: me }), me)).toBe("you are back");
+    expect(narrate(ev("ForcedDraw", { targetPlayerId: me, cardCount: 2, newHandSize: 6, reason: "draw_two" }), me))
+      .toBe("you draw 2 (draw_two)");
+  });
+
+  it("stays quiet about events a player has no reason to read", () => {
+    expect(narrate(ev("RoomCompleted", { roomType: "CASUAL" }), me)).toBeNull();
+  });
+});
+
+describe("applying an event to the board", () => {
+  it("takes the discard, the colour, the opponent's count and the turn from the payload", () => {
+    const played = ev("CardPlayed", { playerId: bob, card: "B2", newDiscardTop: "B2", playerCardCount: 2, nextPlayerId: me });
+    const after = apply({ ...base, yourTurn: false, currentPlayerId: bob }, played, me);
+
+    expect(after.discardTop).toBe("B2");
+    expect(after.activeColor).toBe("BLUE"); // the notation's first letter is the colour (§5.F)
+    expect(after.opponents.find((o) => o.playerId === bob)?.cardCount).toBe(2);
+    expect(after.currentPlayerId).toBe(me);
+    expect(after.yourTurn).toBe(true);
+  });
+
+  it("uses the declared colour for a wild rather than guessing one", () => {
+    const wild = ev("CardPlayed", { playerId: bob, card: "WILD", newDiscardTop: "WILD", chosenColor: "GREEN", playerCardCount: 1, nextPlayerId: me });
+    expect(apply(base, wild, me).activeColor).toBe("GREEN");
+  });
+
+  it("never invents the player's own hand — that is what the resync read is for", () => {
+    const drawn = ev("CardDrawn", { playerId: me, newCardCount: 5 });
+    expect(apply(base, drawn, me).hand).toEqual(base.hand);
+  });
+
+  it("ends the game and records the finishing order", () => {
+    const after = apply(base, ev("GameCompleted", { finishingOrder: [me, bob] }), me);
+    expect(after.status).toBe("COMPLETED");
+    expect(after.finishingOrder).toEqual([me, bob]);
+  });
+});
+
+describe("when the client has to re-read the state", () => {
+  const waiting = { ...base, yourTurn: false, currentPlayerId: bob };
+
+  it("re-reads when its own cards changed", () => {
+    const drawn = ev("CardDrawn", { playerId: me, newCardCount: 5 });
+    expect(needsResync(waiting, apply(waiting, drawn, me), drawn, me)).toBe(true);
+  });
+
+  it("re-reads when the turn arrives, so `playable` is the server's answer and not a guess", () => {
+    const played = ev("CardPlayed", { playerId: bob, card: "R5", newDiscardTop: "R5", playerCardCount: 2, nextPlayerId: me });
+    expect(needsResync(waiting, apply(waiting, played, me), played, me)).toBe(true);
+  });
+
+  it("does not re-read for something that happened between other players", () => {
+    const carla = "carla-00000-0000-0000-000000000000";
+    const played = ev("CardPlayed", { playerId: bob, card: "R5", newDiscardTop: "R5", playerCardCount: 2, nextPlayerId: carla });
+    expect(needsResync(waiting, apply(waiting, played, me), played, me)).toBe(false);
   });
 });
 
