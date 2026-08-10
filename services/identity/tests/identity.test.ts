@@ -51,10 +51,14 @@ describe("identity accounts", () => {
   });
 
   it("stores a hash, never the password", async () => {
-    const { store } = await registered("dani");
+    // A distinctive password on purpose. The salt and the derived key are base64, so a two-letter
+    // password like "pw" turns up inside them by pure chance in roughly one run in fifty — this
+    // assertion used to fail at random on CI while proving nothing about the code.
+    const secret = "correct-horse-battery-staple";
+    const { store } = await registered("dani", secret);
     const player = await store.findByUsername("dani");
     expect(player?.passwordHash).toMatch(/^scrypt\$/);
-    expect(player?.passwordHash).not.toContain("pw");
+    expect(player?.passwordHash).not.toContain(secret);
   });
 
   it("whoami without a token is 401", async () => {
