@@ -338,3 +338,22 @@ fully-wired services:
 - **`tournament` had the same kaniko/Kotlin-daemon bug** as room-gameplay, latent until a
   `ci/templates/**` change pulled every service into the pipeline and rebuilt it. Both Kotlin
   images carry the fix now.
+
+
+### Review pass (2026-08-10)
+
+The branch was read back end to end as if it were someone else's PR. Net **-36 lines**, two real
+defects fixed, and one flaky test in P2 code that P3's pipeline exposed:
+
+| Finding | Verdict |
+|---|---|
+| `sweepIdempotencyKeys` defined and tested but never called | **Bug.** The table grew unbounded despite D5's 24-hour retention. Now runs at startup and daily. |
+| `countBusiness` missing on `DELETE`/`PATCH` | **Bug.** Leaving a two-player game ends it (invariant 7); `games_completed_total` — a P8 business metric — never counted that path. Fixed, with a test that fails without the fix. |
+| `play --room <id>` used the casual convergence logic | **Bug.** Could move a player out of the room they named. Convergence is now casual-only. |
+| identity's `not.toContain("pw")` on a base64 hash | **Flaky, 3.5% of runs** (measured over 5000 hashes). Took `main` red on a pipeline that changed nothing in identity. |
+| `POST /rooms` routed through `submit`'s retry loop | **Overengineering.** A fresh id cannot lose a sequence race; three futile attempts reported as `Stale`. Replaced by `Rooms.create`. |
+| Repeated membership guard, `ETag` construction, JSON log writers, test fixtures | **Duplication.** One helper each; the consumer's log writer also did not escape its input. |
+
+`main` pipeline `2748157103` after all of it: **34 success, 1 manual, 0 failed**, same stage list.
+115 → 116 Kotlin tests (the new regression test), 17 CLI tests, and a full two-process game replayed
+against the refactored build: 242 events, outbox parity, no seed leaked.

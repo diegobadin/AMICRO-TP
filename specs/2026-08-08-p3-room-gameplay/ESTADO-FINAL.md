@@ -69,6 +69,18 @@ The empty-cluster drill earned its place again, and so did running two real CLI 
    file deleted while the snapshot is taken, failing the image build *after* a successful compile.
    `gradle --no-daemon` does not cover it, because the Kotlin compiler forks a daemon of its own.
 
+And three more from the review pass, reading the branch back as if it were someone else's PR:
+
+6. **The idempotency sweep was never called.** `Migrate.kt` defined it, a test exercised it, and
+   nothing in `main()` ran it — so the table grew for the life of the deployment despite D5
+   promising 24-hour retention. Dead code that looked like a feature.
+7. **Business metrics were counted on four of the six mutating routes.** Leaving a two-player game
+   forfeits, which ends the game under invariant 7 and emits a `GameCompleted` nobody requested —
+   and `games_completed_total`, one of P8's three required business metrics, never saw it. There is
+   now a test that fails without the fix.
+8. **`play --room <id>` inherited the casual convergence logic** and could quietly move the player
+   to a different room. A player who names a room means that room.
+
 Two more came from tests that were themselves wrong, which is worth recording:
 
 - The first property suite was **green while running nothing**: `checkAll` returns a
@@ -77,6 +89,27 @@ Two more came from tests that were themselves wrong, which is worth recording:
 - `roomgameplay_rooms_created_total` was silently exposed as `roomgameplay_rooms_total`: OpenMetrics
   reserves the `_created` suffix and the Prometheus client rewrites the name. The metrics test now
   asserts the exact strings P8 will chart.
+- identity's `stores a hash, never the password` registered with the password `pw` and asserted the
+  stored hash does not contain `pw`. Salt and derived key are base64, so those two letters turn up
+  by chance: measured over 5000 hashes, **3.5% of runs**. It took `main` red on a pipeline that
+  changed nothing in identity. P2 code, found by P3's pipeline.
+
+## What the review pass removed
+
+Reading the branch back as a reviewer took out more code than it added (250 inserted, 286 deleted):
+
+- **Creating a room stopped being `submit` with extra arguments.** A fresh id cannot lose a
+  sequence race, so the retry loop made three futile attempts and reported the result as `Stale`,
+  which it never was. `Rooms.create` now says what it does — the only possible conflict is another
+  request having used the same `Idempotency-Key`, and then that request's response *is* the answer.
+- **Three membership verbs shared five lines of identical guard**, and nine call sites built the
+  same `ETag` by hand. One helper each.
+- **Four hand-rolled JSON log writers became one**, built with the JSON library the service already
+  depends on. The consumer's version did not escape, so a `reason` arriving from Kafka with a quote
+  in it would have broken the line an operator reads under pressure.
+- **Four test classes each rebuilt the same pool, migration, truncate and HTTP helpers.** One
+  fixture now, and `MovesHttpTest`'s hand-written play loop went with it.
+- `Outcome.Stale` no longer takes an `events` parameter it could never carry.
 
 ## Decisions worth carrying forward
 
