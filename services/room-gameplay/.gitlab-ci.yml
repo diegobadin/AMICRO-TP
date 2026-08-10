@@ -51,16 +51,20 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/room-gameplay/**/*", "ci/templates/**/*"]
 
-# Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).
+# Fully wired since P3, on the same terms as identity: pinning the built digest into the staging
+# overlay is what makes a from-empty cluster deployable, so it runs whether or not a persistent
+# cluster is wired up. It runs on feature branches too, so a drill cluster tracking the branch
+# deploys the branch's own image instead of whatever main last built.
+# needs build:room-gameplay too, so the IMAGE/IMAGE_DIGEST dotenv is inherited.
 "deploy-staging:room-gameplay":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:room-gameplay"]
+  needs: ["deliver:room-gameplay", "build:room-gameplay"]
   variables:
     SVC: room-gameplay
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/room-gameplay/**/*"]
-      when: manual # Phase 2: flip to automatic
-      allow_failure: true
+      when: on_success
+    - changes: ["services/room-gameplay/**/*"]
+      when: on_success
