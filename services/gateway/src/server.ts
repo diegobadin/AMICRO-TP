@@ -7,8 +7,8 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import Redis from "ioredis";
-import { Outcome, resolve } from "./app.js";
-import { Tokens } from "./auth.js";
+import { CORRELATION_HEADER, Outcome, PLAYER_HEADER, SESSION_HEADER, resolve } from "./app.js";
+import { Principal, Tokens } from "./auth.js";
 import { SERVICE, fromEnv } from "./config.js";
 import * as metrics from "./metrics.js";
 import { forward } from "./proxy.js";
@@ -71,12 +71,17 @@ function lastEventId(req: IncomingMessage, query: string): number | undefined {
  * Only a member of the room may watch it (Architecture §1.6). room-gameplay already knows who is
  * seated, so the check is its own answer rather than a second copy of the membership rule here.
  */
-async function isMember(roomId: string, playerId: string, headers: Record<string, string>): Promise<boolean> {
+async function isMember(roomId: string, principal: Principal, correlationId: string): Promise<boolean> {
+  const headers = {
+    [PLAYER_HEADER]: principal.playerId,
+    [SESSION_HEADER]: principal.sessionId,
+    [CORRELATION_HEADER]: correlationId,
+  };
   const room = await forward(config.roomsUrl, "GET", `/rooms/${roomId}`, headers, undefined);
   if (room.status !== 200) return false;
   try {
     const players = (JSON.parse(room.body) as { players?: { playerId: string }[] }).players ?? [];
-    return players.some((p) => p.playerId === playerId);
+    return players.some((p) => p.playerId === principal.playerId);
   } catch {
     return false;
   }
@@ -99,28 +104,33 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const outcome = await resolve({ tokens, revoked: (sid) => revocations.has(sid) }, method, url, req.headers, correlationId);
   const route = outcome.route?.label ?? "unknown";
 
+  // For a stream this measures the time to the first byte, not the life of the connection: a
+  // request histogram with twenty-minute samples in it says nothing about latency.
   const finish = (status: number) => {
     done({ route, status });
     metrics.requests.inc({ route, status });
     log(`${method} ${url}`, status, correlationId, { route, player: playerOf(outcome) });
   };
 
+  const reply = (status: number, json: unknown) => {
+    res.writeHead(status, { "content-type": "application/json", [CORRELATION_HEADER]: correlationId });
+    res.end(JSON.stringify(json));
+    finish(status);
+  };
+
   if (outcome.kind === "proxy") {
     const base = outcome.route.target === "identity" ? config.identityUrl : config.roomsUrl;
-    const reply = await forward(base, method, url, outcome.headers, body);
-    res.writeHead(reply.status, { ...reply.headers, "x-correlation-id": correlationId });
-    res.end(reply.body);
-    finish(reply.status);
+    const backend = await forward(base, method, url, outcome.headers, body);
+    res.writeHead(backend.status, { ...backend.headers, [CORRELATION_HEADER]: correlationId });
+    res.end(backend.body);
+    finish(backend.status);
     return;
   }
 
   if (outcome.kind === "stream") {
     const roomId = url.split("/")[2];
-    const headers = { "x-player-id": outcome.principal.playerId, "x-session-id": outcome.principal.sessionId, "x-correlation-id": correlationId };
-    if (!(await isMember(roomId, outcome.principal.playerId, headers))) {
-      res.writeHead(403, { "content-type": "application/json", "x-correlation-id": correlationId });
-      res.end(JSON.stringify({ error: "not_a_member" }));
-      finish(403);
+    if (!(await isMember(roomId, outcome.principal, correlationId))) {
+      reply(403, { error: "not_a_member" });
       return;
     }
 
@@ -131,22 +141,38 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
       // Nothing between the pod and the client buffers today, but an SSE stream that gets buffered
       // looks exactly like a broken game, and the header costs nothing.
       "x-accel-buffering": "no",
-      "x-correlation-id": correlationId,
+      [CORRELATION_HEADER]: correlationId,
     });
+    // Node holds headers back until the first body byte, and a subscriber with nothing to replay
+    // writes nothing until the first event — which would leave the client's `fetch` unresolved,
+    // waiting on a connection that is in fact open and working.
+    res.flushHeaders();
     finish(200);
 
-    const detach = await streams.subscribe(
-      roomId,
-      outcome.principal.playerId,
-      outcome.principal.sessionId,
-      { write: (chunk) => res.write(chunk), end: () => res.end() },
-      lastEventId(req, query),
-    );
-    req.on("close", detach);
+    // The client can vanish while the replay is still being read out of Redis, and a subscriber
+    // nobody detaches keeps the room tailing and the connection gauge wrong.
+    let detach: (() => void) | undefined;
+    let gone = false;
+    req.on("close", () => {
+      gone = true;
+      detach?.();
+    });
+    try {
+      detach = await streams.subscribe(
+        roomId,
+        outcome.principal.sessionId,
+        { write: (chunk) => res.write(chunk), end: () => res.end() },
+        lastEventId(req, query),
+      );
+      if (gone) detach();
+    } catch (e) {
+      // Redis is unreachable. Ending the stream sends the client back through its reconnect loop,
+      // which is a far better answer than an open connection that will never carry an event.
+      log("stream-subscribe-failed", 0, correlationId, { room: roomId, error: String(e) });
+      res.end();
+    }
     return;
   }
 
-  res.writeHead(outcome.reply.status, { "content-type": "application/json", "x-correlation-id": correlationId });
-  res.end(JSON.stringify(outcome.reply.json));
-  finish(outcome.reply.status);
+  reply(outcome.reply.status, outcome.reply.json);
 }).listen(config.port, () => log("startup", 200, "boot", { port: config.port }));

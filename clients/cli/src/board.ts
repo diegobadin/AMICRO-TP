@@ -83,16 +83,42 @@ export function board(view: GameView, me: string): string {
 // into a single line. These are the room's own events, in the room's own order, so what the player
 // reads is what the log says happened.
 
-const COLOURS: Record<string, string> = { R: "RED", G: "GREEN", B: "BLUE", Y: "YELLOW" };
-
-/** §5.F notation: the first letter is the colour. A wild has none until someone declares one. */
-const colourOf = (card: string): string | undefined => COLOURS[card.slice(0, 1)];
+/**
+ * The fields the room's events carry, as this client reads them — the catalog of
+ * `docs/design/04-commands-events.md` narrowed to what the feed needs. Every field is optional
+ * because each event carries its own subset, and naming them beats casting the payload to
+ * something permissive and hoping.
+ */
+interface EventData {
+  playerId?: string;
+  playerCount?: number;
+  gameNumber?: number;
+  initialDiscardCard?: string;
+  initialColor?: string;
+  card?: string;
+  chosenColor?: string;
+  playerCardCount?: number;
+  nextPlayerId?: string;
+  newCardCount?: number;
+  targetPlayerId?: string;
+  cardCount?: number;
+  reason?: string;
+  skippedPlayerId?: string;
+  newDirection?: string;
+  autoAction?: string;
+  challengerId?: string;
+  challengeSucceeded?: boolean;
+  penaltyPlayerId?: string;
+  penaltyCardCount?: number;
+  newDeckSize?: number;
+  finishingOrder?: string[];
+}
 
 /** One line of narration, or null for events a player has no reason to read. */
 export function describe(event: StreamEvent, me: string): string | null {
-  const d = event.data as Record<string, string & number & boolean & string[]>;
-  const name = (id: string) => (id === me ? "you" : short(id));
-  const verb = (id: string, singular: string, plural: string) => (id === me ? plural : singular);
+  const d = event.data as EventData;
+  const name = (id?: string) => (id === me ? "you" : short(id ?? "?"));
+  const verb = (id: string | undefined, singular: string, plural: string) => (id === me ? plural : singular);
 
   switch (event.event) {
     case "PlayerJoined":
@@ -123,7 +149,7 @@ export function describe(event: StreamEvent, me: string): string | null {
     case "ChallengeWindowOpened":
       return d.targetPlayerId === me
         ? "you are on one card - an opponent can challenge if you did not call it"
-        : `${short(d.targetPlayerId)} is on one card - 'challenge' while the window is open`;
+        : `${name(d.targetPlayerId)} is on one card - 'challenge' while the window is open`;
     case "UnoChallengeIssued":
       return `${name(d.challengerId)} challenged ${name(d.targetPlayerId)}`;
     case "UnoChallengeResolved": {
@@ -150,105 +176,37 @@ export function describe(event: StreamEvent, me: string): string | null {
 }
 
 /**
- * Applies what the event *states* — never what a rule would imply. Whose turn it is, how many cards
- * an opponent holds and what the discard is are all carried in the payload, so the board between
- * turns is the server's account of the room rather than the client's guess at it.
+ * When the client has to re-read the state (E4's endpoint, the one P3 polled).
  *
- * The player's own hand and which of it is legal are deliberately not derived here: they come from
- * the state read, which is why `needsResync` exists.
+ * One rule: **read when the player can act, or when their own cards changed.** Everything else the
+ * player sees while waiting is narration, and narration needs no state. Keeping a second copy of
+ * the game here — applying each event to a local board — bought nothing once the board stopped
+ * being rendered from it, and a second copy of a game's state is the thing most likely to lie.
  */
-export function apply(view: GameView, event: StreamEvent, me: string): GameView {
-  const d = event.data as Record<string, string & number & boolean & string[]>;
-  const next: GameView = { ...view, opponents: view.opponents.map((o) => ({ ...o })) };
-  const opponent = (id: string) => next.opponents.find((o) => o.playerId === id);
-  const turn = (id: string | null) => {
-    next.currentPlayerId = id;
-    next.yourTurn = id === me;
-    if (next.yourTurn) next.drewThisTurn = false;
-  };
-
+export function mustRefresh(event: StreamEvent, me: string): boolean {
+  const d = event.data as EventData;
   switch (event.event) {
+    // The hand is dealt, or the final board is worth having in full.
     case "GameStarted":
-      next.discardTop = d.initialDiscardCard;
-      next.activeColor = d.initialColor;
-      next.status = "IN_PROGRESS";
-      turn((d.playerOrder ?? [])[0] ?? null);
-      break;
-    case "CardPlayed": {
-      next.discardTop = d.newDiscardTop;
-      next.activeColor = d.chosenColor ?? colourOf(d.newDiscardTop) ?? view.activeColor;
-      const played = opponent(d.playerId);
-      if (played) played.cardCount = d.playerCardCount;
-      // Playing resets the flag: hasCalledUno only holds until the hand size changes.
-      if (played && d.playerCardCount !== 1) played.calledUno = false;
-      turn(d.nextPlayerId);
-      break;
-    }
-    case "CardDrawn": {
-      const drew = opponent(d.playerId);
-      if (drew) drew.cardCount = d.newCardCount;
-      if (d.playerId === me) next.drewThisTurn = true;
-      break;
-    }
-    case "ForcedDraw": {
-      const forced = opponent(d.targetPlayerId);
-      if (forced) forced.cardCount = d.newHandSize;
-      break;
-    }
-    case "TurnPassed":
-      turn(d.nextPlayerId);
-      break;
-    case "TurnSkipped":
-      turn(d.nextPlayerId);
-      break;
-    case "DirectionReversed":
-      next.direction = d.newDirection;
-      break;
-    case "UnoCallMade": {
-      const called = opponent(d.playerId);
-      if (called) called.calledUno = true;
-      break;
-    }
-    case "ChallengeWindowOpened":
-      next.challengeWindow = { targetPlayerId: d.targetPlayerId, expiresAt: String(d.expiresAt) };
-      break;
-    case "ChallengeWindowClosed":
-    case "UnoChallengeResolved":
-      next.challengeWindow = null;
-      break;
-    case "PlayerDisconnected":
-    case "PlayerReconnected": {
-      const player = opponent(d.playerId);
-      if (player) player.connection = event.event === "PlayerReconnected" ? "connected" : "disconnected";
-      break;
-    }
-    case "DeckRecycled":
-      next.deckSize = d.newDeckSize;
-      break;
     case "GameCompleted":
-      next.status = "COMPLETED";
-      next.finishingOrder = d.finishingOrder ?? [];
-      turn(null);
-      break;
+    // These can move the turn without naming who is next.
+    case "PlayerForfeited":
+    case "PlayerDisconnected":
+      return true;
+    case "CardPlayed":
+    case "TurnPassed":
+    case "TurnSkipped":
+      return d.nextPlayerId === me;
+    case "CardDrawn":
+      return d.playerId === me;
+    case "ForcedDraw":
+      return d.targetPlayerId === me;
+    case "UnoChallengeResolved":
+      return d.penaltyPlayerId === me;
+    // A window on someone else is the one thing a player may act on out of turn.
+    case "ChallengeWindowOpened":
+      return d.targetPlayerId !== me;
     default:
-      break;
+      return false;
   }
-  return next;
-}
-
-/**
- * When the local view is no longer enough and the state read has to be made.
- *
- * Two cases, both about the half of the view the events do not carry: the player's own cards
- * changed, or it is their turn and `playable` has to be the server's legality check rather than the
- * client's opinion of it.
- */
-export function needsResync(before: GameView, after: GameView, event: StreamEvent, me: string): boolean {
-  const d = event.data as Record<string, string>;
-  const dealtToMe =
-    (event.event === "CardDrawn" && d.playerId === me) ||
-    (event.event === "ForcedDraw" && d.targetPlayerId === me) ||
-    (event.event === "UnoChallengeResolved" && d.penaltyPlayerId === me) ||
-    event.event === "GameStarted";
-  return dealtToMe || (after.yourTurn && !before.yourTurn);
 }

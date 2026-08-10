@@ -22,11 +22,10 @@ export async function forward(
   path: string,
   headers: Record<string, string>,
   body: string | undefined,
-  fetchImpl: typeof fetch = fetch,
 ): Promise<ProxyReply> {
   let response: Response;
   try {
-    response = await fetchImpl(`${baseUrl}${path}`, {
+    response = await fetch(`${baseUrl}${path}`, {
       method,
       headers,
       body: method === "GET" || method === "HEAD" ? undefined : body,

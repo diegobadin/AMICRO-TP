@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GameView, apply, board, describe as narrate, needsResync } from "../src/board.js";
+import { GameView, board, describe as narrate, mustRefresh } from "../src/board.js";
 import { seqOf } from "../src/api.js";
 import type { StreamEvent } from "../src/stream.js";
 
@@ -119,52 +119,38 @@ describe("live feed, read from the room's own events", () => {
   });
 });
 
-describe("applying an event to the board", () => {
-  it("takes the discard, the colour, the opponent's count and the turn from the payload", () => {
-    const played = ev("CardPlayed", { playerId: bob, card: "B2", newDiscardTop: "B2", playerCardCount: 2, nextPlayerId: me });
-    const after = apply({ ...base, yourTurn: false, currentPlayerId: bob }, played, me);
-
-    expect(after.discardTop).toBe("B2");
-    expect(after.activeColor).toBe("BLUE"); // the notation's first letter is the colour (§5.F)
-    expect(after.opponents.find((o) => o.playerId === bob)?.cardCount).toBe(2);
-    expect(after.currentPlayerId).toBe(me);
-    expect(after.yourTurn).toBe(true);
+describe("when the client re-reads the state", () => {
+  it("reads when its own cards changed", () => {
+    expect(mustRefresh(ev("CardDrawn", { playerId: me, newCardCount: 5 }), me)).toBe(true);
+    expect(mustRefresh(ev("ForcedDraw", { targetPlayerId: me, cardCount: 2 }), me)).toBe(true);
+    expect(mustRefresh(ev("UnoChallengeResolved", { penaltyPlayerId: me, penaltyCardCount: 2 }), me)).toBe(true);
   });
 
-  it("uses the declared colour for a wild rather than guessing one", () => {
-    const wild = ev("CardPlayed", { playerId: bob, card: "WILD", newDiscardTop: "WILD", chosenColor: "GREEN", playerCardCount: 1, nextPlayerId: me });
-    expect(apply(base, wild, me).activeColor).toBe("GREEN");
-  });
-
-  it("never invents the player's own hand — that is what the resync read is for", () => {
-    const drawn = ev("CardDrawn", { playerId: me, newCardCount: 5 });
-    expect(apply(base, drawn, me).hand).toEqual(base.hand);
-  });
-
-  it("ends the game and records the finishing order", () => {
-    const after = apply(base, ev("GameCompleted", { finishingOrder: [me, bob] }), me);
-    expect(after.status).toBe("COMPLETED");
-    expect(after.finishingOrder).toEqual([me, bob]);
-  });
-});
-
-describe("when the client has to re-read the state", () => {
-  const waiting = { ...base, yourTurn: false, currentPlayerId: bob };
-
-  it("re-reads when its own cards changed", () => {
-    const drawn = ev("CardDrawn", { playerId: me, newCardCount: 5 });
-    expect(needsResync(waiting, apply(waiting, drawn, me), drawn, me)).toBe(true);
-  });
-
-  it("re-reads when the turn arrives, so `playable` is the server's answer and not a guess", () => {
+  it("reads when the turn arrives, so `playable` is the server's answer and not a guess", () => {
     const played = ev("CardPlayed", { playerId: bob, card: "R5", newDiscardTop: "R5", playerCardCount: 2, nextPlayerId: me });
-    expect(needsResync(waiting, apply(waiting, played, me), played, me)).toBe(true);
+    expect(mustRefresh(played, me)).toBe(true);
+    expect(mustRefresh(ev("TurnPassed", { playerId: bob, nextPlayerId: me }), me)).toBe(true);
+    expect(mustRefresh(ev("TurnSkipped", { skippedPlayerId: bob, nextPlayerId: me }), me)).toBe(true);
   });
 
-  it("does not re-read for something that happened between other players", () => {
+  it("reads when a window opens on someone else — the one thing playable out of turn", () => {
+    expect(mustRefresh(ev("ChallengeWindowOpened", { targetPlayerId: bob }), me)).toBe(true);
+    expect(mustRefresh(ev("ChallengeWindowOpened", { targetPlayerId: me }), me)).toBe(false);
+  });
+
+  it("does not read for something that happened between other players", () => {
     const carla = "carla-00000-0000-0000-000000000000";
     const played = ev("CardPlayed", { playerId: bob, card: "R5", newDiscardTop: "R5", playerCardCount: 2, nextPlayerId: carla });
-    expect(needsResync(waiting, apply(waiting, played, me), played, me)).toBe(false);
+    expect(mustRefresh(played, me)).toBe(false);
+    expect(mustRefresh(ev("CardDrawn", { playerId: bob, newCardCount: 4 }), me)).toBe(false);
+    expect(mustRefresh(ev("UnoCallMade", { playerId: bob }), me)).toBe(false);
+  });
+
+  it("reads when the game starts or ends, and when a player drops out of it", () => {
+    // These can move the turn without naming who is next, so the read is the only honest answer.
+    for (const e of ["GameStarted", "GameCompleted", "PlayerForfeited", "PlayerDisconnected"]) {
+      expect(mustRefresh(ev(e, { playerId: bob }), me)).toBe(true);
+    }
   });
 });
 

@@ -15,11 +15,11 @@ import type Redis from "ioredis";
 
 export const HEARTBEAT_MS = 15_000;
 /** How long a blocking read waits before it is re-issued with the current set of rooms. */
-export const BLOCK_MS = 1_000;
+const BLOCK_MS = 1_000;
 
-export const streamKey = (roomId: string) => `room:${roomId}:events`;
+const streamKey = (roomId: string) => `room:${roomId}:events`;
 
-export interface Frame {
+interface Frame {
   id?: number;
   event: string;
   data: unknown;
@@ -57,13 +57,15 @@ export interface Connection {
 }
 
 class Subscriber {
-  /** Frames that arrived while the initial replay was still being written. */
+  /**
+   * Frames the tail delivered while the replay was still being written. Without this they would
+   * overtake it — the replay awaits Redis, and the tail is free to run in that gap — and the client
+   * would see frame 10 before frames 5 to 9.
+   */
   private readonly pending: Frame[] = [];
   private catchingUp = true;
 
   constructor(
-    readonly roomId: string,
-    readonly playerId: string,
     readonly sessionId: string,
     private readonly connection: Connection,
     public lastSent: number,
@@ -83,11 +85,9 @@ class Subscriber {
   }
 
   /** Called once the replay is written: anything that arrived meanwhile goes out in order. */
-  caughtUp(): number {
+  caughtUp(): void {
     this.catchingUp = false;
-    const queued = this.pending.splice(0).filter((f) => f.id !== undefined && f.id > this.lastSent);
-    for (const frame of queued) this.send(frame);
-    return queued.length;
+    for (const frame of this.pending.splice(0)) this.send(frame);
   }
 
   close(): void {
@@ -95,7 +95,7 @@ class Subscriber {
   }
 }
 
-export interface StreamHooks {
+interface StreamHooks {
   delivered(count: number): void;
   connections(count: number): void;
   log(action: string, fields: Record<string, unknown>): void;
@@ -129,7 +129,6 @@ export class RoomStreams {
    */
   async subscribe(
     roomId: string,
-    playerId: string,
     sessionId: string,
     connection: Connection,
     lastEventId: number | undefined,
@@ -138,7 +137,7 @@ export class RoomStreams {
     const latest = await this.latestSequence(key);
     const from = lastEventId ?? latest;
 
-    const subscriber = new Subscriber(roomId, playerId, sessionId, connection, from);
+    const subscriber = new Subscriber(sessionId, connection, from);
     const subscribers = this.rooms.get(roomId) ?? new Set<Subscriber>();
     if (!this.rooms.has(roomId)) {
       this.rooms.set(roomId, subscribers);

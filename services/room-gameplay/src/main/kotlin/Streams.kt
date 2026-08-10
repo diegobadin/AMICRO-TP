@@ -19,7 +19,6 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import uno.Event
-import uno.RoomCompleted
 import uno.eventType
 
 fun streamKey(roomId: UUID): String = "room:$roomId:events"
@@ -27,8 +26,15 @@ fun streamKey(roomId: UUID): String = "room:$roomId:events"
 /** A P3 game closed at 359 events, so this is a whole game plus slack. */
 const val STREAM_MAXLEN = 2000L
 
-/** A finished room's stream is reclaimed; `room_events` is what anyone asks afterwards. */
-const val COMPLETED_STREAM_TTL_SECONDS = 3600L
+/**
+ * Refreshed on every publish, so a stream outlives the room it belongs to by this much and no more.
+ * Keyed to the *last write* rather than to `RoomCompleted`, because a room that is abandoned never
+ * completes — and a rule that only reclaims tidy endings reclaims nothing on a busy cluster.
+ * `room_events` is the archive; this is a window onto the last few minutes of it.
+ */
+const val STREAM_TTL_SECONDS = 6 * 3600L
+
+private const val QUEUE_DEPTH = 1024
 
 fun interface RoomEvents {
     /** Called once per committed batch, with the sequence number the batch started from. */
@@ -68,12 +74,11 @@ fun entriesFor(baseSequence: Int, events: List<Event>, correlationId: String?): 
 class RedisRoomEvents(
     private val redis: UnifiedJedis,
     private val onFailure: (Throwable) -> Unit,
-    queueDepth: Int = 1024,
 ) : RoomEvents, AutoCloseable {
 
     private val worker = ThreadPoolExecutor(
         1, 1, 0L, TimeUnit.MILLISECONDS,
-        ArrayBlockingQueue(queueDepth),
+        ArrayBlockingQueue(QUEUE_DEPTH),
         { runnable -> Thread(runnable, "room-stream").apply { isDaemon = true } },
         // Dropping is the right answer when Redis cannot keep up — the events are durable and the
         // client repairs itself — but a silent drop is not. The handler is how it gets counted.
@@ -101,7 +106,7 @@ class RedisRoomEvents(
                     entry.fields,
                 )
             }
-            if (events.any { it is RoomCompleted }) redis.expire(key, COMPLETED_STREAM_TTL_SECONDS)
+            redis.expire(key, STREAM_TTL_SECONDS)
         } catch (e: Throwable) {
             onFailure(e)
         }

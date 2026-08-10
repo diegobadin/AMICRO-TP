@@ -110,7 +110,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, undefined);
+    await running.subscribe("r1", "s1", client, undefined);
     expect(client.chunks).toEqual([]);
 
     redis.append(entry(3));
@@ -123,7 +123,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, 1);
+    await running.subscribe("r1", "s1", client, 1);
     await settle();
     expect(framesIn(client.chunks).map((f) => f.id)).toEqual(["2", "3"]);
   });
@@ -133,7 +133,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, 1);
+    await running.subscribe("r1", "s1", client, 1);
     redis.append(entry(4));
     await settle();
     expect(framesIn(client.chunks).map((f) => f.id)).toEqual(["2", "3", "4"]);
@@ -146,7 +146,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, 1);
+    await running.subscribe("r1", "s1", client, 1);
     await settle();
     const frames = framesIn(client.chunks);
     expect(frames[0].event).toBe("resync");
@@ -159,7 +159,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, 1);
+    await running.subscribe("r1", "s1", client, 1);
     await settle();
     expect(framesIn(client.chunks).every((f) => f.event !== "resync")).toBe(true);
   });
@@ -170,8 +170,8 @@ describe("subscribing", () => {
     const alice = connection();
     const bob = connection();
 
-    await running.subscribe("r1", "alice", "s-a", alice, undefined);
-    await running.subscribe("r1", "bob", "s-b", bob, undefined);
+    await running.subscribe("r1", "s-a", alice, undefined);
+    await running.subscribe("r1", "s-b", bob, undefined);
     redis.append(entry(2));
     await settle();
 
@@ -185,7 +185,7 @@ describe("subscribing", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    const detach = await running.subscribe("r1", "p1", "s1", client, undefined);
+    const detach = await running.subscribe("r1", "s1", client, undefined);
     detach();
     expect(running.connections).toBe(0);
 
@@ -202,8 +202,8 @@ describe("a superseded session", () => {
     const doomed = connection();
     const other = connection();
 
-    await running.subscribe("r1", "p1", "session-old", doomed, undefined);
-    await running.subscribe("r1", "p2", "session-other", other, undefined);
+    await running.subscribe("r1", "session-old", doomed, undefined);
+    await running.subscribe("r1", "session-other", other, undefined);
 
     expect(running.kill("session-old")).toBe(1);
     expect(framesIn(doomed.chunks)[0].event).toBe("session-invalidated");
@@ -220,7 +220,7 @@ describe("the heartbeat", () => {
     running = streamsOf(redis);
     const client = connection();
 
-    await running.subscribe("r1", "p1", "s1", client, undefined);
+    await running.subscribe("r1", "s1", client, undefined);
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS + 10);
 
     const beats = framesIn(client.chunks).filter((f) => f.event === "heartbeat");

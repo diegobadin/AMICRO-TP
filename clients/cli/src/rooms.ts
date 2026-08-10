@@ -7,7 +7,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { API, Line, Reply, emit, line, loadSession, request, seqOf } from "./api.js";
-import { GameView, apply, board, describe, needsResync } from "./board.js";
+import { GameView, board, describe, mustRefresh } from "./board.js";
 import { StreamEvent, follow } from "./stream.js";
 
 /** Only `waitForGame` polls now: before the game exists there is no room stream to subscribe to. */
@@ -186,9 +186,12 @@ export async function play(flags: Record<string, string | boolean>, json: boolea
 
 function interactive(roomId: string, player: string, initial: GameView, json: boolean): Promise<number> {
   return new Promise((resolve) => {
+    // `view` is only ever a state the server sent. `lastSeen` is how far the stream has come, which
+    // is a different thing: frames advance it without the client learning its own hand.
     let view = initial;
     let etag = `"${initial.sequenceNumber}"`;
-    let busy = false;
+    let lastSeen = initial.sequenceNumber;
+    let reading = false;
     let closed = false;
 
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
@@ -200,31 +203,39 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
       resolve(code);
     };
 
-    const setView = (next: GameView) => {
-      view = next;
-      etag = `"${next.sequenceNumber}"`;
-    };
-
     /**
      * Renders, and only from a state the server sent. One command commits several events — a `+2`
-     * is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so between two frames the applied
-     * state genuinely says it is your turn when the batch is about to move it on again. Drawing a
-     * turn prompt there is how a player is invited into a `409`; the drill did exactly that, 22
+     * is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so a client that drew the board from
+     * its own running total would show a turn prompt in the middle of a batch that is still moving
+     * the turn on. That is how a player gets invited into a `409`; the drill did exactly that, 22
      * times in one game.
      */
-    const adopt = (next: GameView, quiet = false) => {
-      setView(next);
-      if (!json && !quiet && (next.yourTurn || next.status === "COMPLETED")) {
+    const adopt = (next: GameView, render?: boolean) => {
+      view = next;
+      etag = `"${next.sequenceNumber}"`;
+      lastSeen = Math.max(lastSeen, next.sequenceNumber);
+      if (!json && (render ?? (next.yourTurn || next.status === "COMPLETED"))) {
         process.stdout.write(board(next, player) + "\n");
       }
       if (next.status === "COMPLETED") finish(0);
     };
 
-    /** The resync read of E4 — the same endpoint P3 polled, now called only when it is needed. */
-    const resync = async () => {
-      const reply = await call("GET", `/rooms/${roomId}/games/1`, undefined, {});
-      if (reply.status === 200) adopt(reply.payload as unknown as GameView);
-      else if (reply.status === 401) superseded();
+    /**
+     * The read of E4 — the same endpoint P3 polled once a second, now made only when the player can
+     * act or their own cards changed. `render` is set when the player asked (`state`); left unset,
+     * the board appears when it is their turn.
+     */
+    const refresh = async (render?: boolean) => {
+      // Several events of one batch can each call for a read; one answer serves them all.
+      if (closed || (reading && render === undefined)) return;
+      reading = true;
+      try {
+        const reply = await call("GET", `/rooms/${roomId}/games/1`, undefined, {});
+        if (reply.status === 401) return superseded();
+        if (reply.status === 200) adopt(reply.payload as unknown as GameView, render);
+      } finally {
+        reading = false;
+      }
     };
 
     const superseded = () => {
@@ -235,34 +246,27 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
     const onEvent = (event: StreamEvent) => {
       if (closed) return;
       if (event.event === "session-invalidated") return superseded();
+      if (event.event === "resync") return void refresh();
       if (event.event === "heartbeat") {
         // The one hole the gap check cannot see: a lost *last* frame, with nothing after it.
-        if (Number(event.data.seq ?? 0) > view.sequenceNumber) void resync();
-        return;
-      }
-      if (event.event === "resync") {
-        void resync();
+        if (Number(event.data.seq ?? 0) > lastSeen) void refresh();
         return;
       }
       if (event.id === undefined) return;
 
-      const gap = event.id > view.sequenceNumber + 1;
-      // The frames for the player's own command arrive after its response, which already carried
-      // the authoritative state. Narrate them — that is the feed — but do not re-read or re-render
-      // a state we are holding a newer copy of.
-      const alreadyHeld = event.id <= view.sequenceNumber;
-      const before = view;
-      const next = { ...apply(view, event, player), sequenceNumber: event.id };
+      const gap = event.id > lastSeen + 1;
+      lastSeen = Math.max(lastSeen, event.id);
+
       const text = describe(event, player);
       if (text) {
         if (json) emit(line({ action: "event", result: "ok", room: roomId, player, seq: event.id, detail: text }), true);
         else process.stdout.write(`  ${text}\n`);
       }
-      if (alreadyHeld) return;
-      // The applied state keeps `state` and the next resync honest, but it never reaches the
-      // screen: the board is rendered from the read below, which is the server's account.
-      setView(next);
-      if (gap || event.event === "GameCompleted" || needsResync(before, next, event, player)) void resync();
+
+      // The frames of the player's own command arrive after its response, which already carried a
+      // newer state. They are worth narrating — that is the feed — and nothing more.
+      if (event.id <= view.sequenceNumber) return;
+      if (gap || mustRefresh(event, player)) void refresh();
     };
 
     // The stream replaces the poll loop. It resumes from the sequence number of the state already
@@ -279,25 +283,18 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
     });
 
     const move = async (body: Record<string, unknown>, action: string) => {
-      busy = true;
-      try {
-        const reply = await call("POST", `/rooms/${roomId}/games/1/moves`, body, { "if-match": etag });
-        emit(resultLine(action, reply, { room: roomId, player }), json);
+      const reply = await call("POST", `/rooms/${roomId}/games/1/moves`, body, { "if-match": etag });
+      emit(resultLine(action, reply, { room: roomId, player }), json);
 
-        if (reply.status === 201) {
-          adopt(reply.payload as unknown as GameView, true);
-          if (!json && view.status !== "COMPLETED") process.stdout.write(board(view, player) + "\n");
-        } else if (reply.status === 412) {
-          // Someone moved between the render and the command. The 412 body IS the authoritative
-          // state, so reconcile from it instead of guessing — and say so rather than hiding it.
-          if (!json) process.stdout.write("  your view was stale; reconciled to the current state\n");
-          adopt(reply.payload as unknown as GameView);
-          if (!json) process.stdout.write(board(view, player) + "\n");
-        } else if (!json) {
-          process.stdout.write(`  refused: ${String(reply.payload.error ?? reply.status)}\n`);
-        }
-      } finally {
-        busy = false;
+      // Both bodies are the authoritative state: a `201` is what the move produced, and a `412` is
+      // what the room actually looks like — reconcile from it rather than guessing, and say so.
+      if (reply.status === 412 && !json) {
+        process.stdout.write("  your view was stale; reconciled to the current state\n");
+      }
+      if (reply.status === 201 || reply.status === 412) {
+        adopt(reply.payload as unknown as GameView, true);
+      } else if (!json) {
+        process.stdout.write(`  refused: ${String(reply.payload.error ?? reply.status)}\n`);
       }
     };
 
@@ -342,7 +339,9 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
           await move({ type: "challenge_uno", targetPlayerId: target }, "challenge_uno");
           break;
         }
-        case "state": process.stdout.write(board(view, player) + "\n"); break;
+        // Asked for on purpose, so it is worth a round trip: the answer is the room as it is now,
+        // not as the last thing the player was shown.
+        case "state": await refresh(true); break;
         case "quit": finish(0); break;
         case "": break;
         default: process.stdout.write("  play <n> [R|G|B|Y] | draw | uno | challenge | pass | state | quit\n");

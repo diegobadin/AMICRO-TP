@@ -101,12 +101,16 @@ class StreamRedisTest {
     }
 
     @Test
-    fun `a completed room's stream is given a time to live`() {
+    fun `every stream carries a time to live, however the room ends`() {
         assertEquals(-2L, redis.ttl(streamKey(roomId))) // -2: the key does not exist yet
-        publish(0, listOf(PlayerJoined("p1", 1, at)))
-        assertEquals(-1L, redis.ttl(streamKey(roomId))) // -1: exists, no expiry while the room is live
 
+        publish(0, listOf(PlayerJoined("p1", 1, at)))
+        val afterFirst = redis.ttl(streamKey(roomId))
+        assertTrue(afterFirst > 0, "a stream with no expiry sits in Redis forever")
+
+        // Keyed to the last write, not to a tidy ending: a room that is abandoned never completes,
+        // and its stream has to be reclaimed all the same.
         publish(1, listOf(RoomCompleted(RoomType.CASUAL, finalResults = listOf("p1"), at = at)))
-        assertTrue(redis.ttl(streamKey(roomId)) > 0, "a finished room's stream would sit in Redis forever")
+        assertTrue(redis.ttl(streamKey(roomId)) > 0)
     }
 }

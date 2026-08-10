@@ -31,8 +31,9 @@
   sequence_number)` PK is P3's concurrency mechanism), so the stream id **is** the sequence number.
   `Last-Event-ID` becomes a stream position with no lookup table and no second ordering to keep
   honest (Architecture §1.4). Fields: `type`, `seq`, `payload`, `correlationId`.
-  `MAXLEN ~ 2000` — a P3 game closed at 359 events, so a full game plus slack — and the publisher
-  sets a 1 h TTL on `RoomCompleted` so finished rooms are reclaimed. Redis holds a transient copy;
+  `MAXLEN ~ 2000` — a P3 game closed at 359 events, so a full game plus slack — and a 6 h TTL
+  **refreshed on every publish** (corrected in review: keying it to `RoomCompleted` reclaimed only
+  the rooms that ended tidily, and an abandoned room never completes). Redis holds a transient copy;
   `room_events` is the archive.
   **`payload` is `publicPayload(event)` — the function the outbox row already uses** (`Outbox.kt`).
   `GameStarted` and `DeckRecycled` carry the RNG seed and are marked `PrivateEvent`; publishing the
@@ -64,19 +65,25 @@
   `EventSource`, and the browser one cannot send `Authorization` — so a small reader over the
   response's `ReadableStream` (frame split on blank line, `id:`/`event:`/`data:`) is both the
   smaller and the only workable option.
-- **D8 — Resync rules, stated once and implemented once.** The CLI re-reads
-  `GET /rooms/{id}/games/{n}` when: a `resync` frame arrives, a `seq` gap is detected, a heartbeat
-  reports a newer `seq` than it holds, the frame changed **its own** hand (`CardDrawn`/`ForcedDraw`
-  naming it, a challenge penalty against it, `GameStarted`), or **the turn just became theirs** —
-  because `playable` has to be the server's legality check and not the client's opinion of it.
-  Every other frame is applied to the local view with no round trip.
-  Two rules found by playing it (F5), both about *when to draw*, not when to read:
+- **D8 — One rule: the client narrates every frame, and re-reads when the player can act.**
+  `GET /rooms/{id}/games/{n}` is called when the turn becomes theirs (so `playable` is the server's
+  legality check, not the client's opinion), when a challenge window opens on someone else (the one
+  thing playable out of turn), when their own cards changed, at game start and end, and whenever the
+  picture cannot be trusted — a `resync` frame, a `seq` gap, or a heartbeat ahead of what the client
+  has seen. Everything else is a feed line and nothing more.
+  Two corollaries, both learned by playing it:
   **the board is only ever rendered from a state the server sent.** One command commits several
-  events — a `+2` is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so between two frames the
-  applied view genuinely says it is your turn while the batch is still moving it on. A turn prompt
-  drawn there invites the player into a `409`.
+  events — a `+2` is `CardPlayed`, then `ForcedDraw`, then `TurnSkipped` — so a client drawing from
+  its own running total shows a turn prompt in the middle of a batch that is still moving the turn
+  on, and invites the player into a `409`. It did, 22 times in one game.
   And **frames whose sequence number the client already holds are narrated but not re-read**: the
   response to your own command carried the newer state, so its frames are feed lines, nothing more.
+  **What this replaced** (review pass): the client used to apply every event to a local `GameView`.
+  Once the board stopped being drawn from it, that projection's only remaining readers were the
+  `state` command and the challenge window — one of which is worth a round trip because the player
+  asked, and the other is covered by reading when the window opens. A second copy of a game's state
+  is the thing most likely to lie; 130 lines of it went, and the two behaviours it existed for are
+  now consequences of the one rule above.
 - **D9 — The gateway verifies with identity's HS256 key.** `IDENTITY_JWT_SECRET` moves from
   `room-gameplay-secrets` to `gateway-secrets`; identity is unchanged. The coupling shrinks from
   "two services hold a signing key" to "the signer and the one verifier" — intrinsic to symmetric
@@ -226,6 +233,26 @@ fixed at cluster creation and a third port means recreating the cluster.
   full; the stream is a second, transient path and the CHANGELOG says so.
 - **R6 — CI minutes and pin ping-pong.** Same rules as P3: `-o ci.skip` on the first push,
   `git pull --rebase` before every local commit, batch `ci/templates/**` changes, one FF merge.
+
+## Review pass (2026-08-10, before F7)
+
+Read back as a reviewer would, questioning each decision rather than defending it. Seven changes;
+the first two are behavioural, the rest are removals.
+
+| # | Finding | Change |
+|---|---------|--------|
+| 1 | **The client kept a second copy of the game.** Once the board was only drawn from server state (F5), the local projection's remaining readers were the `state` command and the challenge window. | `apply()` deleted — 130 lines. One rule replaces it: narrate every frame, read when the player can act (D8). `state` now reads, which also makes it authoritative. |
+| 2 | **Only tidy endings were reclaimed.** The stream TTL was set on `RoomCompleted`, so a room that was abandoned kept its stream in Redis forever. | The TTL is refreshed on every publish and keyed to the last write (D3). Simpler rule, no special case, no leak. |
+| 3 | **A silent stall.** Node holds response headers until the first body byte, so a subscriber with nothing to replay left the client's `fetch` unresolved on a connection that was in fact open. | `res.flushHeaders()` on the SSE response. |
+| 4 | **A leak on a fast disconnect.** The close handler was registered *after* the replay finished, so a client that vanished during it was never detached — the room kept tailing and the connection gauge drifted. | Handler registered first, with a re-check once `subscribe` returns. |
+| 5 | **Redis down left connections hanging.** A rejected `subscribe` escaped as an unhandled rejection and the stream stayed open forever, carrying nothing. | Caught and the response ended, which puts the client back into its own reconnect loop. |
+| 6 | **Speculative generality.** An injected `fetch` the proxy tests never used; `roomId`/`playerId` fields on `Subscriber` nobody read; a `queueDepth` constructor parameter nobody passed; `SERVICE` declared twice; four module-internal symbols exported; a `busy` flag in the CLI left over from the poll loop. | All removed. |
+| 7 | **Two places knew the trust-boundary header names**, one of them the security-critical injection. | `PLAYER_HEADER`/`SESSION_HEADER`/`CORRELATION_HEADER` declared once and imported. |
+
+Not changed, and why: the catch-up queue in `Subscriber` looks like machinery but is load-bearing —
+the replay awaits Redis and the tail is free to run in that gap, so without it frame 10 overtakes
+frames 5–9. The three stream guards stay for the same reason: each owns a failure the others cannot
+see (D6).
 
 ## What this plan deliberately does *not* include
 

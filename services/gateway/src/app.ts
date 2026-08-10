@@ -6,8 +6,7 @@
 // Only the SSE route needs the raw response, and it lives elsewhere for that reason.
 
 import { Principal, Tokens } from "./auth.js";
-
-export const SERVICE = "gateway";
+import { SERVICE } from "./config.js";
 
 export type Target = "identity" | "room-gameplay" | "gateway";
 
@@ -67,13 +66,18 @@ export function route(method: string, path: string): Route | undefined {
 // request rather than by editing the incoming one.
 const FORWARDED = ["content-type", "if-match", "if-none-match", "idempotency-key"];
 
+/** What room-gameplay trusts instead of a token. Named here so there is one place that knows. */
+export const PLAYER_HEADER = "x-player-id";
+export const SESSION_HEADER = "x-session-id";
+export const CORRELATION_HEADER = "x-correlation-id";
+
 export function downstreamHeaders(
   route: Route,
   incoming: Record<string, string | string[] | undefined>,
   correlationId: string,
   principal?: Principal,
 ): Record<string, string> {
-  const out: Record<string, string> = { "x-correlation-id": correlationId };
+  const out: Record<string, string> = { [CORRELATION_HEADER]: correlationId };
   for (const name of FORWARDED) {
     const value = incoming[name];
     if (typeof value === "string") out[name] = value;
@@ -85,8 +89,8 @@ export function downstreamHeaders(
     if (typeof authorization === "string") out["authorization"] = authorization;
   }
   if (route.target === "room-gameplay" && principal) {
-    out["x-player-id"] = principal.playerId;
-    out["x-session-id"] = principal.sessionId;
+    out[PLAYER_HEADER] = principal.playerId;
+    out[SESSION_HEADER] = principal.sessionId;
   }
   return out;
 }
