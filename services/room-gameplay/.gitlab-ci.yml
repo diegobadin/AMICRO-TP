@@ -4,14 +4,19 @@
 
 # The engine's property and replay suites need nothing, but AC-P3.3 (a failed command leaves no
 # events, no outbox rows and no consumed sequence) cannot be proved against a fake — so the job
-# brings up an ephemeral Postgres and the store suite runs against that. Without TEST_DATABASE_URL
-# the suite fails instead of skipping: a silently-skipped proof is worse than no proof.
+# brings up an ephemeral Postgres and the store suite runs against that. Same for Redis and P4's
+# entry-id contract: that a stream entry can be given the sequence number as its id is the
+# assumption `Last-Event-ID` resume rests on, and only a real Redis can confirm it. Without
+# TEST_DATABASE_URL / TEST_REDIS_URL those suites fail instead of skipping: a silently-skipped
+# proof is worse than no proof.
 "test:room-gameplay":
   stage: test
   image: gradle:8.8-jdk21
   services:
     - name: postgres:16-alpine
       alias: postgres
+    - name: redis:7.4.10-alpine
+      alias: redis
   variables:
     POSTGRES_USER: room_gameplay
     POSTGRES_PASSWORD: test
@@ -19,6 +24,7 @@
     TEST_DATABASE_URL: "jdbc:postgresql://postgres:5432/room_gameplay"
     TEST_DATABASE_USER: room_gameplay
     TEST_DATABASE_PASSWORD: test
+    TEST_REDIS_URL: "redis://redis:6379"
   script:
     - cd services/room-gameplay
     - gradle --no-daemon test

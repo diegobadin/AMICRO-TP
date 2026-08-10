@@ -14,6 +14,7 @@ data class Config(
     val databaseUser: String,
     val databasePassword: String?,
     val kafkaBrokers: String,
+    val redisUrl: String,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): Config = Config(
@@ -26,6 +27,9 @@ data class Config(
             databaseUser = env["DATABASE_USER"] ?: "room_gameplay",
             databasePassword = env["ROOM_GAMEPLAY_DB_PASSWORD"],
             kafkaBrokers = env["KAFKA_BROKERS"] ?: "localhost:9092",
+            // Where committed events go for the gateway to fan out (E1). Not a store: losing it
+            // costs the live feed, never the game.
+            redisUrl = env["REDIS_URL"] ?: "redis://localhost:6379",
         )
     }
 }

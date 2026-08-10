@@ -23,6 +23,10 @@ env:
     value: room_gameplay
   - name: KAFKA_BROKERS
     value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+  # Where committed events go for the gateway to fan out as SSE (P4, decision E1). A transient
+  # copy: losing it costs the live feed, never the game.
+  - name: REDIS_URL
+    value: redis://redis.redis.svc.cluster.local:6379
   - name: ROOM_MIN_PLAYERS
     value: "2"
   - name: TURN_TIMEOUT_SECONDS

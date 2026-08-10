@@ -18,6 +18,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.util.AttributeKey
 import kotlinx.serialization.Serializable
+import redis.clients.jedis.RedisClient
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -80,7 +82,7 @@ fun Application.module(config: Config, rooms: Rooms) {
 /**
  * Idempotency keys are retained for 24 hours (persistence-layer §1.4) and then swept, so the table
  * does not grow for the lifetime of the deployment. Once on startup and daily after that: a replay
- * arriving a day late is a bug, not a retry, and should get a fresh room rather than a stale答案.
+ * arriving a day late is a bug, not a retry, and should get a fresh room rather than a stale answer.
  */
 private fun scheduleIdempotencySweep(dataSource: DataSource) {
     val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -106,7 +108,14 @@ fun main() {
     }
 
     val store = EventStore(dataSource)
-    val rooms = Rooms(store, config)
+    val stream = RedisRoomEvents(
+        redis = RedisClient.create(URI(config.redisUrl)),
+        onFailure = { e ->
+            Metrics.streamPublishFailures.increment()
+            logError("action" to "stream-publish-failed", "error" to e.toString())
+        },
+    )
+    val rooms = Rooms(store, config, stream = stream)
     scheduleIdempotencySweep(dataSource)
 
     // A superseded session has to disconnect the player from any room they are sitting in (E1).

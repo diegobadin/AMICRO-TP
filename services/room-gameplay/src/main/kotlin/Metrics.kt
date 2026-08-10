@@ -33,6 +33,11 @@ object Metrics {
     val gamesCompleted: Counter = Counter.builder("roomgameplay.games.completed")
         .description("Games played to a winner").register(registry)
 
+    // Best-effort publication to the realtime tier: the events are already durable when this fires,
+    // so a failure costs a live frame, not a move. Silent would be the problem, hence the counter.
+    val streamPublishFailures: Counter = Counter.builder("roomgameplay.stream.publish.failures")
+        .description("Committed events that did not reach the room stream").register(registry)
+
     fun move(type: String, result: String): Counter = Counter.builder("roomgameplay.moves")
         .description("Moves submitted, by command type and outcome")
         .tags("type", type, "result", result).register(registry)

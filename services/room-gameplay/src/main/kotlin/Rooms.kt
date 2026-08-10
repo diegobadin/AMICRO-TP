@@ -42,6 +42,10 @@ class Rooms(
     config: Config,
     private val now: () -> Instant = Instant::now,
     private val seed: () -> Long = { Random.Default.nextLong() },
+    // The realtime tier's source. It lives here rather than in the HTTP layer because commands
+    // arrive from Kafka too — a `SessionInvalidated` produces `PlayerDisconnected`, and the players
+    // watching that room have to see it like any other event.
+    private val stream: RoomEvents = NoRoomEvents,
 ) {
     private val engine = EngineConfig(minPlayers = config.minPlayers, turnTimeoutSeconds = config.turnTimeoutSeconds)
 
@@ -79,9 +83,12 @@ class Rooms(
             }
 
             when (store.append(roomId, state.sequenceNumber, decision.events, after, correlationId)) {
-                is AppendResult.Committed -> return when (decision) {
-                    is Decision.Accepted -> Outcome.Ok(after, decision.events)
-                    is Decision.Rejected -> Outcome.Refused(decision.reason, after, decision.events)
+                is AppendResult.Committed -> {
+                    stream.published(roomId, state.sequenceNumber, decision.events, correlationId)
+                    return when (decision) {
+                        is Decision.Accepted -> Outcome.Ok(after, decision.events)
+                        is Decision.Rejected -> Outcome.Refused(decision.reason, after, decision.events)
+                    }
                 }
                 // Someone else took the sequence number. With an explicit If-Match the caller has to
                 // reconcile; otherwise loop and re-decide against what they wrote.
@@ -117,7 +124,10 @@ class Rooms(
         val record = idempotencyKey?.let { IdempotentCreate(it, playerId, render(state)) }
 
         return when (store.append(roomId, 0, events, state, correlationId, record)) {
-            is AppendResult.Committed -> CreateOutcome.Created(roomId, state, events)
+            is AppendResult.Committed -> {
+                stream.published(roomId, 0, events, correlationId)
+                CreateOutcome.Created(roomId, state, events)
+            }
             AppendResult.Conflict -> idempotencyKey
                 ?.let { store.findIdempotent(it, playerId) }
                 ?.let { CreateOutcome.Replayed(it) }
