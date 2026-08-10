@@ -1,106 +1,29 @@
 #!/usr/bin/env node
-// UnoArena Client CLI — the authentication subset of the canonical surface.
+// UnoArena Client CLI — the canonical command surface of Client-Checkpoint.md.
 //
-// Client-Checkpoint.md §5.A: register / login / whoami / logout / seed, all with a global --json
-// flag emitting one machine-readable line per action (§6 output contract). The backend target
-// comes from UNOARENA_API_URL (never hardcoded). The auth token is held in a session file so the
-// one-shot utilities can chain. This CLI absorbs the wire protocol; the faculty only interacts
-// with this command surface.
+// §5.A authentication against identity, §5.B/§5.C rooms and interactive play against room-gameplay.
+// Both targets come from the environment (UNOARENA_API_URL, UNOARENA_ROOMS_URL) and never from a
+// hardcoded default; the token is held in a session file so one process is one player identity.
+// This CLI absorbs the wire protocol — the faculty only ever sees this command surface.
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { randomUUID } from "node:crypto";
+import { API, SESSION, emit, line, loadSession, parseFlags, request, saveSession } from "./api.js";
+import { play, roomCommand } from "./rooms.js";
 
-const API = (process.env.UNOARENA_API_URL ?? "http://localhost:8085").replace(/\/$/, "");
-const SESSION = process.env.UNOARENA_SESSION ?? join(homedir() || tmpdir(), ".unoarena", "session.json");
+// Re-exported so the unit tests exercise the same functions the commands use.
+export { parseFlags, line };
+export type { Line } from "./api.js";
 
-interface Session {
-  token?: string;
-  user?: string;
-}
-
-function saveSession(s: Session): void {
-  mkdirSync(dirname(SESSION), { recursive: true });
-  writeFileSync(SESSION, JSON.stringify(s));
-}
-function loadSession(): Session {
-  return existsSync(SESSION) ? (JSON.parse(readFileSync(SESSION, "utf8")) as Session) : {};
-}
-
-export function parseFlags(argv: string[]): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith("--")) {
-      const key = a.slice(2);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith("--")) out[key] = true;
-      else { out[key] = next; i++; }
-    }
-  }
-  return out;
-}
-
-// §6 requires every line to carry the same field set, so the faculty can parse one shape across
-// every command. Fields that do not apply to an auth action are present and null, not missing.
-export interface Line {
-  ts: string;
-  action: string;
-  room: string | null;
-  player: string | null;
-  latency_ms: number;
-  result: "ok" | "error";
-  error_code: string | number | null;
-  seq: number | null;
-  correlationId: string;
-  [k: string]: unknown;
-}
-
-export function line(fields: Partial<Line> & { action: string; result: "ok" | "error" }): Line {
-  return {
-    ts: new Date().toISOString(),
-    room: null,
-    player: null,
-    latency_ms: 0,
-    error_code: null,
-    seq: null,
-    correlationId: randomUUID(),
-    ...fields,
-  };
-}
-
-function emit(l: Line, json: boolean): void {
-  if (json) {
-    process.stdout.write(JSON.stringify(l) + "\n");
-  } else if (l.result === "ok") {
-    process.stdout.write(`${l.action}: ok${l.player ? ` (user=${l.player})` : ""}\n`);
-  } else {
-    process.stderr.write(`${l.action}: error (${l.error_code})\n`);
-  }
-}
-
-async function call(method: string, path: string, body?: unknown, token?: string) {
-  const correlationId = randomUUID();
-  const started = Date.now();
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      "x-correlation-id": correlationId,
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  return { status: res.status, payload, correlationId, latency_ms: Date.now() - started };
-}
+const call = (method: string, path: string, body?: unknown, token?: string) =>
+  request(API, method, path, { body, token });
 
 async function authenticate(cmd: "register" | "login", user: string, pass: string) {
   const { status, payload, correlationId, latency_ms } = await call("POST", `/auth/${cmd}`, { user, pass });
   const ok = status === 200 || status === 201;
-  if (ok && payload.token) saveSession({ token: String(payload.token), user: String(payload.user) });
+  if (ok && payload.token) {
+    saveSession({ token: String(payload.token), user: String(payload.user), userId: payload.userId ? String(payload.userId) : undefined });
+  }
   return {
     ok,
     token: ok ? String(payload.token) : undefined,
@@ -131,6 +54,10 @@ async function seed(count: number, prefix: string, json: boolean): Promise<numbe
   }
   return failures === 0 ? 0 : 1;
 }
+
+const USAGE =
+  "usage: unoarena <register|login|whoami|logout|seed|room|play> [--user U --pass P] " +
+  "[--count N --prefix P] [--max N] [--room ID] [--casual] [--json]\n";
 
 async function main(): Promise<number> {
   const [, , cmd, ...rest] = process.argv;
@@ -172,7 +99,12 @@ async function main(): Promise<number> {
       return ok ? 0 : 1;
     }
 
-    process.stderr.write("usage: unoarena <register|login|whoami|logout|seed> [--user U --pass P] [--count N --prefix P] [--json]\n");
+    if (cmd === "room") return roomCommand(rest.filter((a) => !a.startsWith("--")), f, json);
+
+    // §5.B: `play --casual` is the abstract entry into a game. `--room <id>` is the explicit form.
+    if (cmd === "play") return play(f, json);
+
+    process.stderr.write(USAGE);
     return 2;
   } catch (e) {
     emit(line({ action: cmd ?? "unknown", result: "error", error_code: "unreachable", detail: String(e) }), json);

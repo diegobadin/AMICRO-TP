@@ -111,9 +111,12 @@ class EventStore(private val dataSource: DataSource) {
     fun listJoinable(): List<RoomSummary> =
         dataSource.connection.use { connection ->
             connection.prepareStatement(
+                // player_count > 0: a room everyone has left is not joinable, it is abandoned.
+                // Without this, leaving a room leaves a decoy behind that later players join and
+                // then sit in alone.
                 """select room_id, room_type, status, player_count, max_players
-                   from rooms where status = 'WAITING' and player_count < max_players
-                   order by created_at desc limit 100""",
+                   from rooms where status = 'WAITING' and player_count > 0 and player_count < max_players
+                   order by created_at asc limit 100""",
             ).use { statement ->
                 statement.executeQuery().use { rows ->
                     buildList {
