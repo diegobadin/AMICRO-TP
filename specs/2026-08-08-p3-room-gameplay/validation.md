@@ -288,3 +288,53 @@ events=355   outbox=355   leaked_seeds=0   unpublished=355
 One outbox row per event, written in the same transaction — and **no seed reaches the outbox**, so
 the deck order never leaves the service. Every row is unpublished because nothing drains the outbox
 until P5's relay; that is the seam, not a gap.
+
+
+### Re-run against exactly what `main` ships
+
+The drill above ran against the image built from `e83e945`; the review pass then made one
+behaviour-neutral change (`Outcome.Stale` no longer takes a parameter it could never carry). Rather
+than claim the drilled image and the shipped one are the same, the cluster was re-pointed at `main`
+and the game replayed against the digest `main` actually pins:
+
+```
+$ TARGET_REVISION=main gitops/bootstrap/install.sh          # idempotent re-run
+$ kubectl -n unoarena-staging get pod -l app=room-gameplay -o jsonpath='{…imageID}'
+…/unoarena/room-gameplay@sha256:5fe45c32bae5bd57be39277983a6b79f90ba2f018c5e0c42b5acf256b239d42c
+$ kubectl -n argocd get applications room-gameplay-staging identity-staging
+room-gameplay-staging   Synced   Healthy
+identity-staging        Synced   Healthy
+
+$ node scripts/casual-drill.js /tmp/ma.json /tmp/mb.json
+== game completed. observed: wild, draw, uno, challenge, completed
+
+room 0aca1b29-… :
+  359 RoomCompleted
+  358 GameCompleted
+  3 successful Uno! challenges
+
+events=844  outbox=844  leaked_seeds=0
+```
+
+Same result on the shipped digest: a full casual game to a winner, one outbox row per event, and no
+seed leaving the service.
+
+### AC-P3.9 — pipeline unchanged in shape and green
+
+`main` pipeline `2747977775`: **34 success, 2 manual gates, 0 failed**. Stage list identical to
+P2's (`test`, `build`, `deliver`, `deploy-staging`, `integration-staging`, `deliver-production`,
+`deploy-production`); no new stage and no new job kind — `deploy-staging:room-gameplay` is the same
+job P0 declared, with its manual gate removed now that the service is real.
+`integration-staging:identity` is green, so the CLI refactor did not disturb the auth smoke.
+
+Two pipeline defects were fixed to get there, both of which only appear once there are **two**
+fully-wired services:
+
+- **The digest pins raced.** Every wired service pins in the same stage, so the two pushes to
+  `main` landed milliseconds apart and the loser was rejected with `cannot lock ref … incorrect old
+  value`. The pin now re-reads the head the winner wrote and retries, and still fails loudly if it
+  loses five times — a pin that silently does not land would leave the overlay pointing at an older
+  image than the pipeline just tested.
+- **`tournament` had the same kaniko/Kotlin-daemon bug** as room-gameplay, latent until a
+  `ci/templates/**` change pulled every service into the pipeline and rebuilt it. Both Kotlin
+  images carry the fix now.
