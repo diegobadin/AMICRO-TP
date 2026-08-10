@@ -39,10 +39,14 @@
   raw encoding would leak the deck order to every player. One filter for both transports, and the
   existing `leaksPrivateData` test extends to cover the stream rather than a second one being
   written beside it.
-- **D4 — One tail per room per pod.** A single `XREAD BLOCK` loop per subscribed room feeds every
-  local subscriber; the last subscriber leaving stops it. Every pod tails independently, so
-  replicas need no sticky routing and no shared state — which is the only reason the gateway can
-  stay stateless while holding connections.
+- **D4 — One tail per pod, across every subscribed room** (simplified in F4; the phases table said
+  one per room). `XREAD BLOCK` takes many streams at once, so a single loop over the current room
+  set feeds every local subscriber from one connection — a loop per room would mean a connection
+  per room, and a blocking read holds its connection for the length of the block. The short block
+  is what lets the room set change: it is re-issued with whatever is subscribed now, and a read
+  still returns the instant any stream has data. Every pod tails independently, so replicas need no
+  sticky routing and no shared state — the only reason the gateway can stay stateless while holding
+  connections.
 - **D5 — Publication is best-effort and strictly after commit.** The `XADD` happens outside the
   transaction, after it commits. A failure increments
   `roomgameplay_stream_publish_failures_total` and is logged; it never fails the command. The

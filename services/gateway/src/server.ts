@@ -1,8 +1,8 @@
 // HTTP wrapper around the route table. Emits one structured JSON log line per request carrying
 // a correlationId — the observability seam the README documents (retrievable via `kubectl logs`).
 //
-// The SSE route is the next phase; everything else is live: authenticate here, forward there, and
-// return exactly what the backend said.
+// Three kinds of request: answered here (`/health`, `/metrics`, a rejection), forwarded to a
+// backend, or held open as an SSE stream. Only the third one touches the raw response.
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,7 @@ import { SERVICE, fromEnv } from "./config.js";
 import * as metrics from "./metrics.js";
 import { forward } from "./proxy.js";
 import { Revocations, listen } from "./revocations.js";
+import { RoomStreams } from "./sse.js";
 
 const config = fromEnv();
 const tokens = new Tokens(config.jwtSecret);
@@ -24,18 +25,28 @@ function log(action: string, status: number, correlationId: string, extra: Recor
   );
 }
 
-// A connection of its own, and one that queues: a client in subscriber mode cannot run ordinary
-// commands, and the subscribe itself has to survive being issued before the socket is up. The
-// fail-fast, no-offline-queue setting identity uses is right for a cache on the request path and
-// wrong here — it turns a cold start into a subscription that never happens.
+// Three connections, because they cannot share one: a client in subscriber mode takes no ordinary
+// commands, and a blocking XREAD holds its connection for the length of the block. The subscriber
+// and the tail queue while they connect — issuing either before the socket is up would leave a
+// subscription that silently never existed.
 const subscriber = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
-subscriber.on("error", () => undefined); // without a listener ioredis escalates to an uncaught exception
+const tail = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
+const redis = new Redis(config.redisUrl, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
+for (const connection of [subscriber, tail, redis]) connection.on("error", () => undefined);
+
+const streams = new RoomStreams(redis, tail, {
+  delivered: (count) => metrics.sseEventsDelivered.inc(count),
+  connections: (count) => metrics.sseConnections.set(count),
+  log: (action, fields) => log(action, 0, "-", fields),
+});
+
 listen(
   subscriber,
   (event) => {
     revocations.revoke(event.oldSessionId);
     metrics.sessionsRevoked.inc();
-    log("session-invalidated", 200, "-", { player: event.playerId, session: event.oldSessionId });
+    const closed = streams.kill(event.oldSessionId);
+    log("session-invalidated", 200, "-", { player: event.playerId, session: event.oldSessionId, streamsClosed: closed });
   },
   (e) => log("session-subscribe-failed", 0, "-", { error: String(e) }),
 );
@@ -48,9 +59,32 @@ async function readBody(req: IncomingMessage): Promise<string | undefined> {
   return chunks.length === 0 ? undefined : Buffer.concat(chunks).toString();
 }
 
+/** The baseline the client read before connecting (D15), from the header or the query string. */
+function lastEventId(req: IncomingMessage, query: string): number | undefined {
+  const header = req.headers["last-event-id"];
+  const raw = typeof header === "string" ? header : new URLSearchParams(query).get("lastEventId");
+  const parsed = Number(raw);
+  return raw !== null && raw !== undefined && raw !== "" && Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Only a member of the room may watch it (Architecture §1.6). room-gameplay already knows who is
+ * seated, so the check is its own answer rather than a second copy of the membership rule here.
+ */
+async function isMember(roomId: string, playerId: string, headers: Record<string, string>): Promise<boolean> {
+  const room = await forward(config.roomsUrl, "GET", `/rooms/${roomId}`, headers, undefined);
+  if (room.status !== 200) return false;
+  try {
+    const players = (JSON.parse(room.body) as { players?: { playerId: string }[] }).players ?? [];
+    return players.some((p) => p.playerId === playerId);
+  } catch {
+    return false;
+  }
+}
+
 createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const correlationId = (req.headers["x-correlation-id"] as string) ?? randomUUID();
-  const url = (req.url ?? "/").split("?")[0];
+  const [url, query = ""] = (req.url ?? "/").split("?");
   const method = req.method ?? "GET";
 
   if (method === "GET" && url === "/metrics") {
@@ -65,24 +99,54 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const outcome = await resolve({ tokens, revoked: (sid) => revocations.has(sid) }, method, url, req.headers, correlationId);
   const route = outcome.route?.label ?? "unknown";
 
-  let status: number;
+  const finish = (status: number) => {
+    done({ route, status });
+    metrics.requests.inc({ route, status });
+    log(`${method} ${url}`, status, correlationId, { route, player: playerOf(outcome) });
+  };
+
   if (outcome.kind === "proxy") {
     const base = outcome.route.target === "identity" ? config.identityUrl : config.roomsUrl;
     const reply = await forward(base, method, url, outcome.headers, body);
-    status = reply.status;
-    res.writeHead(status, { ...reply.headers, "x-correlation-id": correlationId });
+    res.writeHead(reply.status, { ...reply.headers, "x-correlation-id": correlationId });
     res.end(reply.body);
-  } else if (outcome.kind === "stream") {
-    status = 501;
-    res.writeHead(status, { "content-type": "application/json", "x-correlation-id": correlationId });
-    res.end(JSON.stringify({ error: "not implemented yet" }));
-  } else {
-    status = outcome.reply.status;
-    res.writeHead(status, { "content-type": "application/json", "x-correlation-id": correlationId });
-    res.end(JSON.stringify(outcome.reply.json));
+    finish(reply.status);
+    return;
   }
 
-  done({ route, status });
-  metrics.requests.inc({ route, status });
-  log(`${method} ${url}`, status, correlationId, { route, player: playerOf(outcome) });
+  if (outcome.kind === "stream") {
+    const roomId = url.split("/")[2];
+    const headers = { "x-player-id": outcome.principal.playerId, "x-session-id": outcome.principal.sessionId, "x-correlation-id": correlationId };
+    if (!(await isMember(roomId, outcome.principal.playerId, headers))) {
+      res.writeHead(403, { "content-type": "application/json", "x-correlation-id": correlationId });
+      res.end(JSON.stringify({ error: "not_a_member" }));
+      finish(403);
+      return;
+    }
+
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      // Nothing between the pod and the client buffers today, but an SSE stream that gets buffered
+      // looks exactly like a broken game, and the header costs nothing.
+      "x-accel-buffering": "no",
+      "x-correlation-id": correlationId,
+    });
+    finish(200);
+
+    const detach = await streams.subscribe(
+      roomId,
+      outcome.principal.playerId,
+      outcome.principal.sessionId,
+      { write: (chunk) => res.write(chunk), end: () => res.end() },
+      lastEventId(req, query),
+    );
+    req.on("close", detach);
+    return;
+  }
+
+  res.writeHead(outcome.reply.status, { "content-type": "application/json", "x-correlation-id": correlationId });
+  res.end(JSON.stringify(outcome.reply.json));
+  finish(outcome.reply.status);
 }).listen(config.port, () => log("startup", 200, "boot", { port: config.port }));

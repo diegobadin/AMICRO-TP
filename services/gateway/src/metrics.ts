@@ -2,7 +2,7 @@
 // does not go back and retrofit counters. The SSE gauges arrive with the stream itself (F4); what
 // exists here is what this phase can honestly report.
 
-import { Counter, Histogram, Registry, collectDefaultMetrics } from "prom-client";
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from "prom-client";
 
 export const registry = new Registry();
 collectDefaultMetrics({ register: registry });
@@ -11,6 +11,18 @@ export const requests = new Counter({
   name: "gateway_requests_total",
   help: "Requests by route and status",
   labelNames: ["route", "status"],
+  registers: [registry],
+});
+
+export const sseConnections = new Gauge({
+  name: "gateway_sse_connections_active",
+  help: "Live SSE connections held by this gateway",
+  registers: [registry],
+});
+
+export const sseEventsDelivered = new Counter({
+  name: "gateway_sse_events_delivered_total",
+  help: "Event frames written to a subscriber",
   registers: [registry],
 });
 
