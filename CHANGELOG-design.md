@@ -144,3 +144,32 @@ domain invariant.
 single-active-session non-negotiable is now enforced by a database constraint rather than argued
 in prose, and `SessionInvalidated` reaches both the low-latency and the durable transport the
 architecture assigns it.
+
+---
+
+## 8. Final delivery — P3 deltas (the Uno engine and the room-gameplay core)
+
+> The phase the program is de-risked around (`specs/2026-08-08-p3-room-gameplay/`): the rules
+> engine, the event-sourced core and the casual game path. As in §7, anything the running service
+> does differently from `docs/architecture/` and `docs/design/` is recorded here rather than by
+> editing those documents.
+
+| # | Delta | Rationale | Invariant impact |
+|---|-------|-----------|------------------|
+| 8.1 | **The game auto-starts** when a room reaches `ROOM_MIN_PLAYERS` (default 2). Architecture §2.3.1 has `POST /rooms/{id}/games` as host- or system-initiated. | Decision E3. `play --casual` is meant to be "put me into a game" (Client §5.B); a host-initiated start makes two players negotiate who presses go. `POST …/games` still exists and still works for an explicit start. | **None.** `StartGame` is the same command with the same preconditions; only who issues it changed. |
+| 8.2 | **`GET /rooms` added** — a collection read the architecture's resource table does not define. | `room list` (Client §5.B) needs one, and answering it by replaying every room would be absurd. Read-only, served from the `rooms` projection, and it lists only rooms that are waiting, not full and **not empty**. | **None.** Additive read. |
+| 8.3 | **`PlayerLeft` added** to the Room event catalog (§4.1). | Leaving a room that has not started is neither a forfeit nor a disconnection, and `DELETE /rooms/{id}/players/{pid}` had no event to emit. Leaving a game **in progress** is still `PlayerForfeited`. | **None.** Additive event; no existing consumer contract changes. |
+| 8.4 | **`StaleCommandRejected` is not appended to the log.** The catalog lists it as a Room event. | Appending on rejection would consume the sequence number the client is about to retry with, and AC-P3.3 requires a failed command to leave the log untouched. The rejection travels as the HTTP response (`412`/`409`) instead — the catalog already notes it is not propagated to other contexts. | **None.** The client learns exactly what the event would have told it. |
+| 8.5 | **One sequence number per event**, not per command. §3.2.6 splits `entryId` (per entry) from `sequenceNumber` (per command), implying several entries can share one. | The unique index on `(room_id, sequence_number)` is E6's whole concurrency mechanism; one row per number is what makes "exactly one writer commits" true. A command that emits five events consumes five numbers and the `ETag` jumps by five. | **Strengthened.** Serialisation is enforced by a database constraint rather than by convention. |
+| 8.6 | **An initial Wild's colour is chosen from the recorded seed**, not by the first player. Invariant 14 says the first player chooses. | Letting them choose needs a sub-state where no colour is active and an extra round-trip before the game can start, for a case that arises in ~4% of deals. The colour is deterministic, recorded in `GameStarted`, and replay reproduces it. | **Narrowed, deliberately.** Invariant 12 (a Wild always resolves to a real colour, immediately) holds; who picks it in this one case does not. |
+| 8.7 | **`consumed_events` table** beyond the four of the persistence plan. | Kafka is at-least-once and the `identity.session-events` consumer must be idempotent by `oldSessionId` (§4.7) — without a record of what has been seen there is nothing to be idempotent *by*, and a redelivery would re-open a reconnection window that had already expired. Generic, so P5's and P6's consumers reuse it. | **None.** It is what makes the documented idempotency real. |
+| 8.8 | **The live feed is derived from polling**, not from an event stream. Client §5.C asks for a live feed. | Decision E4: P3's live view is `GET …/games/{gid}` with `If-None-Match` → `304`. The CLI diffs consecutive polls to print the feed, so two things inside one interval collapse into one line. **P4 replaces the loop with SSE over the same endpoint** and the feed becomes the real event stream. | **None.** Ordering still comes from the room's sequence number. |
+| 8.9 | **room-gameplay validates identity's JWT with a shared symmetric secret.** | Decision E1, and a real (small, internal) coupling: two services hold one HS256 key until P4's gateway owns validation and room-gameplay trusts `X-Player-Id`/`X-Session-Id` inside the trust boundary. Written down rather than normalised. Each service gets its own sealed secret, so room-gameplay never sees identity's database password. | **None**, but it is the coupling P4 removes. |
+| 8.10 | **A second NodePort (30081) and a second CLI target (`UNOARENA_ROOMS_URL`).** | There is no gateway yet, so identity and room-gameplay each own a port. Both collapse into one the moment P4's gateway becomes the single entry point. | **None.** Deployment shape, not design. |
+| 8.11 | **`room.public.events` and `room.lifecycle.events` are declared with 3 partitions** (catalog: 64), and **nothing drains the outbox yet**. | Same reasoning as §7.5 for partitions. The outbox fills from P3 on; P5's relay is the only thing that has to be added, which is exactly the seam the architecture describes. | **None.** Log-before-broadcast is already whole: events and outbox rows share one transaction. |
+
+**Affirmation.** No bounded-context boundary, aggregate or non-negotiable invariant was weakened.
+All 14 Room invariants of §3.2.1 are implemented and property-tested; log-before-broadcast is a
+single database transaction verified against a real Postgres by forcing the outbox insert to fail;
+stale-command rejection is the `412` of §1.2 above, enforced by a unique index rather than argued.
+The one narrowing is §8.6, recorded with its reason.

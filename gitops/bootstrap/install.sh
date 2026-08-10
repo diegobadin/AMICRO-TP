@@ -38,7 +38,11 @@ fi
 # (The v2.12.3 argocd CLI pinned in ci/ is unaffected: that job installs its own Argo.)
 kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
 kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.5/manifests/install.yaml
-kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
+# 10 minutes, not 3: on a machine that has never pulled these images the rollout is bounded by the
+# registry, not by Kubernetes. A tight timeout here aborts the script *before* the app-of-apps are
+# applied, so the cluster comes up with Argo running and nothing for it to do — which reads as a
+# far stranger failure than a slow start. Found on a from-empty drill with a cold image cache.
+kubectl -n argocd rollout status deploy/argocd-server --timeout=600s
 
 # Sealed Secrets controller (vendor-neutral secret backend), pinned for the same reason.
 # The operator-held encryption key is restored FIRST: a controller that boots without it generates

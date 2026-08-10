@@ -220,3 +220,16 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`clients/cli/`](./clients/cli/) | The Client CLI — the command surface the teaching staff uses to drive the backend. Every canonical command, the endpoint it maps to, the seeding procedure and the gaps we chose not to fill are documented there. |
 | [`gitops/secrets/`](./gitops/secrets/) | How secrets reach a cluster that has never existed before, with no plaintext in the repo. |
 | [`devops-checkpoint/README.md`](./devops-checkpoint/README.md) | The delivery pipeline: stages, change detection, promotion by digest, drills and their evidence. |
+| [`services/room-gameplay/engine/`](./services/room-gameplay/engine/) | The Uno rules, as a module with no framework on its classpath: `decide(state, command)` and `evolve(state, event)`. The property suites run thousands of generated games with no database and no container. |
+| [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
+
+**What is real so far.** `identity` (accounts, single-active-session, JWTs) and `room-gameplay`
+(the event-sourced Uno core: rooms, moves, the immutable game log and its transactional outbox).
+Two players can register through the CLI and play a casual game to the end against a cluster
+deployed from empty. The gateway, SSE, the outbox relay, tournaments, Elo and the spectator view
+are still placeholders — their phases are P4–P7 in the roadmap.
+
+**The log is the authority.** Every accepted move is appended to `room_events` *before* anyone
+sees the result, in the same transaction as the outbox rows a consumer will later read. If a
+rebuilt aggregate ever disagrees with the state that was served, the log wins and the bug is in
+the code.

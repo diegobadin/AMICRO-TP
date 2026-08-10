@@ -25,8 +25,14 @@ sealed interface Outcome {
         override val events: List<Event> = emptyList(),
     ) : Outcome
 
-    /** The caller's `If-Match` no longer matches; the state comes back so it can reconcile. */
-    data class Stale(override val state: RoomState, override val events: List<Event> = emptyList()) : Outcome
+    /**
+     * The caller's `If-Match` no longer matches; the state comes back so it can reconcile. Always
+     * empty: a failed precondition is judged before anything is decided, and a lost race rolled
+     * back — either way nothing reached the log.
+     */
+    data class Stale(override val state: RoomState) : Outcome {
+        override val events: List<Event> get() = emptyList()
+    }
 }
 
 class Rooms(

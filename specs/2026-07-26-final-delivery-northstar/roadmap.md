@@ -37,11 +37,18 @@ is where the connections will be.
 - Why now: every other flow authenticates through it; smallest real service, already fully wired.
 - Depends on: P1 (Postgres, Redis).
 
-## P3 — Uno engine + room-gameplay core — **next (spec'd, not implemented)**
+## P3 — Uno engine + room-gameplay core — **SHIPPED 2026-08-10**
 
-Triad: [`../2026-08-08-p3-room-gameplay/`](../2026-08-08-p3-room-gameplay/) — decisions E1–E8
-locked and review-passed 2026-08-08; implementation starts from its
-[`kickoff.md`](../2026-08-08-p3-room-gameplay/kickoff.md).
+Triad + closure: [`../2026-08-08-p3-room-gameplay/`](../2026-08-08-p3-room-gameplay/) — decisions
+E1–E8, all nine ACs green, evidence in
+[`validation.md`](../2026-08-08-p3-room-gameplay/validation.md) and
+[`ESTADO-FINAL.md`](../2026-08-08-p3-room-gameplay/ESTADO-FINAL.md).
+
+**The casual gate is open**: two CLI processes played a complete casual game of Uno to a winner
+against a cluster deployed from empty — wild colour declaration, draws, an Uno! call and a
+successful challenge, closing a 245-event log with `GameCompleted` → `RoomCompleted`. P4 now
+delivers the *quality* of that experience (a real live feed, one entry point, a bot) rather than
+its existence.
 
 - Ships (a): rooms — create/join/list/leave, membership REST per Architecture §2.3.1, Postgres
   event store scaffold. (b): the game — pure Uno rules engine (Kotlin module, property +
@@ -51,14 +58,16 @@ locked and review-passed 2026-08-08; implementation starts from its
 - Why now: the biggest unknown (R2); everything downstream consumes its events.
 - Depends on: P2 (auth), P1 (Postgres).
 
-## P4 — Realtime fan-out (SSE) — **casual milestone gate**
+## P4 — Realtime fan-out (SSE) — **next**
 
 - Ships: room state → Redis Streams delta patches; gateway/broadcaster SSE tier; per-room
   ordering, reconnect + resync from last seq.
 - CLI: interactive `play` view (live feed, turn board, play-by-index, wild colors, `draw`/`uno`/
   `challenge`/`pass`/`state`), 409 reconciliation surfaced; `bot --casual` random-valid-move.
-- Gate: a full casual game is playable through the CLI against a from-empty cluster. Nothing
-  beyond this line starts until the gate is green (north-star rule).
+- Gate: **met in P3** — a full casual game is playable through the CLI against a from-empty
+  cluster. P4 replaces the polling stand-in with the real stream, collapses the two NodePorts into
+  one gateway (removing the JWT secret room-gameplay and identity currently share), and adds the
+  bot.
 - Depends on: P3.
 
 ## P5 — Async spine: outbox relay + timers
