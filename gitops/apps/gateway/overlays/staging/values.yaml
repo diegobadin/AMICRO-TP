@@ -19,3 +19,7 @@ env:
     value: http://identity.unoarena-staging.svc.cluster.local
   - name: ROOM_GAMEPLAY_URL
     value: http://room-gameplay.unoarena-staging.svc.cluster.local
+  # The session-kill channel identity has been publishing to since P2 (Architecture §5.5), and from
+  # F4 the source of the room streams as well.
+  - name: REDIS_URL
+    value: redis://redis.redis.svc.cluster.local:6379

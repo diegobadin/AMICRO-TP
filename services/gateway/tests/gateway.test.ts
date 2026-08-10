@@ -7,6 +7,7 @@ import { registry } from "../src/metrics.js";
 const SECRET = "test-secret";
 const tokens = new Tokens(SECRET);
 const key = new TextEncoder().encode(SECRET);
+const live = { tokens, revoked: () => false };
 
 let bearer: string;
 let signedByAnotherCluster: string;
@@ -58,30 +59,37 @@ describe("authentication", () => {
   it("rejects a missing, malformed or foreign token with 401", async () => {
     const rejected = [{}, { authorization: "Bearer nonsense" }, { authorization: `Bearer ${signedByAnotherCluster}` }];
     for (const headers of rejected) {
-      const outcome = await resolve(tokens, "GET", "/rooms", headers, "c1");
+      const outcome = await resolve(live, "GET", "/rooms", headers, "c1");
       expect(outcome.kind).toBe("reply");
       expect(outcome.kind === "reply" && outcome.reply.status).toBe(401);
     }
   });
 
   it("passes a valid token through as a principal", async () => {
-    const outcome = await resolve(tokens, "GET", "/rooms", { authorization: `Bearer ${bearer}` }, "c1");
+    const outcome = await resolve(live, "GET", "/rooms", { authorization: `Bearer ${bearer}` }, "c1");
     expect(outcome.kind).toBe("proxy");
     expect(outcome.kind === "proxy" && outcome.principal?.playerId).toBe("player-1");
   });
 
   it("lets an anonymous request reach register", async () => {
-    expect((await resolve(tokens, "POST", "/auth/register", {}, "c1")).kind).toBe("proxy");
+    expect((await resolve(live, "POST", "/auth/register", {}, "c1")).kind).toBe("proxy");
   });
 
   it("answers /health without a session", async () => {
-    const outcome = await resolve(tokens, "GET", "/health", {}, "c1");
+    const outcome = await resolve(live, "GET", "/health", {}, "c1");
     expect(outcome.kind === "reply" && outcome.reply.status).toBe(200);
   });
 
   it("is a 404 before it is a 401 — an unknown path leaks nothing about auth", async () => {
-    const outcome = await resolve(tokens, "GET", "/nope", {}, "c1");
+    const outcome = await resolve(live, "GET", "/nope", {}, "c1");
     expect(outcome.kind === "reply" && outcome.reply.status).toBe(404);
+  });
+
+  it("refuses a still-valid token whose session identity killed, and says which it is", async () => {
+    const superseded = { tokens, revoked: (sid: string) => sid === "session-1" };
+    const outcome = await resolve(superseded, "GET", "/rooms", { authorization: `Bearer ${bearer}` }, "c1");
+    expect(outcome.kind === "reply" && outcome.reply.status).toBe(401);
+    expect(outcome.kind === "reply" && (outcome.reply.json as { error: string }).error).toBe("session_superseded");
   });
 });
 

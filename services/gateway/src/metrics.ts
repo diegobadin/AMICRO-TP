@@ -14,6 +14,12 @@ export const requests = new Counter({
   registers: [registry],
 });
 
+export const sessionsRevoked = new Counter({
+  name: "gateway_sessions_revoked_total",
+  help: "Sessions killed by identity and refused here from that moment on",
+  registers: [registry],
+});
+
 export const requestDuration = new Histogram({
   name: "gateway_http_request_duration_seconds",
   help: "Request latency by route and status",

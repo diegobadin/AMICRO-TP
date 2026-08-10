@@ -123,11 +123,11 @@ off; a test that stays green here is a test that was never protecting anything.
 | Phase | Gate before the next one starts |
 |-------|--------------------------------|
 | F1 | `gateway-staging` Healthy with a digest-pinned image; `/health` and `/metrics` answer through a port-forward |
-| F2 | P3's concurrency checks pass through the gateway; a superseded token gets `401` |
+| F2 | `/auth/**` works through the gateway against the real identity, and a second login turns the first token into `401 session_superseded` **at the gateway**. AC-P4.3 moves to F6: the token strip and the header trust are two halves of one flip |
 | F3 | `XRANGE` shows one entry per committed event with ids equal to the sequence numbers |
 | F4 | `curl -N` shows live frames; reconnect replays exactly the missed ones; `resync` on a trimmed stream |
 | F5 | A full game played by hand through the stream, locally |
-| F6 | AC-P4.1 + AC-P4.2 on a drill cluster; the CLI works with one URL |
+| F6 | AC-P4.1 + AC-P4.2 + AC-P4.3 on a drill cluster; the CLI works with one URL |
 | F7 | Two bots finish a game; every line parses as §6 JSON |
 | F8 | AC-P4.9 recorded here with transcripts, then `main` green (AC-P4.10) |
 

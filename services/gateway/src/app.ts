@@ -96,8 +96,14 @@ export type Outcome =
   | { kind: "proxy"; route: Route; headers: Record<string, string>; principal?: Principal }
   | { kind: "stream"; route: Route; principal: Principal };
 
+export interface Deps {
+  tokens: Tokens;
+  /** True once identity has said this session is dead — see revocations.ts. */
+  revoked: (sessionId: string) => boolean;
+}
+
 export async function resolve(
-  tokens: Tokens,
+  deps: Deps,
   method: string,
   path: string,
   headers: Record<string, string | string[] | undefined>,
@@ -110,9 +116,14 @@ export async function resolve(
     return { kind: "reply", route: matched, reply: { status: 200, json: { status: "ok", service: SERVICE } } };
   }
 
-  const principal = matched.auth ? await tokens.verify(headers["authorization"] as string | undefined) : undefined;
+  const principal = matched.auth ? await deps.tokens.verify(headers["authorization"] as string | undefined) : undefined;
   if (matched.auth && !principal) {
     return { kind: "reply", route: matched, reply: { status: 401, json: { error: "unauthorized" } } };
+  }
+  // A token that is still signed and unexpired but whose session identity has killed. Named
+  // distinctly so the CLI can print §5.A's `session_superseded` instead of "your login is wrong".
+  if (principal && deps.revoked(principal.sessionId)) {
+    return { kind: "reply", route: matched, reply: { status: 401, json: { error: "session_superseded" } } };
   }
 
   if (matched.stream) return { kind: "stream", route: matched, principal: principal! };

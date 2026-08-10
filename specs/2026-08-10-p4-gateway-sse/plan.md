@@ -104,7 +104,7 @@
 |-------|----------|--------------|
 | F0 | This triad + `kickoff.md` | review |
 | F1 | `gateway` becomes real: route table, JWT validation, header injection, `/health`, `/metrics`, structured logs; chart gets `imagePullSecrets`/`startupProbe`/ServiceMonitor; `deploy-staging:gateway` promoted to the real GitOps deploy (still `ClusterIP`) | unit tests; Argo shows `gateway-staging` Healthy, image pinned by digest, reachable via port-forward |
-| F2 | REST proxying for `/auth/**` and `/rooms/**` (D2) + the Redis pub/sub subscriber and revoked-session map (D11) | P3's concurrency checks re-run **through** the gateway (AC-P4.3); a superseded token gets `401` |
+| F2 | REST proxying for `/auth/**` and `/rooms/**` (D2) + the Redis pub/sub subscriber and revoked-session map (D11) | identity's half live against the real service, second login → `401 session_superseded`; the rooms half against a real HTTP backend in tests, and **re-run against room-gameplay at F6** — see below |
 | F3 | room-gameplay publishes committed events to `room:{id}:events` (D3/D5) + the failure counter | `XRANGE` after a played game shows one entry per event, ids equal to the sequence numbers |
 | F4 | Gateway SSE: `GET /rooms/{id}/stream`, membership check, tail per room, `Last-Event-ID` replay, `resync`, heartbeat, `session-invalidated` frame | `curl -N` shows frames arriving as moves are posted; reconnect replays exactly the missed ones |
 | F5 | CLI: stream client (D7) replaces the poll loop, resync rules (D8), `feed()` deleted, `session_superseded` surfaced | a full game played by hand against a local gateway + port-forwarded room-gameplay |
@@ -116,6 +116,15 @@ F1–F5 are additive: the two NodePorts keep working and the CLI keeps polling u
 branch is never in a state where a drill cannot play a game. F5 is validated **locally** (gateway
 run with `npm start`, room-gameplay port-forwarded) because the gateway is not yet the cluster's
 door — the same ordering P3 used when it hand-played before the cluster drill.
+
+**The trust flip cannot be verified in halves** (found in F2). The gateway stops sending the token
+the moment it starts injecting `X-Player-Id`, and room-gameplay only starts accepting that header at
+F6 — so between F2 and F6 the rooms path through the gateway answers `401`, correctly, from
+room-gameplay. AC-P4.3 is therefore an F6 gate, not an F2 one. The alternative — forwarding the
+token *and* the headers for a few commits — would put a transitional auth mode in the code whose
+only test is that it later gets removed, and the bite test for the header whitelist would have to
+pass with it in place. Not worth it: `/auth/**` exercises the proxy against a real service today,
+and the proxy suite covers `201`/`304`/`412`/`204`/`502` against a real HTTP backend.
 
 **F6 ordering note.** From an empty cluster there is no NodePort conflict, and that is the drill
 that counts. On a *running* cluster the gateway Service may fail to allocate `30080` until
