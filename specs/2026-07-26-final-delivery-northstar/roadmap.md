@@ -175,10 +175,11 @@ What P5 inherits, and must not break:
 4. **Ask for the closure pipeline.** The closure commit is docs and carries `[skip ci]` — which is
    right for the branch, but it means the push to `main` produces a **skipped** pipeline and the
    "green `main` pipeline" AC has no run behind it. Trigger it deliberately:
-   `POST /api/v4/projects/83816735/pipeline?ref=main`. On `main` every job's
-   `if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH` rule matches, so the full set runs and the
-   production stages stay `manual`. Dropping `[skip ci]` instead would burn a branch pipeline *and*
-   a main one for the same commit. **Read a red closure run before believing it** — the base-image
+   `POST /api/v4/projects/83816735/pipeline?ref=main`. That is also the *widest* run available:
+   `rules:changes` is always true for a pipeline that did not come from a push, so the ten
+   placeholders' `changes`-gated manual deploy gates appear too (43 jobs, against 36 for a push that
+   touched one service). Production stages stay `manual` either way. Dropping `[skip ci]` instead
+   would burn a branch pipeline *and* a main one for the same commit. **Read a red closure run before believing it** — the base-image
    pull is a public-registry call and can fail for reasons the repo did not cause (P4's first
    attempt; the detail is in that phase's `validation.md`).
 
