@@ -304,6 +304,33 @@ against the rebuilt image `sha256:2c9b7c70`:
 The unit test bites: reverted, `tells every client once per outage` fails on the first assertion.
 Gateway suite 44 → **45**.
 
+### AC-P4.10 — the `main` pipeline
+
+FF merge `ea1ab15..dbc12d2`, 25 commits. The closure commit carries `[skip ci]`, so the push itself
+produced a *skipped* pipeline (`2751588218`) — the closure run has to be asked for:
+`POST /projects/83816735/pipeline?ref=main`, where every job's
+`if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH` rule matches and the whole set runs.
+
+**`2751590088` — 35 success + 8 manual**, stage list unchanged from P3's:
+`test → build → deliver → deploy-staging → integration-staging → deliver-production`. 43 jobs, up
+from P3's 36 because the gateway is now a fully-wired service with its own four. `deploy-staging:gateway`
+is a real GitOps deploy, and **`integration-staging:identity` passed with no edit to that job** —
+the collapse of identity's NodePort did not reach it, because it stands up its own kind cluster and
+drives the CLI against what it deployed.
+
+The first attempt failed on `build:gateway`, and it is worth recording as *not* a defect:
+
+```
+error building image: unable to complete operation after 0 attempts, last error:
+GET https://gcr.io/v2/token?scope=repository:distroless/nodejs20-debian12:pull&service=gcr.io:
+UNAUTHORIZED: authentication failed
+```
+
+kaniko could not fetch an **anonymous pull token from gcr.io** for the distroless base image. The
+same Dockerfile and the same base built green minutes earlier on the branch (`2751543258`); a retry
+of the same pipeline went green with nothing changed. A registry flake, not the repo — but the kind
+of red that costs an hour if it is read as one.
+
 ### Cluster left as found
 
 All apps `Synced/Healthy`, `ROOM_MIN_PLAYERS` back to `"2"`, no joinable rooms, no stray client

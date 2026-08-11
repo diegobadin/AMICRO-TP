@@ -53,11 +53,21 @@
 | AC-P4.7 a superseded session dies | `event: session-invalidated` **176 ms** after the second login, stream closed; next REST call `401 session_superseded`; the CLI says so and exits non-zero. |
 | AC-P4.8 the bot | Two bots: both exit `0`, `errors: 0`, one won one lost, every line a §6 object. Two bots + one human at one table: zero `409`s. Bad URL: `unreachable`, exit `1`. |
 | AC-P4.9 from empty | `kind delete cluster` → `install.sh` → all three `Synced/Healthy` in **9 min**, digest-pinned, secrets decrypted, targets scraped, and two CLI processes played a complete game to `GameCompleted` → `RoomCompleted`. |
-| AC-P4.10 pipeline | Same stages, same job kinds, no 11th deployable. `deploy-staging:gateway` is a real GitOps deploy. `integration-staging:identity` untouched. |
+| AC-P4.10 pipeline | `2751590088` on `main`: **35 success + 8 manual**, same six stages as P3, no 11th deployable. `deploy-staging:gateway` is a real GitOps deploy; `integration-staging:identity` passed with **no edit to that job**. |
 
 Pipelines: `2751392837` (gateway), `2751407819` and `2751424567` (room-gameplay), `2751543258`
 (the gateway rebuild after the drill finding) — all green, each running only the jobs its own
-service's paths triggered.
+service's paths triggered. Then `2751590088` on `main`, 43 jobs, after the FF merge
+`ea1ab15..dbc12d2`.
+
+Two things about that closure run, both worth knowing before the next one:
+
+- **The closure commit is `[skip ci]`, so the push to `main` skipped its own pipeline**
+  (`2751588218`). The green run has to be asked for explicitly —
+  `POST /projects/83816735/pipeline?ref=main`.
+- **Its first attempt failed on `build:gateway` and the repo was innocent**: kaniko could not fetch
+  an anonymous pull token from `gcr.io` for the distroless base image. The identical build had gone
+  green on the branch minutes earlier; a plain retry went green with nothing changed.
 
 ## What the drill caught that nothing else did
 
