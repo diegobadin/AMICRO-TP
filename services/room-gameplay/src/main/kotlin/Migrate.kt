@@ -51,6 +51,13 @@ private val STATEMENTS = listOf(
     // has to find every active room a player sits in, and that is the only query that needs it.
     "create index if not exists rooms_players_idx on rooms using gin (players)",
     "create index if not exists rooms_status_idx on rooms (status)",
+    // P5: the earliest deadline this room is waiting on, written in the same transaction as the
+    // events so it can never disagree with the log. The timer worker's only query reads it; nothing
+    // else does. Rows written before this column existed stay NULL and are simply invisible to the
+    // worker until their next write, which is what keeps an upgrade from firing a tick at every
+    // room at once.
+    "alter table rooms add column if not exists next_deadline timestamptz",
+    "create index if not exists rooms_deadline_idx on rooms (next_deadline) where next_deadline is not null",
     // Keyed by (player, key), not by key alone: the header is client-generated, so two players are
     // free to pick the same string and neither may block the other.
     """create table if not exists idempotency_keys (

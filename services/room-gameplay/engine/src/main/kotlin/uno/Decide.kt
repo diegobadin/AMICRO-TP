@@ -42,12 +42,31 @@ fun decide(
         is ReconnectPlayer -> log.reconnect(command, now)
         is DisconnectPlayer -> log.disconnect(command, now, config)
         is ForfeitPlayer -> log.forfeit(command, now, config)
+        // Whatever `expireOverdue` just produced is the entire answer.
+        is Tick -> if (state.exists) log.accept() else log.reject(Rejection.ROOM_NOT_FOUND)
     }
 }
 
 /** Standalone so the HTTP layer can flush deadlines on a read as well as on a command. */
 fun expire(state: RoomState, now: Instant, config: EngineConfig = EngineConfig()): List<Event> =
     Log(state).also { it.expireOverdue(now, config) }.events
+
+/**
+ * The earliest moment `expire` could have anything to say about this room, or null if it is waiting
+ * on nothing. The `rooms` projection caches it so the timer worker can find due rooms with an index
+ * lookup instead of replaying every aggregate (P5 E1) — the deadlines themselves stay here, where
+ * they are decided.
+ */
+fun nextDeadline(state: RoomState, config: EngineConfig = EngineConfig()): Instant? = when {
+    !state.exists || state.status == RoomStatus.COMPLETED -> null
+    state.status == RoomStatus.WAITING ->
+        (state.players.maxOfOrNull { it.joinedAt } ?: state.createdAt)?.plusSeconds(config.waitingRoomExpirySeconds)
+    else -> listOfNotNull(
+        state.game?.takeIf { it.status == GameStatus.IN_PROGRESS }?.turnTimerDeadline,
+        state.game?.challengeWindow?.expiresAt,
+        *state.players.map { (it.connection as? ConnectionStatus.Disconnected)?.deadline }.toTypedArray(),
+    ).minOrNull()
+}
 
 /**
  * Accumulates events while keeping a working state in step with them, so a command that emits five

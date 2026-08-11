@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import org.postgresql.util.PGobject
 import java.sql.Connection
 import java.sql.SQLException
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import uno.Event
@@ -61,6 +62,7 @@ class EventStore(private val dataSource: DataSource) {
         state: RoomState,
         correlationId: String?,
         idempotency: IdempotentCreate? = null,
+        nextDeadline: Instant? = null,
     ): AppendResult {
         if (events.isEmpty()) return AppendResult.Committed(baseSequence)
         dataSource.connection.use { connection ->
@@ -68,7 +70,7 @@ class EventStore(private val dataSource: DataSource) {
             try {
                 insertEvents(connection, roomId, baseSequence, events, correlationId)
                 insertOutbox(connection, roomId, baseSequence, events, correlationId)
-                upsertProjection(connection, roomId, state)
+                upsertProjection(connection, roomId, state, nextDeadline)
                 idempotency?.let { insertIdempotency(connection, roomId, it) }
                 connection.commit()
                 return AppendResult.Committed(baseSequence + events.size)
@@ -195,17 +197,18 @@ class EventStore(private val dataSource: DataSource) {
         }
     }
 
-    private fun upsertProjection(connection: Connection, roomId: UUID, state: RoomState) {
+    private fun upsertProjection(connection: Connection, roomId: UUID, state: RoomState, nextDeadline: Instant?) {
         connection.prepareStatement(
             """insert into rooms (room_id, room_type, status, max_players, player_count, players,
-                                  game_number, sequence_number, created_at, updated_at)
-               values (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, now())
+                                  game_number, sequence_number, created_at, next_deadline, updated_at)
+               values (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, now())
                on conflict (room_id) do update set
                  status = excluded.status,
                  player_count = excluded.player_count,
                  players = excluded.players,
                  game_number = excluded.game_number,
                  sequence_number = excluded.sequence_number,
+                 next_deadline = excluded.next_deadline,
                  updated_at = now()""",
         ).use { statement ->
             statement.setObject(1, roomId)
@@ -217,6 +220,8 @@ class EventStore(private val dataSource: DataSource) {
             state.game?.gameNumber?.let { statement.setInt(7, it) } ?: statement.setNull(7, java.sql.Types.INTEGER)
             statement.setInt(8, state.sequenceNumber)
             statement.setObject(9, java.sql.Timestamp.from(state.createdAt))
+            nextDeadline?.let { statement.setObject(10, java.sql.Timestamp.from(it)) }
+                ?: statement.setNull(10, java.sql.Types.TIMESTAMP)
             statement.executeUpdate()
         }
     }

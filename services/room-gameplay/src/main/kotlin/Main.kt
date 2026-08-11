@@ -76,6 +76,7 @@ fun Application.module(config: Config, rooms: Rooms) {
         get("/health") { call.respond(Health("ok", SERVICE)) }
         get("/metrics") { call.respondText(Metrics.registry.scrape(), ContentType.Text.Plain) }
         roomRoutes(rooms)
+        internalRoutes(rooms)
     }
 }
 

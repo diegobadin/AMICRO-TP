@@ -34,6 +34,13 @@ data class ForfeitPlayer(val playerId: String, val reason: String) : Command
 data class DisconnectPlayer(val playerId: String, val reason: String) : Command
 
 /**
+ * Raised by the timer worker, and the only command that asks for nothing (P5 E1). `decide` expires
+ * what is overdue before judging any command, so a tick is that step with no command behind it —
+ * which is also why a duplicate tick is free: the second one finds nothing left to expire.
+ */
+data object Tick : Command
+
+/**
  * A rejection is not an event. Appending one would consume the sequence number the client is about
  * to retry with, and AC-P3.3 requires a failed command to leave the log untouched — so the reason
  * travels in the HTTP response instead (§4.1 `StaleCommandRejected`, recorded as a delta).

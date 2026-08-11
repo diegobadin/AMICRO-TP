@@ -18,8 +18,18 @@ import io.ktor.server.auth.authentication
 import io.ktor.server.response.respond
 
 const val PLAYER_AUTH = "player"
+const val SYSTEM_AUTH = "system"
 const val PLAYER_HEADER = "X-Player-Id"
 const val SESSION_HEADER = "X-Session-Id"
+
+/**
+ * P5: the timer worker calls in as `system:timer-worker`. The gateway builds `X-Player-Id` from a
+ * validated token's subject — an identity-issued uuid — so a player can never present one of these;
+ * the whitelist is what makes that true. The prefix is the second lock on the same door, and it
+ * swings both ways: a system id is refused on a player route as firmly as a player id is on the
+ * internal one.
+ */
+const val SYSTEM_PREFIX = "system:"
 
 data class Player(val playerId: String, val sessionId: String)
 
@@ -28,13 +38,18 @@ data class Player(val playerId: String, val sessionId: String)
  * us, so a route cannot be added that forgets to identify its caller.
  */
 class GatewayIdentity(config: Config) : AuthenticationProvider(config) {
-    class Config(name: String) : AuthenticationProvider.Config(name)
+    private val system = config.system
+
+    class Config(name: String, val system: Boolean = false) : AuthenticationProvider.Config(name)
 
     override suspend fun onAuthenticate(context: AuthenticationContext) {
         val playerId = context.call.request.headers[PLAYER_HEADER]
         val sessionId = context.call.request.headers[SESSION_HEADER]
-        if (playerId.isNullOrBlank() || sessionId.isNullOrBlank()) {
-            context.challenge(PLAYER_AUTH, AuthenticationFailedCause.NoCredentials) { challenge, call ->
+        if (playerId.isNullOrBlank() || sessionId.isNullOrBlank() ||
+            playerId.startsWith(SYSTEM_PREFIX) != system
+        ) {
+            val scheme = if (system) SYSTEM_AUTH else PLAYER_AUTH
+            context.challenge(scheme, AuthenticationFailedCause.NoCredentials) { challenge, call ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorBody("unauthorized"))
                 challenge.complete()
             }
@@ -47,6 +62,7 @@ class GatewayIdentity(config: Config) : AuthenticationProvider(config) {
 fun Application.installAuth() {
     install(Authentication) {
         register(GatewayIdentity(GatewayIdentity.Config(PLAYER_AUTH)))
+        register(GatewayIdentity(GatewayIdentity.Config(SYSTEM_AUTH, system = true)))
     }
 }
 

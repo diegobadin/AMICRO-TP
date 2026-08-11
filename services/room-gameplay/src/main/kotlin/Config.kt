@@ -8,6 +8,8 @@ data class Config(
     val port: Int,
     val minPlayers: Int,
     val turnTimeoutSeconds: Long,
+    val idleTimeoutsBeforeForfeit: Int,
+    val waitingRoomExpirySeconds: Long,
     val databaseUrl: String,
     val databaseUser: String,
     val databasePassword: String?,
@@ -19,6 +21,10 @@ data class Config(
             port = env["PORT"]?.toIntOrNull() ?: 8081,
             minPlayers = env["ROOM_MIN_PLAYERS"]?.toIntOrNull() ?: 2,
             turnTimeoutSeconds = env["TURN_TIMEOUT_SECONDS"]?.toLongOrNull() ?: 30,
+            // Levers a drill or the demo can turn without a rebuild, like the turn timer above: a
+            // fifteen-minute wait for a room to expire is right in production and useless on stage.
+            idleTimeoutsBeforeForfeit = env["IDLE_TIMEOUTS_BEFORE_FORFEIT"]?.toIntOrNull() ?: 3,
+            waitingRoomExpirySeconds = env["WAITING_ROOM_EXPIRY_SECONDS"]?.toLongOrNull() ?: 900,
             databaseUrl = "jdbc:postgresql://${env["DATABASE_HOST"] ?: "localhost"}:" +
                 "${env["DATABASE_PORT"] ?: "5432"}/${env["DATABASE_NAME"] ?: "room_gameplay"}",
             databaseUser = env["DATABASE_USER"] ?: "room_gameplay",

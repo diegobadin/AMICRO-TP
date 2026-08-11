@@ -14,6 +14,7 @@ import uno.Rejection
 import uno.RoomState
 import uno.RoomType
 import uno.decide
+import uno.nextDeadline
 
 sealed interface Outcome {
     val state: RoomState
@@ -47,7 +48,12 @@ class Rooms(
     // watching that room have to see it like any other event.
     private val stream: RoomEvents = NoRoomEvents,
 ) {
-    private val engine = EngineConfig(minPlayers = config.minPlayers, turnTimeoutSeconds = config.turnTimeoutSeconds)
+    private val engine = EngineConfig(
+        minPlayers = config.minPlayers,
+        turnTimeoutSeconds = config.turnTimeoutSeconds,
+        idleTimeoutsBeforeForfeit = config.idleTimeoutsBeforeForfeit,
+        waitingRoomExpirySeconds = config.waitingRoomExpirySeconds,
+    )
 
     fun load(roomId: UUID): LoadedRoom = store.load(roomId)
 
@@ -82,7 +88,12 @@ class Rooms(
                 }
             }
 
-            when (store.append(roomId, state.sequenceNumber, decision.events, after, correlationId)) {
+            when (
+                store.append(
+                    roomId, state.sequenceNumber, decision.events, after, correlationId,
+                    nextDeadline = nextDeadline(after, engine),
+                )
+            ) {
                 is AppendResult.Committed -> {
                     stream.published(roomId, state.sequenceNumber, decision.events, correlationId)
                     return when (decision) {
@@ -123,7 +134,7 @@ class Rooms(
         val state = empty.after(events)
         val record = idempotencyKey?.let { IdempotentCreate(it, playerId, render(state)) }
 
-        return when (store.append(roomId, 0, events, state, correlationId, record)) {
+        return when (store.append(roomId, 0, events, state, correlationId, record, nextDeadline(state, engine))) {
             is AppendResult.Committed -> {
                 stream.published(roomId, 0, events, correlationId)
                 CreateOutcome.Created(roomId, state, events)

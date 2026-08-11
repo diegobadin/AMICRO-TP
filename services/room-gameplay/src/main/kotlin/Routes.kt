@@ -30,11 +30,14 @@ import uno.JoinRoom
 import uno.LeaveRoom
 import uno.PassTurn
 import uno.PlayCard
+import uno.PlayerForfeited
 import uno.ReconnectPlayer
 import uno.Rejection
 import uno.RoomCreated
+import uno.RoomExpired
 import uno.RoomState
 import uno.StartGame
+import uno.Tick
 
 @Serializable
 data class CreateRoomBody(val roomType: String? = null, val maxPlayers: Int? = null)
@@ -127,6 +130,10 @@ private fun countBusiness(events: List<Event>, refused: Rejection? = null) {
             is RoomCreated -> Metrics.roomsCreated.increment()
             is GameStarted -> Metrics.gamesStarted.increment()
             is GameCompleted -> Metrics.gamesCompleted.increment()
+            is RoomExpired -> Metrics.roomsExpired.increment()
+            // Counted from the event rather than from the tick, because a forfeit for idleness also
+            // arrives on the command of whoever happens to wake the room up first.
+            is PlayerForfeited -> if (event.reason == "idle") Metrics.idleForfeits.increment()
             else -> Unit
         }
     }
@@ -315,6 +322,43 @@ fun Route.roomRoutes(rooms: Rooms) {
                     }
                     is Outcome.Refused -> call.refuse(outcome.reason)
                     is Outcome.Stale -> call.stale(outcome.state)
+                }
+            }
+        }
+    }
+}
+
+@Serializable
+data class TickResult(val sequenceNumber: Int, val events: Int)
+
+/**
+ * The timer worker's only entry point (P5 E1). It carries no game knowledge — it says "this room's
+ * clock has run out" and the aggregate decides what that means, which is why a tick that arrives
+ * late, twice, or for nothing at all is an empty no-op rather than a second source of truth.
+ *
+ * Deliberately outside `/rooms`: no pattern in the gateway's whitelist matches an internal path, so
+ * this is unreachable from outside the cluster, and `SYSTEM_AUTH` refuses a caller who is not the
+ * worker even from inside it.
+ */
+fun Route.internalRoutes(rooms: Rooms) {
+    authenticate(SYSTEM_AUTH) {
+        post("/internal/rooms/{roomId}/tick") {
+            val roomId = call.roomId()
+                ?: return@post call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))
+            val outcome = rooms.submit(roomId, Tick, call.correlationId())
+            countBusiness(outcome)
+            when (outcome) {
+                is Outcome.Ok -> {
+                    Metrics.timerTick(if (outcome.events.isEmpty()) "nothing_due" else "fired").increment()
+                    call.respond(TickResult(outcome.state.sequenceNumber, outcome.events.size))
+                }
+                is Outcome.Refused -> {
+                    Metrics.timerTick("refused").increment()
+                    call.refuse(outcome.reason)
+                }
+                is Outcome.Stale -> {
+                    Metrics.timerTick("contended").increment()
+                    call.respond(TickResult(outcome.state.sequenceNumber, 0))
                 }
             }
         }

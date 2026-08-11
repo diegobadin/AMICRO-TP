@@ -38,6 +38,19 @@ object Metrics {
     val streamPublishFailures: Counter = Counter.builder("roomgameplay.stream.publish.failures")
         .description("Committed events that did not reach the room stream").register(registry)
 
+    // P5: a room the clock closed rather than a game, and a seat given up for not being sat in.
+    // Both say the same thing from different ends — nobody came back — and both used to be
+    // impossible to count because nothing evaluated a deadline unless a player was still there.
+    val roomsExpired: Counter = Counter.builder("roomgameplay.rooms.expired")
+        .description("Waiting rooms closed by the clock").register(registry)
+
+    val idleForfeits: Counter = Counter.builder("roomgameplay.players.idle.forfeits")
+        .description("Seats given up after consecutive turn timeouts").register(registry)
+
+    fun timerTick(result: String): Counter = Counter.builder("roomgameplay.timer.ticks")
+        .description("Ticks from the timer worker, by what they found")
+        .tags("result", result).register(registry)
+
     fun move(type: String, result: String): Counter = Counter.builder("roomgameplay.moves")
         .description("Moves submitted, by command type and outcome")
         .tags("type", type, "result", result).register(registry)
@@ -62,6 +75,7 @@ private val TEMPLATES = listOf(
     "/rooms/{roomId}/games",
     "/rooms/{roomId}/games/{gameNumber}",
     "/rooms/{roomId}/games/{gameNumber}/moves",
+    "/internal/rooms/{roomId}/tick",
 ).map { it.trim('/').split('/') }
 
 fun routeLabel(path: String): String {

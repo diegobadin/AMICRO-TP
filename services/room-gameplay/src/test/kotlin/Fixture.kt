@@ -37,6 +37,12 @@ fun HttpRequestBuilder.asPlayer(playerId: String = ALICE, sessionId: String = "s
     header(SESSION_HEADER, sessionId)
 }
 
+/** The timer worker's own identity: both headers, and a prefix the gateway can never mint (P5). */
+fun HttpRequestBuilder.asTimerWorker(sessionId: String = "worker-1") {
+    header(PLAYER_HEADER, "${SYSTEM_PREFIX}timer-worker")
+    header(SESSION_HEADER, sessionId)
+}
+
 fun testPool(): HikariDataSource {
     val url = System.getenv("TEST_DATABASE_URL")
         ?: error(
@@ -79,6 +85,18 @@ fun HikariDataSource.countIn(table: String, roomId: UUID): Int =
         connection.prepareStatement("select count(*) from $table where room_id = ?").use { statement ->
             statement.setObject(1, roomId)
             statement.executeQuery().use { rows -> rows.next(); rows.getInt(1) }
+        }
+    }
+
+/** The deadline the projection is caching for a room — the timer worker's only input (P5 E1). */
+fun HikariDataSource.nextDeadlineOf(roomId: String): java.time.Instant? =
+    connection.use { connection ->
+        connection.prepareStatement("select next_deadline from rooms where room_id = ?::uuid").use { statement ->
+            statement.setString(1, roomId)
+            statement.executeQuery().use { rows ->
+                rows.next()
+                rows.getTimestamp(1)?.toInstant()
+            }
         }
     }
 
