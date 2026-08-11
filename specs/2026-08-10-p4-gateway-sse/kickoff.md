@@ -6,7 +6,8 @@
 
 ## Where things stand
 
-Branch `feat/p4-gateway-sse`, **twelve commits, not pushed**. `main` is still `ea1ab15` (P3).
+Branch `feat/p4-gateway-sse`, **not pushed**. `main` is still `ea1ab15` (P3), so
+`git log --oneline ea1ab15..HEAD` is exactly the phase.
 
 | Phase | State |
 |-------|-------|
