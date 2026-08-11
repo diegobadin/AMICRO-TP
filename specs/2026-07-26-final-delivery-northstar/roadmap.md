@@ -160,6 +160,31 @@ What P5 inherits, and must not break:
   room-gameplay image built from `main`; the pin is per-service and change detection is path-based,
   so push once per service and check the digest actually moved.
 
+### Closing a phase — the four steps, and the two that surprise people
+
+1. **Push the branch before anything else.** First push with `git push -o ci.skip` (a new branch
+   evaluates `rules:changes` as all-changed, so it would otherwise run all ten services), then one
+   push per changed service so change detection runs that service's jobs alone. CI pins the digest
+   back, so `git pull --rebase` before every local commit.
+2. **Drill from empty** on the branch: `kind delete cluster` → `TARGET_REVISION=<branch>
+   install.sh`. Leave the cluster tracking the branch only while the branch exists — **repoint both
+   roots at `main` (`kubectl apply -f gitops/root-app.yaml -f gitops/platform-root.yaml`) before the
+   branch is deleted**, or Argo loses the revision it is syncing from. The children pick the new
+   revision up through the root's helm parameter within a poll.
+3. **Write the closure**, FF-merge, push `main`.
+4. **Ask for the closure pipeline.** The closure commit is docs and carries `[skip ci]` — which is
+   right for the branch, but it means the push to `main` produces a **skipped** pipeline and the
+   "green `main` pipeline" AC has no run behind it. Trigger it deliberately:
+   `POST /api/v4/projects/83816735/pipeline?ref=main`. On `main` every job's
+   `if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH` rule matches, so the full set runs and the
+   production stages stay `manual`. Dropping `[skip ci]` instead would burn a branch pipeline *and*
+   a main one for the same commit.
+
+A red closure run is worth reading before it is believed: P4's first attempt failed in
+`build:gateway` because kaniko could not fetch an **anonymous pull token from `gcr.io`** for the
+distroless base image. The identical build had been green on the branch minutes earlier, and a plain
+retry went green with nothing changed.
+
 ## P6 — Ranking, spectator, analytics
 
 - Ships: ranking Elo consumer (casual-only, non-abandoned filter); spectator projection with the
