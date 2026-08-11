@@ -5,8 +5,9 @@
 // Three guards, each for a different way a client can end up believing something false:
 //
 //   the gap check — a frame lost between two others; the client sees the jump and re-reads.
-//   the `resync` frame — a `Last-Event-ID` older than what Redis still holds, so the replay would
-//     silently start mid-game.
+//   the `resync` frame — the stream cannot be trusted to carry the client forward: a
+//     `Last-Event-ID` older than what Redis still holds, so the replay would silently start
+//     mid-game, or a tail that cannot read Redis at all.
 //   the heartbeat — a lost *last* frame, with nothing after it to reveal the hole. That is
 //     `GameCompleted`: a client that misses it waits forever. The heartbeat carries the room's
 //     latest sequence number, so being behind is visible within one interval.
@@ -107,6 +108,7 @@ export class RoomStreams {
   private readonly cursors = new Map<string, string>();
   private tailing = false;
   private stopped = false;
+  private tailFailing = false;
 
   constructor(
     private readonly redis: Redis,
@@ -184,6 +186,13 @@ export class RoomStreams {
     this.stopped = true;
   }
 
+  /** A control frame to everyone watching, whatever room they are in. */
+  private broadcast(frame: Frame): void {
+    for (const subscribers of this.rooms.values()) {
+      for (const subscriber of subscribers) subscriber.send(frame);
+    }
+  }
+
   private cursorSequence(roomId: string): number {
     return Number((this.cursors.get(roomId) ?? "0-0").split("-")[0]);
   }
@@ -235,9 +244,18 @@ export class RoomStreams {
         )) as [string, [string, string[]][]][] | null;
       } catch (e) {
         this.hooks.log("stream-tail-failed", { error: String(e) });
+        // The tail is the only thing that can notice Redis has gone: the heartbeat reports a
+        // cursor this process holds in memory, so it keeps ticking with a sequence number that
+        // has stopped moving, and a client watching a room that advances meanwhile is told
+        // nothing. One `resync` per outage puts it back on the REST read, which still works.
+        if (!this.tailFailing) {
+          this.tailFailing = true;
+          this.broadcast({ event: "resync", data: { reason: "stream-unavailable" } });
+        }
         await new Promise((resolve) => setTimeout(resolve, BLOCK_MS));
         continue;
       }
+      this.tailFailing = false;
       if (!batches) continue;
 
       for (const [key, entries] of batches) {

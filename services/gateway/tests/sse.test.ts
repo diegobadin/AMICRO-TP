@@ -228,3 +228,34 @@ describe("the heartbeat", () => {
     expect(beats[0].data.seq).toBe(2);
   });
 });
+
+describe("a tail that cannot read Redis", () => {
+  // The heartbeat cannot cover this one: it reports the cursor this process holds in memory, so
+  // during an outage it keeps ticking with a sequence number that has stopped moving and the
+  // client hears nothing at all.
+  it("tells every client once per outage, and again if Redis goes a second time", async () => {
+    vi.useFakeTimers();
+    const redis = new FakeRedis([entry(1)]);
+    let broken = true;
+    redis.xread = async () => {
+      if (broken) throw new Error("Connection is closed.");
+      await new Promise<void>((done) => setTimeout(done, 5));
+      return null;
+    };
+    running = streamsOf(redis);
+    const client = connection();
+
+    await running.subscribe("r1", "s1", client, undefined);
+    await vi.advanceTimersByTimeAsync(4000);
+
+    const resync = () => framesIn(client.chunks).filter((f) => f.event === "resync");
+    expect(resync()).toHaveLength(1);
+    expect(resync()[0].data.reason).toBe("stream-unavailable");
+
+    broken = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    broken = true;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(resync()).toHaveLength(2);
+  });
+});

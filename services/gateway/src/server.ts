@@ -27,10 +27,14 @@ function log(action: string, status: number, correlationId: string, extra: Recor
 
 // Three connections, because they cannot share one: a client in subscriber mode takes no ordinary
 // commands, and a blocking XREAD holds its connection for the length of the block. The subscriber
-// and the tail queue while they connect — issuing either before the socket is up would leave a
+// queues while it connects — issuing a `psubscribe` before the socket is up would leave a
 // subscription that silently never existed.
+// The tail must NOT queue: its loop is already a retry loop, and a read parked in the offline
+// queue is a Redis outage nobody can see. Failing the read is what lets the loop tell the clients
+// (found by pulling Redis out from under a live stream — the connection stayed open and the
+// heartbeat went on reporting a sequence number that had stopped moving).
 const subscriber = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
-const tail = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
+const tail = new Redis(config.redisUrl, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
 const redis = new Redis(config.redisUrl, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
 for (const connection of [subscriber, tail, redis]) connection.on("error", () => undefined);
 
