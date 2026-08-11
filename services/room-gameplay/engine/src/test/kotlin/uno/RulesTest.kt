@@ -365,6 +365,99 @@ class RulesTest {
         assertTrue(decision.all<CardDrawn>().none { it.playerId == "a" })
     }
 
+    // ---- idle rooms (P5 E2)
+
+    @Test
+    fun `a timeout's own draw and pass do not clear the streak it just set`() {
+        var state = position(mapOf("a" to hand("B9"), "b" to hand("B1")), top = card("R3"))
+        var at = T0.plusSeconds(31)
+        expire(state, at).forEach { state = evolve(state, it) }
+        assertEquals(1, state.game!!.timeouts("a"), "the timeout draws and passes for the player, not as them")
+
+        at = at.plusSeconds(31)
+        expire(state, at).forEach { state = evolve(state, it) }
+        assertEquals(1, state.game!!.timeouts("b"))
+
+        // a's turn comes round again and this time a answers it.
+        decide(state, DrawCard("a"), at.plusSeconds(1), 7L).events.forEach { state = evolve(state, it) }
+        assertEquals(0, state.game!!.timeouts("a"), "drawing is acting")
+        assertEquals(1, state.game!!.timeouts("b"), "and says nothing about anyone else")
+    }
+
+    @Test
+    fun `a seat nobody is sitting in is given up, and the room then goes quiet`() {
+        val state = position(mapOf("a" to hand("R5", "B9"), "b" to hand("B1", "G4")), top = card("R3"))
+        val (after, ticks) = runDown(state)
+
+        val gaveUp = ticks.indexOfFirst { events -> events.any { it is PlayerForfeited } }
+        // a lapses on ticks 1, 3 and 5 — b's lapses in between are somebody else's streak.
+        assertEquals(4, gaveUp, "three of a's own turns have to lapse first")
+        assertEquals("idle", ticks[gaveUp].filterIsInstance<PlayerForfeited>().single().reason)
+        assertTrue(ticks[gaveUp].filterIsInstance<GameCompleted>().single().isAbandoned)
+        assertEquals(RoomStatus.COMPLETED, after.status)
+        assertTrue(ticks.drop(gaveUp + 1).all { it.isEmpty() }, "a finished room stops producing events")
+    }
+
+    @Test
+    fun `a room nobody joined expires, once`() {
+        val config = EngineConfig(minPlayers = 2)
+        var state = RoomState(roomId = "room-1")
+        decide(state, CreateRoom("room-1", "a", maxPlayers = 4), T0, 1L, config).events
+            .forEach { state = evolve(state, it) }
+
+        assertTrue(expire(state, T0.plusSeconds(config.waitingRoomExpirySeconds - 1), config).isEmpty())
+
+        val late = T0.plusSeconds(config.waitingRoomExpirySeconds + 1)
+        val expired = expire(state, late, config)
+        assertEquals("waiting_timeout", expired.filterIsInstance<RoomExpired>().single().reason)
+        expired.forEach { state = evolve(state, it) }
+        assertEquals(RoomStatus.COMPLETED, state.status)
+        assertTrue(expire(state, late.plusSeconds(600), config).isEmpty(), "a closed room expires once")
+    }
+
+    @Test
+    fun `the expiry window runs from the last arrival`() {
+        // Three needed to start, so the second player seats without the game beginning under them.
+        val config = EngineConfig(minPlayers = 3)
+        var state = RoomState(roomId = "room-1")
+        decide(state, CreateRoom("room-1", "a", maxPlayers = 4), T0, 1L, config).events
+            .forEach { state = evolve(state, it) }
+        val joined = T0.plusSeconds(config.waitingRoomExpirySeconds - 10)
+        decide(state, JoinRoom("b"), joined, 1L, config).events.forEach { state = evolve(state, it) }
+
+        assertTrue(
+            expire(state, T0.plusSeconds(config.waitingRoomExpirySeconds + 1), config).isEmpty(),
+            "b sat down ten seconds ago; the room is not stale",
+        )
+        assertNotNull(
+            expire(state, joined.plusSeconds(config.waitingRoomExpirySeconds + 1), config)
+                .filterIsInstance<RoomExpired>().singleOrNull(),
+        )
+    }
+
+    @Test
+    fun `expiring a room that does not exist emits nothing`() {
+        assertTrue(expire(RoomState(roomId = "nope"), T0.plusSeconds(100_000)).isEmpty())
+    }
+
+    /** What a timer worker does to a room everyone left: tick past the deadline, nobody answers. */
+    private fun runDown(
+        from: RoomState,
+        config: EngineConfig = EngineConfig(),
+        ticks: Int = 10,
+    ): Pair<RoomState, List<List<Event>>> {
+        var state = from
+        var at = T0
+        val perTick = mutableListOf<List<Event>>()
+        repeat(ticks) {
+            at = at.plusSeconds(31)
+            val produced = expire(state, at, config)
+            produced.forEach { state = evolve(state, it) }
+            perTick += produced
+        }
+        return state to perTick
+    }
+
     // ---- room lifecycle
 
     @Test

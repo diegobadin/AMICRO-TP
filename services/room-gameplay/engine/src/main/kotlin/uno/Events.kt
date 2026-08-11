@@ -183,6 +183,15 @@ data class GameCompleted(
     override val at: Instant,
 ) : Event
 
+/**
+ * A room that never filled, closed by the clock rather than by a game (architecture SG3). Not in
+ * the catalog's room-gameplay list because nothing used to be able to emit it — the aggregate only
+ * ever looked at deadlines when a command arrived, and a room nobody was in received none.
+ */
+@Serializable
+@SerialName("RoomExpired")
+data class RoomExpired(val reason: String, override val at: Instant) : Event
+
 @Serializable
 @SerialName("RoomCompleted")
 data class RoomCompleted(

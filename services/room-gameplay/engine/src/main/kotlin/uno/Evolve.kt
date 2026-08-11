@@ -63,7 +63,7 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
             hands = game.hands + (event.playerId to hand),
             discard = game.discard + event.card,
             activeColor = event.chosenColor ?: event.card.color,
-        ).moveTurnTo(event.nextPlayerId, event.at)
+        ).acted(event.playerId).moveTurnTo(event.nextPlayerId, event.at)
     }
 
     is CardDrawn -> state.mapGame { game ->
@@ -72,7 +72,7 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
             deck = rest,
             hands = game.hands + (event.playerId to game.hands.getValue(event.playerId).add(drawn)),
             drewThisTurn = true,
-        )
+        ).acted(event.playerId)
     }
 
     is ForcedDraw -> state.mapGame { game ->
@@ -94,14 +94,22 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
 
     is DirectionReversed -> state.mapGame { it.copy(turnOrder = it.turnOrder.reversed()) }
 
-    is TurnPassed -> state.mapGame { it.moveTurnTo(event.nextPlayerId, event.at) }
+    is TurnPassed -> state.mapGame { it.acted(event.playerId).moveTurnTo(event.nextPlayerId, event.at) }
 
     is TurnSkipped -> state.mapGame { it.moveTurnTo(event.nextPlayerId, event.at) }
 
-    is TurnTimedOut -> state // the draw and the pass that follow carry the state change
+    // The draw and the pass that follow carry the state change; all this records is that the turn
+    // went unanswered, and by whom, so a seat nobody is sitting in can eventually be given up.
+    is TurnTimedOut -> state.mapGame { game ->
+        game.copy(
+            consecutiveTimeouts = game.consecutiveTimeouts + (event.playerId to game.timeouts(event.playerId) + 1),
+            timingOut = event.playerId,
+        )
+    }
 
     is UnoCallMade -> state.mapGame { game ->
         game.copy(hands = game.hands + (event.playerId to game.hands.getValue(event.playerId).copy(hasCalledUno = true)))
+            .acted(event.playerId)
     }
 
     is ChallengeWindowOpened -> state.mapGame {
@@ -117,7 +125,7 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
 
     is ChallengeWindowClosed -> state.mapGame { it.copy(challengeWindow = null) }
 
-    is UnoChallengeIssued -> state
+    is UnoChallengeIssued -> state.mapGame { it.acted(event.challengerId) }
 
     is UnoChallengeResolved -> state.mapGame { game ->
         if (event.penaltyPlayerId == null) game else {
@@ -133,9 +141,9 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
         it.copy(connection = ConnectionStatus.Disconnected(event.at, event.reconnectionDeadline))
     }
 
-    is PlayerReconnected -> state.mapPlayer(event.playerId) {
-        it.copy(connection = ConnectionStatus.Connected)
-    }
+    is PlayerReconnected -> state
+        .mapPlayer(event.playerId) { it.copy(connection = ConnectionStatus.Connected) }
+        .mapGame { it.acted(event.playerId) }
 
     // Losing the seat that held the turn passes it on, and the player who inherits it gets a full
     // timer — otherwise they would take over an already-expired deadline and time out immediately.
@@ -162,11 +170,17 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
         ),
     )
 
+    is RoomExpired -> state.copy(status = RoomStatus.COMPLETED)
+
     is RoomCompleted -> state.copy(status = RoomStatus.COMPLETED)
 }
 
 private fun RoomState.mapGame(f: (Game) -> Game): RoomState =
     if (game == null) this else copy(game = f(game))
+
+/** Acting clears the player's timeout streak — unless it is the timeout acting on their behalf. */
+private fun Game.acted(playerId: String): Game =
+    if (timingOut == playerId) this else copy(consecutiveTimeouts = consecutiveTimeouts - playerId)
 
 private fun RoomState.mapPlayer(playerId: String, f: (RoomPlayer) -> RoomPlayer): RoomState =
     copy(players = players.map { if (it.playerId == playerId) f(it) else it })
@@ -182,5 +196,6 @@ private fun Game.moveTurnTo(playerId: String, at: Instant): Game {
         turnOrder = if (index >= 0) turnOrder.copy(currentIndex = index) else turnOrder,
         turnTimerDeadline = at.plusSeconds(turnTimeoutSeconds),
         drewThisTurn = false,
+        timingOut = null,
     )
 }

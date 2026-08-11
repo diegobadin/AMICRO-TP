@@ -44,9 +44,19 @@ data class Game(
     /** `PassTurn` is only legal once the player has taken their draw for this turn (§4.1). */
     val drewThisTurn: Boolean,
     val completedAt: Instant?,
+    /** Turns each player has let lapse in a row; a seat nobody is sitting in is given up (P5 E2). */
+    val consecutiveTimeouts: Map<String, Int> = emptyMap(),
+    /**
+     * Whose timeout is mid-batch. A timeout draws and passes *for* the player, so without this the
+     * events it emits would look like the player acting and clear the streak that same instant —
+     * the counter would never reach two.
+     */
+    val timingOut: String? = null,
 ) {
     val top: Card get() = discard.last()
     val currentPlayer: String get() = turnOrder.current
+
+    fun timeouts(playerId: String): Int = consecutiveTimeouts[playerId] ?: 0
 }
 
 /**

@@ -5,6 +5,9 @@ import java.time.Instant
 data class EngineConfig(
     val minPlayers: Int = MIN_PLAYERS_TO_PLAY,
     val turnTimeoutSeconds: Long = 30,
+    /** Turns a player may let lapse in a row before the seat is given up (P5 E2). */
+    val idleTimeoutsBeforeForfeit: Int = 3,
+    val waitingRoomExpirySeconds: Long = 900,
 )
 
 /**
@@ -363,6 +366,7 @@ private fun Log.forfeitPlayer(playerId: String, reason: String, now: Instant, co
 // ---------------------------------------------------------------- deadlines (E2)
 
 private fun Log.expireOverdue(now: Instant, config: EngineConfig) {
+    if (state.status == RoomStatus.WAITING) return expireWaitingRoom(now, config)
     if (state.status != RoomStatus.IN_PROGRESS) return
 
     state.game?.challengeWindow?.let { window ->
@@ -394,6 +398,25 @@ private fun Log.expireOverdue(now: Instant, config: EngineConfig) {
         emit(CardDrawn(player, newCardCount = state.game!!.hands.getValue(player).size + 1, at = now))
     }
     emit(TurnPassed(player, nextConnected(state.game!!.turnOrder, 1), now))
+
+    // Until P5 a room everyone had walked away from was merely stuck; with a worker driving the
+    // clock it would produce a timeout every turn, forever. Giving the seat up ends the game through
+    // invariant 7 instead — no new event, and the last player present wins as they would anyway.
+    if (state.game!!.timeouts(player) >= config.idleTimeoutsBeforeForfeit) {
+        forfeitPlayer(player, "idle", now, config)
+    }
+}
+
+/**
+ * A room that never filled is not a game that stalled: nobody is owed a turn, so it just closes.
+ * The window runs from the last arrival rather than from creation, so someone who joins late still
+ * gets a full one instead of inheriting the tail of somebody else's.
+ */
+private fun Log.expireWaitingRoom(now: Instant, config: EngineConfig) {
+    if (!state.exists) return
+    val since = state.players.maxOfOrNull { it.joinedAt } ?: state.createdAt ?: return
+    if (now.isBefore(since.plusSeconds(config.waitingRoomExpirySeconds))) return
+    emit(RoomExpired("waiting_timeout", now))
 }
 
 // ---------------------------------------------------------------- shared mechanics
