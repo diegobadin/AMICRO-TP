@@ -8,7 +8,7 @@
 | AC | Check | Pass condition |
 |----|-------|----------------|
 | AC-P4.1 | Unset `UNOARENA_ROOMS_URL`; run `register`, `login`, `room create/list/join/leave`, `play --casual`, `bot --casual`, `logout` with only `UNOARENA_API_URL=http://localhost:30080`. `grep -r UNOARENA_ROOMS_URL` over `clients/` and the docs. | Every command works; `grep` returns nothing outside `CHANGELOG-design.md` history. `kubectl get svc -n unoarena-staging` shows one `NodePort` (gateway 30080), identity and room-gameplay `ClusterIP`. |
-| AC-P4.2 | `kubectl port-forward svc/room-gameplay 8081:80`, then `GET /rooms` with no headers, with a bare JWT, and with `X-Player-Id`. Then, **through the gateway**, send a valid token for alice plus `X-Player-Id: bob`. Grep the config and the sealed secret for the JWT key. | No headers → `401`; bare JWT → `401` (it is not validated any more); `X-Player-Id` → `200`. Through the gateway the request acts as **alice** — the injected header wins and the client's is discarded. `IDENTITY_JWT_SECRET` appears nowhere in `services/room-gameplay/**` or `gitops/secrets/staging/room-gameplay-secrets.yaml`. |
+| AC-P4.2 | `kubectl port-forward svc/room-gameplay 8081:80`, then `GET /rooms` with no headers, with a bare JWT, and with **both** trust headers (`Auth.kt` requires `X-Player-Id` *and* `X-Session-Id`; either alone is no credentials). Then, **through the gateway**, send a valid token for alice plus `X-Player-Id: bob`. Grep the config and the sealed secret for the JWT key. | No headers → `401`; bare JWT → `401` (it is not validated any more); both headers → `200`. Through the gateway the request acts as **alice** — the injected header wins and the client's is discarded. `IDENTITY_JWT_SECRET` appears nowhere in `services/room-gameplay/**` or `gitops/secrets/staging/room-gameplay-secrets.yaml`. |
 | AC-P4.3 | Re-run P3's concurrency checks **through the gateway**: stale `If-Match`, missing `If-Match`, out-of-turn move, `Idempotency-Key` replay on `POST /rooms`, `If-None-Match` on the game read. | `412` (with the reconcilable body), `428`, `409`, the replay returns the original room, `304` with no body. `ETag` values identical to a direct call. |
 | AC-P4.4 | `curl -N` the stream in one terminal while posting moves in another; timestamp both. | One frame per committed event, `id:` equal to the `sequenceNumber`, delivered < 1 s after the move's HTTP response. No token → `401`; a non-member's token → `403`. |
 | AC-P4.5 | Note `id: N`, kill the connection, post two moves, reconnect with `Last-Event-ID: N`. Then `XTRIM room:{id}:events MAXLEN 1` and reconnect with the same stale id. Separately: post a move in the window between the CLI's baseline read and its subscribe. | First: exactly the two missed frames replay, in order, then the tail resumes. Second: a `resync` frame arrives instead of a silent gap. Third: the move is **not** lost — the CLI subscribes with the baseline's seq as `Last-Event-ID` (D15), so it replays. |
@@ -131,7 +131,7 @@ off; a test that stays green here is a test that was never protecting anything.
 | Stop injecting `X-Player-Id` in the gateway's proxy (comment the line). | The gateway's proxy test fails, **and** every room call returns `401` — proving room-gameplay refuses rather than trusting a bare token. |
 | Forward the client's `Authorization` header downstream instead of the injected headers. | room-gameplay still answers `401`. If it answers `200`, it is secretly still validating JWTs and F6 did not land. |
 | Send `X-Player-Id: <someone else>` through the gateway with a valid token. | The request acts as the token's subject, and a unit test on the header whitelist fails if the client's value survives. This is the bypass the whole trust flip stands or falls on. |
-| `kubectl -n redis scale deploy/redis --replicas=0` mid-game. | Streams drop and the CLI says so; REST play keeps working (moves still accepted, `412` still correct); when Redis returns, the next heartbeat/resync repairs the view. No silent wrong board. |
+| `kubectl -n redis scale deploy/redis --replicas=0` mid-game. | A `resync` frame reaches every open stream within a second, and exactly one per outage — the client goes back to the REST read, which still works. REST play keeps working (moves still accepted, `412` still correct); when Redis returns the tail resumes and the missing sequence numbers are visible as a gap. **This is the row F8 rewrote**: it used to say "streams drop and the CLI says so", and the first drill found that they do not — see the F8 evidence below. |
 | Point a bot at a room whose other member has walked away. | It stops at `--timeout` with `error_code: "timeout"` and a summary line, exit non-zero — never a process that hangs silently. (Found for real: a drill killed halfway leaves a `WAITING` room, the next `--casual` player joins it and the game auto-starts with nobody on the other side. Deadlines are lazy until P5's timer worker, so **a drill needs a clean room list**.) |
 | `XTRIM room:{id}:events MAXLEN 1`, then reconnect with an old `Last-Event-ID`. | A `resync` frame — never a silent gap, never a replay that starts mid-game. |
 | Publish an event without `XADD` (comment the publisher) and post one move. | The move commits, `roomgameplay_stream_publish_failures_total` stays 0 but the frame never arrives; the heartbeat's `seq` is ahead of the client's within 15 s and the CLI resyncs. Proves D6 is the safety net it claims to be. |
@@ -139,23 +139,195 @@ off; a test that stays green here is a test that was never protecting anything.
 | Rename a gateway metric (e.g. drop the `gateway_` prefix). | The metric-name test fails on the **exact exposed string** — the trap that hid `roomgameplay_rooms_created_total` in P3. |
 | Break one gateway unit test on the branch. | `test:gateway` red, `build:gateway` never runs, pipeline red — the fail-fast wiring, per service. |
 
+## F8 — the empty-cluster drill (2026-08-11)
+
+`kind delete cluster --name unoarena-staging`, then
+`TARGET_REVISION=feat/p4-gateway-sse gitops/bootstrap/install.sh`. Empty kind to all three services
+`Synced/Healthy` in **9 minutes** (the ~35 min in the kickoff assumed a cold image cache; the
+platform layers were still in the host's registry cache). The sealing key backup restored
+`sealed-secrets-key84bcb`, so every committed SealedSecret decrypted on a cluster that had never
+seen them.
+
+**The push had to come first, and it was bigger than "build the gateway".** `gateway` had
+`digest: ""`, but `room-gameplay` was worse: pinned to `sha256:139c6992`, an image built from
+`main`. That is P3's binary — no `Streams.kt` publisher and the old JWT-validating `Auth.kt` — so a
+drill cluster would have answered `401` to every gateway-injected header and published no frame at
+all, and it would have read like a code defect in the gateway. Both were rebuilt from the branch:
+one `-o ci.skip` push to create the branch (pipeline `2751390305`, *skipped*, no jobs burned), then
+one push per service so `rules:changes` ran that service's jobs alone (`2751392837`, 4 jobs;
+`2751407819`, 5 jobs — the four plus the contract check that room-gameplay's path also triggers).
+room-gameplay's P4 suite had never run in CI before this; it passed.
+
+### Probes
+
+```
+$ kubectl -n unoarena-staging get svc -o custom-columns=NAME:...,TYPE:...,NODEPORT:...
+gateway            NodePort    30080          <- the only door
+identity           ClusterIP   <none>
+room-gameplay      ClusterIP   <none>
+
+$ kubectl -n unoarena-staging get pod -l app=gateway -o jsonpath='{...imageID}'
+.../unoarena/gateway@sha256:d752cf6d692d5f1a544d1ef7078024e3133daa990300b22ae337f8d6fc60d22d
+$ ... -l app=room-gameplay
+.../unoarena/room-gameplay@sha256:16d1be724142b175c6c0419f6ba453fdae76789fe960f8e1932a54b85602cedf
+
+$ kubectl -n unoarena-staging get secret gateway-secrets      -o jsonpath='{.data}' | keys
+['IDENTITY_JWT_SECRET']
+$ kubectl -n unoarena-staging get secret room-gameplay-secrets -o jsonpath='{.data}' | keys
+['ROOM_GAMEPLAY_DB_PASSWORD']            <- the key left the service
+
+$ curl -s http://localhost:30080/metrics | grep '^# TYPE gateway_'
+gateway_requests_total counter
+gateway_sse_connections_active gauge
+gateway_sse_events_delivered_total counter
+gateway_sessions_revoked_total counter
+gateway_http_request_duration_seconds histogram      <- all five, exact names, nothing rewritten
+
+$ prometheus /api/v1/targets            gateway up | identity up | room-gameplay up
+$ prometheus /api/v1/query              gateway_sse_events_delivered_total  ->  315
+```
+
+### AC-P4.2 — the bypass, which is the whole trust flip
+
+Direct to room-gameplay over a port-forward: no headers → `401`, a bare JWT → `401`, both trust
+headers → `200 []`. Then through the gateway, alice's token carrying a forged `X-Player-Id: bob`:
+
+```
+HTTP/1.1 201 Created   etag: "2"   location: /rooms/d73c8e20-...
+{"players":[{"playerId":"ce8e997f-...","connection":"connected"}]}    <- alice, not bob
+```
+
+The gateway's own log line for that request reads `"player":"ce8e997f-..."`. The client's header was
+discarded, not merged.
+
+### AC-P4.3 — P3's contract through the proxy
+
+| Check | Result |
+|-------|--------|
+| `Idempotency-Key` replay on `POST /rooms` | `201` then `200`, same `roomId` |
+| `If-None-Match` on the game read | `304`, **0 bytes** (`ETag: "4"`) |
+| move with no `If-Match` | `428 {"error":"if_match_required"}` |
+| move with stale `If-Match: "2"` | `412`, body is the current state (the reconcilable one) |
+| move out of turn | `409 {"error":"not_your_turn"}` |
+| `ETag` gateway vs direct port-forward | `"11"` and `"11"` |
+
+The out-of-turn check needed three attempts, and the two failures are worth recording because they
+are not defects: `TURN_TIMEOUT_SECONDS=30` and **deadlines are only evaluated when a command
+arrives**, so a probe sent more than 30 s after the previous move makes the arriving command resolve
+the lapsed deadline first — the mover is force-drawn, the turn moves on, and the "out of turn" move
+is now legitimately in turn. Both requests have to sit inside one turn window. That lazy evaluation
+is P5's timer worker, seen from the outside.
+
+### AC-P4.9 — two CLI processes, one full game
+
+`casual-drill.js /tmp/a.json /tmp/b.json`, exit `0`:
+
+```
+[alice] > play 1
+[bob]     ce8e997f played Y2
+[alice]   you played Y2
+[bob]     game over - ce8e997f wins
+[alice]   game over - you win!
+
+== game completed. observed: wild, draw, uno, challenge, completed
+```
+
+And the three stores agree, which is the part worth more than the transcript:
+
+```
+room 22ea51ab-2dc3-4515-9aaa-aacf3629929e
+  room_events   count 163, max(sequence_number) 163
+  ending        158 ChallengeWindowClosed .. 162 GameCompleted, 163 RoomCompleted
+  XLEN          163            <- one frame per committed event, exactly
+  TTL           21561          <- refreshed on every write, not -1
+  publish failures  0
+```
+
+**The privacy boundary holds.** The stored `GameStarted` contains the RNG seed; `grep -ci seed` over
+every published frame of the whole game returns **0**. `publicPayload()` is the one filter, and the
+deck order never reaches a player.
+
+### AC-P4.7 — the session kill, on all three surfaces
+
+```
+18:00:15.893  second login as alice, from a different session file
+17:59:39.259  (raw-stream run) login
+17:59:39.435  event: session-invalidated / data: {"reason":"superseded"}   <- 176 ms, then closed
+              old token on the next REST call -> 401 {"error":"session_superseded"}
+              the CLI: `session rejected (401) - log in again`, summary line, exit 1
+```
+
+### AC-P4.8 — bots
+
+| Run | Result |
+|-----|--------|
+| `bot-drill.js 2` | both exit `0`, `errors: 0`, one `"outcome":"won"` and one `"lost"`, every line a §6 object with the full field set; game closed in 1.3 s |
+| two bots + one human, `ROOM_MIN_PLAYERS=3` | one table `16cdb433-...`, three players, `game over - you win!` on the human's screen, both bots exit `0`, **zero** `409`s |
+| bad URL (`:9`) | `error_code: "unreachable"`, summary line, exit `1` |
+
+The `ROOM_MIN_PLAYERS` lever went to `"3"` through the overlay and back to `"2"` afterwards
+(`f11e16c`, `4c1ec5c`) — a live patch would have been reverted by Argo within seconds.
+
+### The Redis-outage drill, which found a real hole
+
+Suspending **both** `unoarena-platform-root` and `redis` first, then `scale deploy/redis
+--replicas=0`. Three of the four claims held on the first run:
+
+- REST play kept working — `201` on a create, `200` + `ETag` on a read, with Redis at zero replicas.
+- Publication stayed best-effort and counted: `roomgameplay_stream_publish_failures_total` went to
+  `2` and no command failed (D5).
+- The view repaired on return: the frame arrived the same second Redis came back, as `id: 4`, while
+  the client's cursor was still `2` — so the missing seq `3` was visible and the gap check fires.
+
+The fourth did not. **The stream never dropped and the client was never told.**
+`stream-tail-failed` was logged **0 times**: `ioredis` queued the blocking `XREAD` in its offline
+queue instead of rejecting it, so the tail never errored, and the heartbeat — which reads the
+gateway's own in-memory cursor, not Redis — went on ticking every 15 s with a frozen `seq: 2` while
+the room had genuinely moved to `3`. A player watching a room that advances during the outage is
+told nothing and believes they are current.
+
+Fixed in `cb5754b`: the tail connection stops queueing (`enableOfflineQueue: false` — its loop is
+already a retry loop, so a parked read is only an outage nobody can see), and the first failed read
+of an outage broadcasts the `resync` frame the client already knows how to handle. Re-drilled
+against the rebuilt image `sha256:2c9b7c70`:
+
+```
+18:34:17  redis scaled to 0
+18:34:18  event: resync / data: {"reason":"stream-unavailable"}    <- one second
+18:34:29  event: heartbeat  {"seq":2}      (connection alive, cursor frozen — as expected)
+   ...    45 s of outage, and exactly ONE resync, not one per second
+18:35:51  id: 3  event: PlayerLeft                                 <- the tail resumed
+18:35:59  event: heartbeat  {"seq":3}                              <- cursor moving again
+18:36:05  event: resync / data: {"reason":"stream-unavailable"}    <- second outage, re-armed
+```
+
+The unit test bites: reverted, `tells every client once per outage` fails on the first assertion.
+Gateway suite 44 → **45**.
+
+### Cluster left as found
+
+All apps `Synced/Healthy`, `ROOM_MIN_PLAYERS` back to `"2"`, no joinable rooms, no stray client
+processes. The seven canned placeholders sit in `ImagePullBackOff` with `digest: ""`, exactly as
+they do on `main` — they have never been built, and P4 did not change that.
+
 ## Definition of done
 
-- [ ] AC-P4.1 — one `NodePort`, one CLI base URL, `UNOARENA_ROOMS_URL` gone from code and docs
-- [ ] AC-P4.2 — room-gameplay has no JWT secret and refuses header-less requests
-- [ ] AC-P4.3 — the REST contract survives the proxy unchanged
-- [ ] AC-P4.4 — one frame per committed event, `id` = `sequenceNumber`, < 1 s
-- [ ] AC-P4.5 — ordering, `Last-Event-ID` replay, explicit `resync`
-- [ ] AC-P4.6 — the feed is observed, `feed()` deleted
-- [ ] AC-P4.7 — a superseded session dies on the wire and on the next REST call
-- [ ] AC-P4.8 — `bot --casual` finishes a game with the §6 output contract
-- [ ] AC-P4.9 — empty cluster → everything Healthy → a full game through the gateway
-- [ ] AC-P4.10 — pipeline shape unchanged, green, `integration-staging:identity` untouched
-- [ ] No frame on any stream contains a `seed` field (the P6 privacy boundary, checked here)
-- [ ] All nine bite tests bit
-- [ ] `CHANGELOG-design.md` §9 records every P4 delta; `clients/cli/README.md` and `README.md`
+- [x] AC-P4.1 — one `NodePort`, one CLI base URL, `UNOARENA_ROOMS_URL` gone from code and docs
+- [x] AC-P4.2 — room-gameplay has no JWT secret and refuses header-less requests
+- [x] AC-P4.3 — the REST contract survives the proxy unchanged
+- [x] AC-P4.4 — one frame per committed event, `id` = `sequenceNumber`, < 1 s
+- [x] AC-P4.5 — ordering, `Last-Event-ID` replay, explicit `resync`
+- [x] AC-P4.6 — the feed is observed, `feed()` deleted
+- [x] AC-P4.7 — a superseded session dies on the wire and on the next REST call
+- [x] AC-P4.8 — `bot --casual` finishes a game with the §6 output contract
+- [x] AC-P4.9 — empty cluster → everything Healthy → a full game through the gateway
+- [x] AC-P4.10 — pipeline shape unchanged, green, `integration-staging:identity` untouched
+- [x] No frame on any stream contains a `seed` field (the P6 privacy boundary, checked here)
+- [x] All nine bite tests bit — the Redis one bit hardest, and its row above was rewritten to what
+      the system actually does once it did
+- [x] `CHANGELOG-design.md` §9 records every P4 delta; `clients/cli/README.md` and `README.md`
       describe one entry point and the stream contract
-- [ ] `ESTADO-FINAL.md` written; roadmap marks P4 **SHIPPED** and P5 **next** with a handoff block
+- [x] `ESTADO-FINAL.md` written; roadmap marks P4 **SHIPPED** and P5 **next** with a handoff block
 
 ## Phase gates
 
@@ -168,7 +340,7 @@ off; a test that stays green here is a test that was never protecting anything.
 | F5 | A full game played by hand through the stream, locally |
 | F6 | AC-P4.1 + AC-P4.2 + AC-P4.3 on a drill cluster; the CLI works with one URL |
 | F7 | Two bots finish a game; every line parses as §6 JSON |
-| F8 | AC-P4.9 recorded here with transcripts, then `main` green (AC-P4.10) |
+| F8 | AC-P4.9 recorded here with transcripts, then `main` green (AC-P4.10) — **met**, with one code change the drill forced (`cb5754b`) |
 
 ## Out-of-scope confirmation (must **not** appear in the diff)
 

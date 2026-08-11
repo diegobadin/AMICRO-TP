@@ -273,3 +273,13 @@ deliberate — they prove the gates bite.
 | Promotion by digest (AC-4) | [job 15541147687](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541147687) | gate played on the green run → bot commit `ed8a3834` pins `sha256:4731de…` (the exact `build:identity` digest) into the production overlay, `[skip ci]`, no rebuild |
 | Negative smoke (AC-6) | local transcript | CLI against a dead URL → `result:"error"`, exit 1 (recorded in the closure spec) |
 | Observability hook (AC-10) | [job 15541020672](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/jobs/15541020672) | the job runs `kubectl logs deploy/identity` and shows the structured JSON lines with `correlationId` for the smoke's `register`/`whoami` |
+
+The final-delivery phases keep re-proving the same properties as they add real services. Their own
+evidence lives in each phase's `validation.md`; these are the runs that speak to the *pipeline*:
+
+| Drill | Run | Outcome |
+|---|---|---|
+| Independence, on a third fully-wired service (P4) | [2751392837](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2751392837) | a change under `services/gateway/**` ran exactly `test`/`build`/`deliver`/`deploy-staging:gateway` — 4 jobs, no other service touched |
+| Bounded consumer set, still bounded (P4) | [2751407819](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2751407819) | a room-gameplay change ran its 4 jobs **plus** the `GameCompleted` contract check, because room-gameplay is that contract's producer |
+| First push of a branch costs nothing (P4) | [2751390305](https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/-/pipelines/2751390305) | pushed with `-o ci.skip`: *skipped*, 0 jobs. A new branch evaluates `rules:changes` as all-changed, so the first push would otherwise run all ten services |
+| Empty cluster → a played game (P4, AC-P4.9) | [`validation.md`](../specs/2026-08-10-p4-gateway-sse/validation.md) | `kind delete cluster` → `install.sh` → three services Healthy in 9 min → two CLI processes played a full casual game through the gateway, 163 events and 163 stream frames |

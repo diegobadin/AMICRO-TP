@@ -58,11 +58,19 @@ its existence.
 - Why now: the biggest unknown (R2); everything downstream consumes its events.
 - Depends on: P2 (auth), P1 (Postgres).
 
-## P4 — Realtime fan-out (SSE) — **next**
+## P4 — Realtime fan-out (SSE) — **SHIPPED 2026-08-11**
 
-Triad: [`../2026-08-10-p4-gateway-sse/`](../2026-08-10-p4-gateway-sse/) — decisions E1–E6 locked
-(2026-08-10), acceptance criteria AC-P4.1–AC-P4.10. Not implemented yet; `kickoff.md` bridges to the
-implementation session.
+Triad + closure: [`../2026-08-10-p4-gateway-sse/`](../2026-08-10-p4-gateway-sse/) — decisions E1–E6,
+all ten ACs green, evidence in
+[`validation.md`](../2026-08-10-p4-gateway-sse/validation.md) and
+[`ESTADO-FINAL.md`](../2026-08-10-p4-gateway-sse/ESTADO-FINAL.md).
+
+**The cluster has one door.** The gateway owns `30080`; identity and room-gameplay are `ClusterIP`
+and room-gameplay holds no signing key — it trusts headers the gateway builds from scratch, and a
+forged `X-Player-Id` through the gateway acts as the token's subject, not the forged one. The
+polling loop is gone: 163 committed events produced 163 stream frames whose ids **are** the
+sequence numbers, and two CLI processes played a full game to `GameCompleted` → `RoomCompleted`
+against a cluster deployed from empty in 9 minutes. `bot --casual` plays the same game headless.
 
 - Ships: room state → Redis Streams delta patches; gateway/broadcaster SSE tier; per-room
   ordering, reconnect + resync from last seq.
@@ -99,7 +107,12 @@ What P4 inherits, and must not break:
   set, plus a final summary line and a non-zero exit on failure (`clients/cli/README.md`).
   `scripts/casual-drill.js` is the closest thing that exists and is a good starting shape.
 
-Questions the P4 interview has to settle (E-decisions):
+Questions the P4 interview settled (E1–E6, all five answered — kept for the reasoning, not as open
+work): the SSE tier reads **Redis Streams** written by room-gameplay after commit, so P4 never
+depended on P5; the existing `gateway` placeholder was **made real** rather than an 11th deployable;
+`UNOARENA_ROOMS_URL` was **removed outright** and bypass drills use `kubectl port-forward`; `bot` is
+a **CLI subcommand** in the same image; and a superseded session is killed through the **Redis
+pub/sub** half, which the gateway now consumes.
 
 1. **Where the SSE tier gets its events** — room-gameplay pushing delta patches to Redis Streams
    after commit (the roadmap's line), the gateway tailing the outbox, or the gateway subscribing to
@@ -114,13 +127,38 @@ Questions the P4 interview has to settle (E-decisions):
    Redis pub/sub *and* Kafka today; the gateway is the consumer the Redis half was written for
    (Architecture §5.5), and the CLI's `session_superseded` notice (§5.A) becomes reachable.
 
-## P5 — Async spine: outbox relay + timers
+## P5 — Async spine: outbox relay + timers — **next**
 
 - Ships: outbox-relay (Go) tailing the outbox to Kafka (`GameCompleted` for real, then the rest
   of the catalog); timer-worker (Go) driving the durable deadlines — Uno! 5s window, 60s
   reconnection, turn timeout, room expiry — as commands back into room-gameplay.
 - Contract seam graduates: the CI schema check now validates the real producer.
 - Depends on: P4 gate, P1 (Kafka).
+
+### Handoff from P4 (2026-08-11)
+
+What P5 inherits, and must not break:
+
+- **One entry point.** The gateway owns `30080` and is the only `NodePort`; identity and
+  room-gameplay are `ClusterIP`. Anything P5 exposes goes *through* the gateway's route table
+  (`services/gateway/src/app.ts`) or stays inside the cluster. `30081` is still mapped by
+  `kind-cluster.yaml` and deliberately unused, so no cluster has to be recreated.
+- **room-gameplay trusts `X-Player-Id` / `X-Session-Id` and validates nothing.** It has no signing
+  key. A timer-worker sending commands back into it is *inside* the trust boundary and must set both
+  headers — and must never be reachable from outside.
+- **The outbox is still full and still nobody's.** Every row is `published_at IS NULL`. The Redis
+  stream P4 added is a **second, transient** path for the live feed only — the relay is not a
+  replacement for it and must not be built on it. `room_events` is the archive; Redis holds 6 hours.
+- **Deadlines are evaluated only when a command arrives.** This is the gap P5's timer worker exists
+  to close, and it is load-bearing in the drills: a half-finished run leaves a `WAITING` room whose
+  turn is parked on somebody who will never move, and nothing recovers. Three false alarms in P4
+  came from exactly that.
+- **`publicPayload(event)` is the privacy filter both transports share** (`Outbox.kt`). Whatever the
+  relay publishes to Kafka must keep going through it: `GameStarted` and `DeckRecycled` carry the RNG
+  seed, and a seed on a public topic is the deck order.
+- **A phase that changes a service must get that service rebuilt.** P4 nearly drilled against a
+  room-gameplay image built from `main`; the pin is per-service and change detection is path-based,
+  so push once per service and check the digest actually moved.
 
 ## P6 — Ranking, spectator, analytics
 

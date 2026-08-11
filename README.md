@@ -221,13 +221,21 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`gitops/secrets/`](./gitops/secrets/) | How secrets reach a cluster that has never existed before, with no plaintext in the repo. |
 | [`devops-checkpoint/README.md`](./devops-checkpoint/README.md) | The delivery pipeline: stages, change detection, promotion by digest, drills and their evidence. |
 | [`services/room-gameplay/engine/`](./services/room-gameplay/engine/) | The Uno rules, as a module with no framework on its classpath: `decide(state, command)` and `evolve(state, event)`. The property suites run thousands of generated games with no database and no container. |
+| [`services/gateway/`](./services/gateway/) | The only way in: the route table, HS256 validation, the header whitelist that makes the trust boundary real, and `GET /rooms/{id}/stream` — Server-Sent Events whose frame ids *are* the events' sequence numbers, so a client resumes with `Last-Event-ID` and can prove it missed nothing. |
 | [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
 
-**What is real so far.** `identity` (accounts, single-active-session, JWTs) and `room-gameplay`
-(the event-sourced Uno core: rooms, moves, the immutable game log and its transactional outbox).
-Two players can register through the CLI and play a casual game to the end against a cluster
-deployed from empty. The gateway, SSE, the outbox relay, tournaments, Elo and the spectator view
-are still placeholders — their phases are P4–P7 in the roadmap.
+**What is real so far.** `gateway` (the single entry point: token validation, routing and the SSE
+tier), `identity` (accounts, single-active-session, JWTs) and `room-gameplay` (the event-sourced Uno
+core: rooms, moves, the immutable game log and its transactional outbox). Two players can register
+through the CLI and play a casual game to the end against a cluster deployed from empty — over
+**one** URL, with each move pushed to the other player rather than polled for, and a `bot --casual`
+able to take either seat headless. The outbox relay, timers, tournaments, Elo and the spectator view
+are still placeholders — their phases are P5–P7 in the roadmap.
+
+**One door.** Everything from outside enters through the gateway on `30080`; identity and
+room-gameplay are `ClusterIP` and unreachable from off-cluster. room-gameplay holds no signing key
+at all — it trusts `X-Player-Id` / `X-Session-Id`, which the gateway builds from the validated token
+and overwrites on every request, so a client cannot supply its own.
 
 **The log is the authority.** Every accepted move is appended to `room_events` *before* anyone
 sees the result, in the same transaction as the outbox rows a consumer will later read. If a

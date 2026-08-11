@@ -1,5 +1,13 @@
 # Kickoff — P4: Gateway + Realtime Fan-out (SSE)
 
+> **Spent.** F8 landed on 2026-08-11 and the phase is closed — see
+> [`ESTADO-FINAL.md`](./ESTADO-FINAL.md). Kept as written because the local-stack recipe and the
+> trap list below are still the fastest way to work on this code, and because the four F8 steps it
+> sequenced are exactly what F8 did. One correction it earned: step 1 said "get the gateway image
+> built", and **room-gameplay needed rebuilding too** — it was pinned to a `main`-built image with
+> no publisher and the old JWT-validating `Auth.kt`. A phase that changes two services has to
+> rebuild both.
+>
 > Written 2026-08-10 with the triad, rewritten as F0–F6 landed, and again on 2026-08-11 when F7
 > did. This is the bridge between sessions: what is done, what is left, and everything the next
 > session needs that is not already in `requirements.md` / `plan.md` / `validation.md`.

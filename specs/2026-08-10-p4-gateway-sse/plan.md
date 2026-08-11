@@ -298,6 +298,26 @@ Not changed, and why:
   rather than hanging. Redesigning matchmaking for a load-test convenience is P6's business, not a
   change to smuggle into the phase that added a bot.
 
+## What F8's drill changed (2026-08-11)
+
+The empty-cluster drill is not a review pass, but it found one thing no review had, and the rule is
+the same: it gets a table.
+
+| # | Finding | Change |
+|---|---------|--------|
+| 1 | **A Redis outage was invisible to the client.** Killing Redis under a live stream did not drop it: `ioredis` parks a blocking `XREAD` in its offline queue rather than rejecting it, so the tail never errored (`stream-tail-failed` logged **0** times), and the heartbeat — which reads this process's in-memory cursor, not Redis — kept ticking every 15 s with a sequence number that had stopped moving. A client watching a room that advanced during the outage was told nothing. | The tail connection stops queueing (`enableOfflineQueue: false`); its loop is already a retry loop, so a parked read is only an outage nobody can see. The first failed read of an outage broadcasts `resync` — the frame the client already re-reads on — once, re-armed when the tail recovers. D6's three guards are unchanged; this closes the case none of them covered, which is the *transport* failing rather than a frame going missing. |
+
+Two things the drill did **not** change, and why:
+
+- **`ROOM_MIN_PLAYERS` stays a lever, not a per-room setting.** The mixed case needs three at a
+  table and the two-process game needs two; both are one overlay edit and an Argo sync apart, which
+  is exactly what D11 wanted it for.
+- **The lazy turn deadline stays lazy.** Three attempts at AC-P4.3's out-of-turn check were eaten by
+  it: a probe sent more than `TURN_TIMEOUT_SECONDS` after the previous move makes the arriving
+  command resolve the lapsed deadline first, so the "out of turn" move is legitimately in turn by the
+  time it lands. That is P5's timer worker seen from outside, and pulling it forward would be
+  building P5 inside P4.
+
 ## What this plan deliberately does *not* include
 
 - Draining the outbox, publishing room events to Kafka, or the timer-worker (P5).
