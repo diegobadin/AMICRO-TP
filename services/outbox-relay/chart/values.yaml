@@ -7,9 +7,21 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# One replica, deliberately. Draining in `id` order is what preserves per-room ordering, and a
+# second replica would have to reconstruct that with row locks to buy throughput this demo does not
+# need. The scale-out path (one relay per shard, `for update skip locked`) is documented, not built.
 replicas: 1
 port: 8088
 healthPath: /health
 logLevel: info
+
+imagePullSecrets: []
+# The database password comes from room-gameplay's own SealedSecret: the outbox belongs to that
+# bounded context and this service is its only direct reader, so nothing new had to be sealed.
+secretName: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
 
 env: []

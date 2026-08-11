@@ -3,5 +3,24 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/outbox-relay
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: room-gameplay-secrets # the same role that owns the outbox it drains
+# It reads room-gameplay's outbox and writes to the topics declared in gitops/platform/kafka/. The
+# row names its own topic, so this service needs no list of event types and P6's consumers need
+# nothing added here.
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: room_gameplay
+  - name: DATABASE_USER
+    value: room_gameplay
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+  - name: POLL_INTERVAL_MS
+    value: "1000"
