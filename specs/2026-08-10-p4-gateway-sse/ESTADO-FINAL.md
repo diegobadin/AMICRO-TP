@@ -130,6 +130,20 @@ session will hit them:
 - **The seven canned placeholders still carry `digest: ""`** and sit in `ImagePullBackOff`. That is
   their state on `main` too; they have never been built.
 
+## The review pass, after the phase was already green
+
+Closing a phase and then reading its last commit back as a reviewer found four things, recorded in
+`plan.md`. The one worth repeating here: **an acceptance criterion can be wrong in the system's
+favour.** The Redis bite-test row promised a `resync` "within a second", which the first drill
+happened to produce; re-running it took ten, because the delay is whatever the client library takes
+to notice a dead socket, not a budget the gateway controls. As written, the criterion would have
+failed a correct system. It now states the property that actually holds — exactly one notice per
+outage, and the tail recovers by itself — with both transcripts kept.
+
+The other three: a flag whose lifetime was one loop but which lived on the class; a test that
+asserted "once per outage" without ever proving more than one read had failed; and the same CI-flake
+paragraph written out in three documents.
+
 ## Next
 
 **P5 — the async spine**: the outbox relay and the timer worker. Both close gaps this phase

@@ -56,7 +56,7 @@ Tests: gateway 44, CLI 46, room-gameplay 61 (+ `gradle check`). All green.
    roadmap marked **SHIPPED** with a handoff block for P5, then the FF merge to `main` and a green
    main pipeline (AC-P4.10).
 
-Already written, so F8 does not have to: **`CHANGELOG-design.md` §9** (the eight P4 deltas, with
+Already written, so F8 does not have to: **`CHANGELOG-design.md` §9** (the P4 deltas, with
 §8.9/§8.10 closed) and `clients/cli/README.md` (the bot section included).
 
 The mixed case in AC-P4.8 — two bots and one human at one table — needs `ROOM_MIN_PLAYERS: "3"` in
