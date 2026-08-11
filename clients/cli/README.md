@@ -54,12 +54,18 @@ offered — `pass` appears once you have drawn, not before.
 | `--seed <n>` | reproducible choices |
 | `--forget-uno <p>` | how often it forgets to call Uno! (default `0.25`) |
 | `--timeout <s>` | give up on a run that stalls — the wait for a table included (default `300`) |
+| `--idle` | never act: let every turn lapse, so the timer worker is what moves the game on |
 
 The bot picks uniformly among the cards **the server marked playable**, declares a random colour
 for a wild, and challenges an open window on an opponent the board shows has not called. It is a
 player, not a cheat: it sees exactly what a human sees, and it **forgets to call Uno!** a quarter of
 the time — a bot that never forgets is permanently safe, which deletes the challenge mechanic from
 every run that uses it.
+
+`--idle` is the opposite of a player: it sits down and never acts, so its turns time out. That is
+how a turn timeout gets demonstrated on purpose rather than waited for, and it is what exercises the
+rule that gives up a seat nobody is sitting in — three lapsed turns in a row and the game ends
+abandoned, without a human having to leave a terminal open for it.
 
 One process is one identity (§4): `bot` takes its credentials as arguments and keeps the token in
 memory rather than in the session file, so N parallel bots are N containers of the same image with

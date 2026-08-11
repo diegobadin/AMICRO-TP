@@ -47,6 +47,12 @@ export interface StreamOptions {
   onEvent: (event: StreamEvent) => void;
   onNotice: (text: string) => void;
   isOpen: () => boolean;
+  /**
+   * Called when the stream comes back after a drop — never on the first connection. The client
+   * uses it to tell the room it is here again, which cancels a reconnection window if one opened
+   * while it was away (P5 E8).
+   */
+  onReconnect?: () => void;
   fetchImpl?: typeof fetch;
 }
 
@@ -58,6 +64,7 @@ export interface StreamOptions {
 export async function follow(options: StreamOptions): Promise<void> {
   const doFetch = options.fetchImpl ?? fetch;
   let from = options.from;
+  let connected = false;
 
   while (options.isOpen()) {
     let response: Response;
@@ -81,6 +88,9 @@ export async function follow(options: StreamOptions): Promise<void> {
       await pause(1000);
       continue;
     }
+
+    if (connected) options.onReconnect?.();
+    connected = true;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

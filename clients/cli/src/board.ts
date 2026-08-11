@@ -34,7 +34,21 @@ export interface GameView {
 
 const short = (id: string) => id.slice(0, 8);
 
-export function board(view: GameView, me: string): string {
+/**
+ * Seconds left on the turn, read off the deadline the server put in the view. It is printed when
+ * the board is drawn rather than ticked down in place: the feed writes lines to the same terminal,
+ * and a counter rewriting itself underneath them would fight the narration for the cursor. The
+ * client still holds no opinion about when the deadline passes — it renders a number and the server
+ * decides (P5 E4, mechanism refined in requirements.md).
+ */
+export function remaining(deadline: string | null, now: number = Date.now()): string {
+  if (!deadline) return "";
+  const seconds = Math.round((Date.parse(deadline) - now) / 1000);
+  if (Number.isNaN(seconds)) return "";
+  return seconds > 0 ? ` (${seconds}s)` : " (time is up)";
+}
+
+export function board(view: GameView, me: string, now: number = Date.now()): string {
   const arrow = view.direction === "CLOCKWISE" ? "▸" : "◂";
   const others = view.opponents
     .map((o) => {
@@ -70,7 +84,7 @@ export function board(view: GameView, me: string): string {
     if (view.hand.length === 2) {
       lines.push("   down to your last two - play it as 'play <n> uno' or an opponent can catch you");
     }
-    lines.push(`   YOUR TURN${view.drewThisTurn ? " (already drew)" : ""}: ${actions.join(" | ")}`);
+    lines.push(`   YOUR TURN${view.drewThisTurn ? " (already drew)" : ""}${remaining(view.turnDeadline, now)}: ${actions.join(" | ")}`);
   } else {
     lines.push(`   waiting for ${view.currentPlayerId ? short(view.currentPlayerId) : "the next turn"}`);
   }
@@ -169,6 +183,9 @@ export function describe(event: StreamEvent, me: string): string | null {
       const winner = (d.finishingOrder ?? [])[0];
       return `game over - ${winner === me ? "you win!" : `${short(winner ?? "?")} wins`}`;
     }
+    // A room the clock closed before it ever filled. Worth a line precisely because nobody did it.
+    case "RoomExpired":
+      return `the room expired without enough players (${d.reason})`;
     // RoomCreated, ChallengeWindowClosed and RoomCompleted change state the board already shows.
     default:
       return null;
@@ -189,6 +206,8 @@ export function mustRefresh(event: StreamEvent, me: string): boolean {
     // The hand is dealt, or the final board is worth having in full.
     case "GameStarted":
     case "GameCompleted":
+    // The clock ended the room; whatever the player was looking at is now history.
+    case "RoomExpired":
     // These can move the turn without naming who is next.
     case "PlayerForfeited":
     case "PlayerDisconnected":

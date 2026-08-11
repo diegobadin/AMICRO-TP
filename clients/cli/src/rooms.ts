@@ -243,6 +243,19 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
       }
     };
 
+    /**
+     * Back after a drop. The reconnection window only opens when the room was *told* the player
+     * left — a superseded session — so this is usually a no-op, and it is written to be one: the
+     * aggregate answers an already-connected player without emitting anything. What it buys is the
+     * case that matters, where the window is open and would otherwise only ever expire (E8).
+     */
+    const rejoin = async () => {
+      if (closed) return;
+      const reply = await call("PATCH", `/rooms/${roomId}/players/${player}`, undefined, {});
+      if (reply.status === 401) return superseded();
+      if (reply.status === 200) adopt(reply.payload as unknown as GameView);
+    };
+
     const superseded = () => {
       emit(line({ action: "play", result: "error", error_code: "session_superseded", room: roomId, player }), json);
       finish(1);
@@ -284,6 +297,7 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
       onNotice: (text) => {
         if (!json && !closed) process.stderr.write(`  ${text}\n`);
       },
+      onReconnect: () => void rejoin(),
       isOpen: () => !closed,
     });
 

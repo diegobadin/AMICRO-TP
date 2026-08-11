@@ -40,13 +40,18 @@ export interface Move {
  * already answered, so a caller hands it a state and gets back a move with nothing to remember on
  * its behalf. Deterministic per seed, and playable in a test without a server.
  */
-export function brain(me: string, seed: number, forgetUno: number): (view: GameView) => Move | null {
+export function brain(me: string, seed: number, forgetUno: number, idle = false): (view: GameView) => Move | null {
   const random = rng(seed);
   // A window is the player it names plus the moment it closes. The view keeps showing an open one
   // until the next read, and a second challenge on the same window is a refusal rather than a move.
   const challenged = new Set<string>();
 
   return (view) => {
+    // `--idle` is a bot that has walked away from the table: it answers nothing, so its turns lapse
+    // and the timer worker is what moves the game on. It is how a timeout gets demonstrated on
+    // purpose instead of waited for, and how the idle-forfeit rule is exercised end to end.
+    if (idle) return null;
+
     const window = view.challengeWindow;
     if (window && window.targetPlayerId !== me) {
       // Only against someone the board shows has *not* called: the engine refuses the rest, and a
@@ -291,7 +296,13 @@ export async function bot(flags: Record<string, string | boolean>): Promise<numb
     // not the same thing as a session that died or a room that refused.
     if (!started) return summarise({ result: "error", error_code: Date.now() >= deadline ? "timeout" : "no_game" });
 
-    const end = await autoplay(started.roomId, started.player, started.view, brain(started.player, seed, forgetUno), deadline);
+    const end = await autoplay(
+      started.roomId,
+      started.player,
+      started.view,
+      brain(started.player, seed, forgetUno, flags.idle === true),
+      deadline,
+    );
     return summarise({
       result: end.reason ? "error" : "ok",
       error_code: end.reason,

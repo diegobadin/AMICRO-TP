@@ -42,7 +42,9 @@ const TABLE: Entry[] = [
   { methods: ["GET"], pattern: /^\/auth\/whoami$/, route: identity("/auth/whoami", true) },
   { methods: ["GET", "POST"], pattern: /^\/rooms$/, route: rooms("/rooms") },
   { methods: ["GET"], pattern: /^\/rooms\/[^/]+$/, route: rooms("/rooms/:id") },
-  { methods: ["POST", "DELETE"], pattern: /^\/rooms\/[^/]+\/players\/[^/]+$/, route: rooms("/rooms/:id/players/:playerId") },
+  // PATCH is the reconnect (P5 E8). It was missing until then, which made `PlayerReconnected` an
+  // event nothing outside the cluster could cause: the 60-second window could only ever expire.
+  { methods: ["POST", "DELETE", "PATCH"], pattern: /^\/rooms\/[^/]+\/players\/[^/]+$/, route: rooms("/rooms/:id/players/:playerId") },
   { methods: ["POST"], pattern: /^\/rooms\/[^/]+\/games$/, route: rooms("/rooms/:id/games") },
   { methods: ["GET"], pattern: /^\/rooms\/[^/]+\/games\/[^/]+$/, route: rooms("/rooms/:id/games/:n") },
   { methods: ["POST"], pattern: /^\/rooms\/[^/]+\/games\/[^/]+\/moves$/, route: rooms("/rooms/:id/games/:n/moves") },

@@ -117,3 +117,21 @@ describe("--seed", () => {
     expect(cards(4242)).not.toEqual(cards(4243));
   });
 });
+
+describe("--idle (P5)", () => {
+  const idle = brain(me, 7, 0, true);
+
+  it("answers nothing, so its turns lapse and the timer worker moves the game on", () => {
+    expect(idle({ ...base, yourTurn: true, playable: [0, 2] })).toBeNull();
+    expect(idle({ ...base, yourTurn: true, playable: [], drewThisTurn: false })).toBeNull();
+    expect(idle({ ...base, yourTurn: true, playable: [], drewThisTurn: true })).toBeNull();
+  });
+
+  it("does not take a challenge window either — a player who walked away takes nothing", () => {
+    expect(idle({ ...base, yourTurn: false, challengeWindow: window })).toBeNull();
+  });
+
+  it("is off unless asked for: the same seed still plays a normal game", () => {
+    expect(brain(me, 7, 0, false)({ ...base, yourTurn: true, playable: [0, 2] })).not.toBeNull();
+  });
+});

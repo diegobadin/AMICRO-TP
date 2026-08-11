@@ -47,6 +47,21 @@ describe("route table", () => {
     expect(route("DELETE", "/rooms")).toBeUndefined();
   });
 
+  it("routes all three membership verbs, reconnect included", () => {
+    for (const method of ["POST", "DELETE", "PATCH"]) {
+      expect(route(method, "/rooms/r1/players/p1")?.target).toBe("room-gameplay");
+    }
+  });
+
+  // The timer worker reaches room-gameplay from inside the cluster, and nothing here may open a
+  // path to it: a client that could tick a room could resolve its own turn timer early.
+  it("has no route to anything internal", () => {
+    for (const method of ["GET", "POST", "PATCH", "DELETE"]) {
+      expect(route(method, "/internal/rooms/r1/tick")).toBeUndefined();
+      expect(route(method, "/internal/anything")).toBeUndefined();
+    }
+  });
+
   it("only register and login are reachable without a session", () => {
     expect(route("POST", "/auth/register")?.auth).toBe(false);
     expect(route("POST", "/auth/login")?.auth).toBe(false);

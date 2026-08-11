@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GameView, board, describe as narrate, mustRefresh } from "../src/board.js";
+import { GameView, board, describe as narrate, mustRefresh, remaining } from "../src/board.js";
 import { seqOf } from "../src/api.js";
 import type { StreamEvent } from "../src/stream.js";
 
@@ -160,5 +160,32 @@ describe("ETag handling", () => {
     expect(seqOf('W/"42"')).toBe(42);
     expect(seqOf(undefined)).toBeNull();
     expect(seqOf("not-a-tag")).toBeNull();
+  });
+});
+
+describe("the turn deadline (P5)", () => {
+  const at = Date.parse("2026-08-11T12:00:00Z");
+
+  it("shows the seconds left on your own turn", () => {
+    const view = { ...base, turnDeadline: "2026-08-11T12:00:18Z" };
+    expect(remaining(view.turnDeadline, at)).toBe(" (18s)");
+    expect(board(view, me, at)).toContain("YOUR TURN (18s)");
+  });
+
+  it("says so when the deadline has already gone by", () => {
+    expect(remaining("2026-08-11T11:59:55Z", at)).toBe(" (time is up)");
+  });
+
+  // A room with no game in progress has no turn timer, and a nonsense value is not worth a crash.
+  it("renders nothing at all when there is no deadline to show", () => {
+    expect(remaining(null, at)).toBe("");
+    expect(remaining("not a timestamp", at)).toBe("");
+    expect(board(base, me)).toContain("YOUR TURN:");
+  });
+
+  it("narrates a room the clock closed, and re-reads on it", () => {
+    const expired: StreamEvent = { id: 9, event: "RoomExpired", data: { reason: "waiting_timeout" } };
+    expect(narrate(expired, me)).toContain("expired");
+    expect(mustRefresh(expired, me)).toBe(true);
   });
 });
