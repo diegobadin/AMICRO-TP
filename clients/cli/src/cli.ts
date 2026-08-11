@@ -9,6 +9,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { API, SESSION, emit, line, loadSession, parseFlags, request, saveSession } from "./api.js";
+import { bot } from "./bot.js";
 import { play, roomCommand } from "./rooms.js";
 
 // Re-exported so the unit tests exercise the same functions the commands use.
@@ -56,8 +57,10 @@ async function seed(count: number, prefix: string, json: boolean): Promise<numbe
 }
 
 const USAGE =
-  "usage: unoarena <register|login|whoami|logout|seed|room|play> [--user U --pass P] " +
-  "[--count N --prefix P] [--max N] [--room ID] [--casual] [--json]\n";
+  "usage: unoarena <register|login|whoami|logout|seed|room|play|bot> [--user U --pass P] " +
+  "[--count N --prefix P] [--max N] [--room ID] [--casual] [--json]\n" +
+  "       bot [--casual | --room ID] [--user U --pass P | --token T] [--seed N] " +
+  "[--forget-uno P] [--timeout S]\n";
 
 async function main(): Promise<number> {
   const [, , cmd, ...rest] = process.argv;
@@ -103,6 +106,10 @@ async function main(): Promise<number> {
 
     // §5.B: `play --casual` is the abstract entry into a game. `--room <id>` is the explicit form.
     if (cmd === "play") return play(f, json);
+
+    // §5.E: the same entry, played by a random number generator. `--json` is not a flag here — the
+    // output contract is mandatory in headless mode, so it is never off.
+    if (cmd === "bot") return bot(f);
 
     process.stderr.write(USAGE);
     return 2;

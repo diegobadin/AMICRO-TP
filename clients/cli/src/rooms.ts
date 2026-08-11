@@ -6,7 +6,7 @@
 
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { API, Line, Reply, emit, line, loadSession, request, seqOf } from "./api.js";
+import { API, Reply, emit, line, loadSession, request, resultLine } from "./api.js";
 import { GameView, board, describe, mustRefresh } from "./board.js";
 import { StreamEvent, follow } from "./stream.js";
 
@@ -40,19 +40,6 @@ function me(): string {
 
 const call = (method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Reply> =>
   request(API, method, path, { body, token: token(), headers });
-
-function resultLine(action: string, reply: Reply, extra: Partial<Line> = {}): Line {
-  const ok = reply.status >= 200 && reply.status < 300;
-  return line({
-    action,
-    result: ok ? "ok" : "error",
-    error_code: ok ? null : reply.status,
-    correlationId: reply.correlationId,
-    latency_ms: reply.latency_ms,
-    seq: seqOf(reply.etag),
-    ...extra,
-  });
-}
 
 export async function roomCommand(argv: string[], flags: Record<string, string | boolean>, json: boolean): Promise<number> {
   const [sub, arg] = argv;
@@ -145,11 +132,15 @@ async function waitForGame(
   player: string,
   json: boolean,
   converge: boolean,
+  deadline?: number,
 ): Promise<{ roomId: string; view: GameView } | null> {
   let current = roomId;
   if (!json) process.stdout.write("waiting for another player...\n");
 
   for (let attempt = 0; attempt < 600; attempt++) {
+    // A human waits until they get bored; `bot --timeout` says when, and the wait for a table is
+    // part of the run it bounds — a table that never fills is the commonest way a drill hangs.
+    if (deadline !== undefined && Date.now() >= deadline) break;
     const game = await call("GET", `/rooms/${current}/games/1`);
     if (game.status === 200) return { roomId: current, view: game.payload as unknown as GameView };
     if (game.status === 401) { process.stderr.write("session rejected (401) - log in again\n"); return null; }
@@ -168,20 +159,34 @@ async function waitForGame(
   return null;
 }
 
-export async function play(flags: Record<string, string | boolean>, json: boolean): Promise<number> {
+/**
+ * "Put me into a game", up to the first state the server sent — everything `play` and `bot` share,
+ * which is everything before the difference between a human and a random number generator.
+ */
+export async function enterGame(
+  flags: Record<string, string | boolean>,
+  json: boolean,
+  deadline?: number,
+): Promise<{ roomId: string; player: string; view: GameView } | null> {
   const player = me();
-  if (!player) { process.stderr.write("no session - run `login` first\n"); return 1; }
+  if (!player) { process.stderr.write("no session - run `login` first\n"); return null; }
 
   const named = flags.room ? String(flags.room) : null;
   const maxPlayers = Number(flags.max ?? 4);
   const entered = named ?? (await enterCasualRoom(player, maxPlayers, json));
-  if (!entered) return 1;
+  if (!entered) return null;
 
-  const started = await waitForGame(entered, player, json, named === null);
+  const started = await waitForGame(entered, player, json, named === null, deadline);
+  if (!started) return null;
+  return { roomId: started.roomId, player, view: started.view };
+}
+
+export async function play(flags: Record<string, string | boolean>, json: boolean): Promise<number> {
+  const started = await enterGame(flags, json);
   if (!started) return 1;
-  if (!json) process.stdout.write(board(started.view, player) + "\n");
+  if (!json) process.stdout.write(board(started.view, started.player) + "\n");
 
-  return interactive(started.roomId, player, started.view, json);
+  return interactive(started.roomId, started.player, started.view, json);
 }
 
 function interactive(roomId: string, player: string, initial: GameView, json: boolean): Promise<number> {

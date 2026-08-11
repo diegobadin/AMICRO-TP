@@ -18,12 +18,23 @@ export interface Session {
   userId?: string;
 }
 
+// §4: one process is one session is one player identity. `bot` takes its credentials on the command
+// line and keeps the token here rather than in the session file, so N parallel bots do not race each
+// other over one path on their way into the same game.
+let held: Session | null = null;
+
+export function useSession(s: Session): void {
+  held = s;
+}
+
 export function saveSession(s: Session): void {
+  held = s;
   mkdirSync(dirname(SESSION), { recursive: true });
   writeFileSync(SESSION, JSON.stringify(s));
 }
 
 export function loadSession(): Session {
+  if (held) return held;
   return existsSync(SESSION) ? (JSON.parse(readFileSync(SESSION, "utf8")) as Session) : {};
 }
 
@@ -69,7 +80,28 @@ export function line(fields: Partial<Line> & { action: string; result: "ok" | "e
   };
 }
 
+/**
+ * What this process has emitted so far. `bot`'s closing summary line (§6 — total actions, error
+ * counts, latency aggregates) is exactly this, so no command has to thread a counter through the
+ * call chain to be counted in it.
+ */
+export const emitted = {
+  actions: 0,
+  errors: 0,
+  latency_total_ms: 0,
+  latency_max_ms: 0,
+  codes: {} as Record<string, number>,
+};
+
 export function emit(l: Line, json: boolean): void {
+  emitted.actions++;
+  emitted.latency_total_ms += l.latency_ms;
+  emitted.latency_max_ms = Math.max(emitted.latency_max_ms, l.latency_ms);
+  if (l.result === "error") {
+    emitted.errors++;
+    const code = String(l.error_code ?? "error");
+    emitted.codes[code] = (emitted.codes[code] ?? 0) + 1;
+  }
   if (json) {
     process.stdout.write(JSON.stringify(l) + "\n");
   } else if (l.result === "ok") {
@@ -117,6 +149,20 @@ export async function request(
     correlationId,
     latency_ms: Date.now() - started,
   };
+}
+
+/** The §6 line for a reply: the status is the error code and the ETag carries the sequence number. */
+export function resultLine(action: string, reply: Reply, extra: Partial<Line> = {}): Line {
+  const ok = reply.status >= 200 && reply.status < 300;
+  return line({
+    action,
+    result: ok ? "ok" : "error",
+    error_code: ok ? null : reply.status,
+    correlationId: reply.correlationId,
+    latency_ms: reply.latency_ms,
+    seq: seqOf(reply.etag),
+    ...extra,
+  });
 }
 
 /** The sequence number inside an `ETag: "42"`. */

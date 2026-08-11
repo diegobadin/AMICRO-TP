@@ -83,6 +83,39 @@ kubectl -n postgres exec unoarena-pg-1 -c postgres -- \
 kubectl -n redis exec deploy/redis -- redis-cli XLEN "room:$ROOM:events"
 ```
 
+## The bot drill (AC-P4.8)
+
+```bash
+export UNOARENA_API_URL=http://localhost:30080
+
+# two bots, started at the same moment, judged on their own output
+node clients/cli/scripts/bot-drill.js 2
+
+# the mixed case: one human at a terminal, two bots at the same table
+#   (ROOM_MIN_PLAYERS=3 in the room-gameplay overlay — the lever plan D11 left for exactly this)
+UNOARENA_SESSION=/tmp/a.json unoarena play --casual
+unoarena bot --casual --user mixed-1 --pass mixed-pw --seed 501
+unoarena bot --casual --user mixed-2 --pass mixed-pw --seed 502
+
+# the failure the contract also asks for
+UNOARENA_API_URL=http://localhost:9 unoarena bot --casual --user load-1 --pass load-pw ; echo $?
+```
+
+**F7 gate, met locally against the full stack (gateway → identity + room-gameplay → Redis), 2026-08-11.**
+
+| Run | Result |
+|-----|--------|
+| `bot-drill.js 2` | both exit `0`; 36 and 34 actions, `errors: 0`; one `"outcome":"won"`, one `"lost"`; every stdout line parses as §6 with the full field set |
+| `bot-drill.js 4` | two tables of two formed without a coordinator; four exits of `0` |
+| `DRILL_TABLE=3 bot-drill.js 3` | one three-player game, three exits of `0` |
+| two bots + one human (`ROOM_MIN_PLAYERS=3`) | one room, three players, `game over - a30d443f wins` on the human's screen, both bots exit `0`, zero `409`s |
+| second login while a bot waits | `session rejected (401)` within 50 ms, summary line emitted, exit `1` |
+| bad URL | `error_code: "unreachable"`, summary line emitted, exit `1` |
+| `casual-drill.js` (P3's harness, re-run after the `enterGame` refactor) | game completed; wild, draw, uno and challenge all observed; zero `409`s |
+
+A challenge only happens when somebody forgets to call, so the drill **reports** which actions a run
+exercised rather than requiring them — one run in four saw `challenge_uno` succeed.
+
 ## Bite tests — does the harness actually bite?
 
 Presence is not proof. Each of these breaks something on purpose and names the alarm that must go
@@ -94,6 +127,7 @@ off; a test that stays green here is a test that was never protecting anything.
 | Forward the client's `Authorization` header downstream instead of the injected headers. | room-gameplay still answers `401`. If it answers `200`, it is secretly still validating JWTs and F6 did not land. |
 | Send `X-Player-Id: <someone else>` through the gateway with a valid token. | The request acts as the token's subject, and a unit test on the header whitelist fails if the client's value survives. This is the bypass the whole trust flip stands or falls on. |
 | `kubectl -n redis scale deploy/redis --replicas=0` mid-game. | Streams drop and the CLI says so; REST play keeps working (moves still accepted, `412` still correct); when Redis returns, the next heartbeat/resync repairs the view. No silent wrong board. |
+| Point a bot at a room whose other member has walked away. | It stops at `--timeout` with `error_code: "timeout"` and a summary line, exit non-zero — never a process that hangs silently. (Found for real: a drill killed halfway leaves a `WAITING` room, the next `--casual` player joins it and the game auto-starts with nobody on the other side. Deadlines are lazy until P5's timer worker, so **a drill needs a clean room list**.) |
 | `XTRIM room:{id}:events MAXLEN 1`, then reconnect with an old `Last-Event-ID`. | A `resync` frame — never a silent gap, never a replay that starts mid-game. |
 | Publish an event without `XADD` (comment the publisher) and post one move. | The move commits, `roomgameplay_stream_publish_failures_total` stays 0 but the frame never arrives; the heartbeat's `seq` is ahead of the client's within 15 s and the CLI resyncs. Proves D6 is the safety net it claims to be. |
 | Publish the raw event encoding instead of `publicPayload(event)`. | The `leaksPrivateData` test fails: `GameStarted`/`DeckRecycled` carry the RNG seed, and a seed on the stream is the deck order handed to every player. |

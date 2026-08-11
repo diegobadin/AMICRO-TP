@@ -1,8 +1,9 @@
 # UnoArena Client CLI (authentication + casual gameplay)
 
 The canonical command surface the faculty uses to drive the cluster (Client-Checkpoint.md). This
-repo ships the **authentication slice** (§5.A) and the **casual room/play slice** (§5.B, §5.C);
-spectate, bot and tournament commands land with the phases that make them real (P4–P7).
+repo ships the **authentication slice** (§5.A), the **casual room/play slice** (§5.B, §5.C) and the
+**headless bot** (§5.E); spectate and tournament commands land with the phases that make them real
+(P6–P7).
 
 ## Commands
 
@@ -43,6 +44,39 @@ offered — `pass` appears once you have drawn, not before.
 | `challenge` | catch an opponent sitting on one card who did not call |
 | `state`, `quit` | re-render the board; leave |
 
+### Headless play (§5.E)
+
+| Command | Notes |
+|---|---|
+| `bot --casual` | the same entry as `play --casual`, played by a random number generator |
+| `bot --room <id>` | the same, on a known room |
+| `--user U --pass P` / `--token T` | credentials as arguments; without either it uses the stored session |
+| `--seed <n>` | reproducible choices |
+| `--forget-uno <p>` | how often it forgets to call Uno! (default `0.25`) |
+| `--timeout <s>` | give up on a game that stalls (default `300`) |
+
+The bot picks uniformly among the cards **the server marked playable**, declares a random colour
+for a wild, and challenges an open window on an opponent the board shows has not called. It is a
+player, not a cheat: it sees exactly what a human sees, and it **forgets to call Uno!** a quarter of
+the time — a bot that never forgets is permanently safe, which deletes the challenge mechanic from
+every run that uses it.
+
+One process is one identity (§4): `bot` takes its credentials as arguments and keeps the token in
+memory rather than in the session file, so N parallel bots are N containers of the same image with
+different args and no shared state. Output is the §6 contract and nothing else — one JSON line per
+action on stdout, then a closing summary line:
+
+```json
+{"ts":"…","action":"summary","room":"…","player":"…","latency_ms":18,"result":"ok","error_code":null,
+ "seq":102,"correlationId":"…","actions":36,"errors":0,"error_codes":{},"latency_max_ms":112,
+ "duration_ms":2655,"seed":1000,"outcome":"won"}
+```
+
+The exit code is `0` for a game that reached a winner and non-zero for anything else — an
+unreachable backend, a superseded session, or a game that stalled past `--timeout`, each named in
+the summary's `error_code`. Notices (a stream reconnecting, for instance) go to stderr, so stdout
+stays parseable.
+
 **Calling Uno! is the player's job, not the client's.** `hasCalledUno` resets whenever the hand
 size changes, so calling *before* you play is wiped by the play itself and after it the turn has
 already moved on — `play <n> uno` is the only way to be safe, which is why the board says so when
@@ -58,7 +92,7 @@ not apply to an action are `null` rather than absent.
 
 ## What is deliberately not here yet
 
-- **`spectate`, `bot`, `tournament`** — P4 (bot), P6, P7.
+- **`spectate`, `tournament`** — P6 and P7.
 - **Lazy timers have a visible consequence.** P3 has no timer worker: deadlines live in the room
   aggregate and are evaluated when the *next* command arrives (decision E2). A turn that timed out
   while nobody was playing is settled the moment anyone acts — correct, but it can land late. P5's
@@ -87,7 +121,8 @@ would show a turn prompt in the middle of a batch that is still moving the turn 
   to room-gameplay, and serves the room stream itself; neither service is reachable from outside
   the cluster.
 - `UNOARENA_SESSION` — optional session-file path (default `~/.unoarena/session.json`). One file per
-  session means one process equals one player identity, as the checkpoint requires.
+  session means one process equals one player identity, as the checkpoint requires. `bot` does not
+  need it at all when given `--user/--pass` or `--token`.
 - `UNOARENA_POLL_MS` — poll interval inside `play` (default `1000`).
 
 ## Run
@@ -102,6 +137,10 @@ UNOARENA_SESSION=/tmp/a.json node dist/cli.js play --casual     # terminal 1
 
 UNOARENA_SESSION=/tmp/b.json node dist/cli.js register --user bob --pass pw
 UNOARENA_SESSION=/tmp/b.json node dist/cli.js play --casual     # terminal 2 — the game auto-starts
+
+# …or let a bot take the second seat (no session file, credentials as arguments)
+node dist/cli.js seed --count 1 --prefix load --json
+node dist/cli.js bot --casual --user load-1 --pass load-pw --seed 42
 
 # Docker
 docker build -t unoarena-cli .
@@ -123,3 +162,14 @@ no coordinator.
   the API itself, so anything the board fails to render is something it cannot play. It exits
   non-zero unless a game reaches a winner, and prints which of wild / draw / uno / challenge the
   run happened to exercise.
+- `scripts/bot-drill.js [count] [prefix]` is AC-P4.8: it seeds the accounts, starts `count` bots at
+  the same moment, and judges the run the way the faculty would — every stdout line must parse as a
+  §6 object with the full field set, every bot must close with a summary, every process must exit
+  `0`, and somebody must have won. The count fills whole tables (`DRILL_TABLE`, default 2, follows
+  the cluster's `ROOM_MIN_PLAYERS`): a bot with nobody to play would sit there until `DRILL_TIMEOUT_S`.
+
+  Start a drill against a **clean room list**. A run killed halfway leaves a `WAITING` room whose
+  members are gone; the next `--casual` player joins it, the backend starts the game at
+  `ROOM_MIN_PLAYERS`, and the turn parks on somebody who will never move. Deadlines are evaluated
+  lazily (P5's timer worker is what fixes this), so the game does not recover on its own — the bots
+  time out and the drill fails for a reason that has nothing to do with the code under test.

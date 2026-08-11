@@ -6,7 +6,7 @@
 
 ## Where things stand
 
-Branch `feat/p4-gateway-sse`, **eight commits, not pushed**. `main` is still `ea1ab15` (P3).
+Branch `feat/p4-gateway-sse`, **ten commits, not pushed**. `main` is still `ea1ab15` (P3).
 
 | Phase | State |
 |-------|-------|
@@ -18,28 +18,25 @@ Branch `feat/p4-gateway-sse`, **eight commits, not pushed**. `main` is still `ea
 | F6 the collapse | done — `b39d6ae` — **landed before F5**, see the plan for why |
 | F5 CLI on the stream | done — `0da0926` |
 | review pass | done — `ec0944a`, recorded in `plan.md` |
-| **F7 `bot --casual`** | **next** |
-| **F8 drill + closure** | after F7 |
+| F7 `bot --casual` | done — `bot.ts`, `scripts/bot-drill.js`, D13 refined in `plan.md`, gate recorded in `validation.md` |
+| **F8 drill + closure** | **next** |
 
-Tests: gateway 44, CLI 33, room-gameplay 61 (+ `gradle check`). All green at `ec0944a`.
+Tests: gateway 44, CLI 46, room-gameplay 61 (+ `gradle check`). All green.
 
 ## What is left
 
-**F7 — `bot --casual`** (plan D13). A subcommand of the same CLI and the same image: pick uniformly
-among the server-marked `playable` indices, declare a random colour for wilds, challenge whenever a
-window names someone else, and call Uno! when a play leaves it at one card *except* with probability
-`--forget-uno` (default `0.25`) — a bot that never forgets deletes the challenge mechanic from every
-drill. `--seed` makes a run reproducible. Output is the §6 contract: one JSON line per action, a
-final summary line, non-zero exit on failure. `clients/cli/scripts/casual-drill.js` is the shape to
-follow, and the bot should reuse `follow()` from `src/stream.ts` rather than growing a second client.
-
 **F8 — the drill and the closure.** `kind delete cluster` → `install.sh` → AC-P4.9 probes → a full
 casual game through the gateway; the session-kill drill (AC-P4.7); the Redis-outage bite test;
-transcripts into `validation.md`; `README.md` §9 evidence; `ESTADO-FINAL.md`; roadmap marked
-**SHIPPED** with a handoff block for P5.
+`bot-drill.js` against the cluster for AC-P4.8; transcripts into `validation.md`; `README.md` §9
+evidence; `ESTADO-FINAL.md`; roadmap marked **SHIPPED** with a handoff block for P5.
 
 Already written, so F8 does not have to: **`CHANGELOG-design.md` §9** (the eight P4 deltas, with
-§8.9/§8.10 closed) and `clients/cli/README.md`.
+§8.9/§8.10 closed) and `clients/cli/README.md` (the bot section included).
+
+The mixed case in AC-P4.8 — two bots and one human at one table — needs `ROOM_MIN_PLAYERS: "3"` in
+`gitops/apps/room-gameplay/overlays/staging/values.yaml` while it runs: the backend starts the game
+the moment the room reaches the minimum, so a third player can never join a two-player table. Put it
+back to `"2"` afterwards, or AC-P4.9's two-process game will sit and wait.
 
 ## Running the whole thing locally
 
@@ -100,6 +97,11 @@ Each of these cost real time and is now guarded by a test — do not undo them b
   `publicPayload(event)` — the raw encoding leaks the RNG seed, which is the deck.
 - **Start the two drill processes simultaneously**, never one after the other (P3's lesson, still
   true).
+- **A drill needs a clean room list.** A run killed halfway leaves a `WAITING` room whose members
+  are gone. The next `--casual` player joins it, the backend starts the game at `ROOM_MIN_PLAYERS`,
+  and the turn parks on somebody who will never move — deadlines are only evaluated when a command
+  arrives, and none does. Nothing recovers until P5's timer worker; locally,
+  `truncate room_events, outbox, rooms, idempotency_keys, consumed_events;` and start again.
 
 ## Working rules that still apply
 

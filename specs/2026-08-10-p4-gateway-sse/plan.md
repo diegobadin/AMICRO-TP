@@ -108,6 +108,15 @@
   window naming someone else, and calls Uno! when a play would leave it at one card — except with
   probability `--forget-uno` (default `0.25`), so the call-and-challenge mechanic is actually
   exercised instead of being permanently satisfied. `--seed` makes a run reproducible.
+  **Refined in F7:** it challenges a window naming someone else *whose card count the board does not
+  already show as called*. The engine refuses a challenge against a player who called
+  (`CHALLENGE_NOT_VALID`, a `409`) rather than penalising the challenger, so challenging every window
+  would mean deliberately sending a move the client can already tell is illegal — the same mistake as
+  offering `pass` before a draw. The refusal path is still reachable through the genuine race, where
+  the target calls between the read and the `POST`. Also settled here: `--user/--pass | --token` (§5.E)
+  with the token held in memory rather than the session file, so N bots need no shared file; `--json`
+  is not a flag because §6 is mandatory in headless mode; and `--timeout` (default 300 s) so a stalled
+  game fails a run instead of holding it open.
 - **D14 — `feed()` is deleted, not left behind.** The inferred feed in `board.ts` goes with the
   poll loop. Dead code that looks like a feature is worse than no feature.
 - **D15 — The client subscribes *with* the baseline it just read.** `play` does its
@@ -207,7 +216,10 @@ fixed at cluster creation and a third port means recreating the cluster.
 - `clients/cli/tests/board.test.ts` — the `feed()` cases go with it, replaced by frame-rendering
   and stream-reader tests. Deleting a test with its subject is fine; deleting one to make a suite
   green is not, so the replacement lands in the same commit.
-- `clients/cli/src/bot.ts` + `cli.ts` — `bot --casual` (D13).
+- `clients/cli/src/bot.ts` + `cli.ts` — `bot --casual` (D13). The room-entry half of `play` becomes
+  `enterGame` in `rooms.ts` so both commands converge on one room the same way, `resultLine` moves
+  to `api.ts` next to the rest of the §6 shape now that two callers build one, and `useSession`
+  holds a token in memory for a process that must not touch the session file.
 - `clients/cli/scripts/` — the N-bot drill; `casual-drill.js` updated to the single URL.
 - `clients/cli/README.md`, `README.md`, `CHANGELOG-design.md` §9 — one entry point, the stream
   contract, and the six deltas P4 introduces (Redis-sourced SSE instead of relay-fed, the control
