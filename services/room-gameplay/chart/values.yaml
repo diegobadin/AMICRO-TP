@@ -16,9 +16,8 @@ port: 8081
 healthPath: /health
 logLevel: info
 
-# Service exposure. Staging overlay sets type=NodePort + nodePort=30081 (matching the kind
-# extraPortMapping) so the CLI reaches gameplay at UNOARENA_ROOMS_URL. identity owns 30080; P4's
-# gateway collapses both behind one entry point.
+# Service exposure. No NodePort since P4: the gateway is the single entry point (30080), so the
+# staging overlay leaves this ClusterIP and nothing outside the cluster reaches gameplay directly.
 service:
   type: ClusterIP
   nodePort: ""
