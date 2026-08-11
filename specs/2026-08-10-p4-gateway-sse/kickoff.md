@@ -1,12 +1,12 @@
 # Kickoff — P4: Gateway + Realtime Fan-out (SSE)
 
-> Written 2026-08-10 when the triad was, rewritten the same day when F0–F6 landed. This is the
-> bridge between sessions: what is done, what is left, and everything the next session needs that
-> is not already in `requirements.md` / `plan.md` / `validation.md`.
+> Written 2026-08-10 with the triad, rewritten as F0–F6 landed, and again on 2026-08-11 when F7
+> did. This is the bridge between sessions: what is done, what is left, and everything the next
+> session needs that is not already in `requirements.md` / `plan.md` / `validation.md`.
 
 ## Where things stand
 
-Branch `feat/p4-gateway-sse`, **ten commits, not pushed**. `main` is still `ea1ab15` (P3).
+Branch `feat/p4-gateway-sse`, **eleven commits, not pushed**. `main` is still `ea1ab15` (P3).
 
 | Phase | State |
 |-------|-------|
@@ -18,17 +18,34 @@ Branch `feat/p4-gateway-sse`, **ten commits, not pushed**. `main` is still `ea1a
 | F6 the collapse | done — `b39d6ae` — **landed before F5**, see the plan for why |
 | F5 CLI on the stream | done — `0da0926` |
 | review pass | done — `ec0944a`, recorded in `plan.md` |
-| F7 `bot --casual` | done — `bot.ts`, `scripts/bot-drill.js`, D13 refined in `plan.md`, gate recorded in `validation.md` |
+| F7 `bot --casual` | done — `30a1349` (`bot.ts`, `enterGame`, `scripts/bot-drill.js`; D13 refined in `plan.md`, gate in `validation.md`) |
+| F7 review pass | done — `f319feb`, recorded in `plan.md` |
 | **F8 drill + closure** | **next** |
 
 Tests: gateway 44, CLI 46, room-gameplay 61 (+ `gradle check`). All green.
 
 ## What is left
 
-**F8 — the drill and the closure.** `kind delete cluster` → `install.sh` → AC-P4.9 probes → a full
-casual game through the gateway; the session-kill drill (AC-P4.7); the Redis-outage bite test;
-`bot-drill.js` against the cluster for AC-P4.8; transcripts into `validation.md`; `README.md` §9
-evidence; `ESTADO-FINAL.md`; roadmap marked **SHIPPED** with a handoff block for P5.
+**F8 — the drill and the closure**, in this order:
+
+1. **Push the branch, and get the gateway image built.** Nothing else can happen first:
+   `gitops/apps/gateway/overlays/staging/values.yaml` still says `digest: ""`, because the branch
+   has never been pushed and CI has therefore never built or pinned a gateway image. Argo pulls from
+   GitLab, so a drill cluster would come up with a gateway it cannot pull. The first push of a branch
+   evaluates `rules:changes` as all-changed — `git push -o ci.skip` first, then a second push that
+   touches only `services/gateway/**` so change detection runs the gateway's jobs alone. CI pushes
+   the digest-pin commit back: `git pull --rebase` before anything local.
+2. **The empty-cluster drill (AC-P4.9).** `kind delete cluster --name unoarena-staging` → then
+   `TARGET_REVISION=feat/p4-gateway-sse GITOPS_REPO_TOKEN=$(cat ~/.amicro_gitlab_token)
+   gitops/bootstrap/install.sh` → the probes in `validation.md` → a full casual game through the
+   gateway with two CLI processes started at the same moment. Empty kind to all-Healthy is ~35 min
+   on a cold image cache; the services crash-loop until CNPG elects a primary and then self-heal.
+3. **The remaining ACs against that cluster:** the session-kill drill (AC-P4.7), the Redis-outage
+   bite test (suspend **both** Argo apps first), `bot-drill.js 2` for AC-P4.8, and the mixed
+   two-bots-plus-one-human run.
+4. **Closure:** transcripts into `validation.md`, `README.md` §9 evidence, `ESTADO-FINAL.md`,
+   roadmap marked **SHIPPED** with a handoff block for P5, then the FF merge to `main` and a green
+   main pipeline (AC-P4.10).
 
 Already written, so F8 does not have to: **`CHANGELOG-design.md` §9** (the eight P4 deltas, with
 §8.9/§8.10 closed) and `clients/cli/README.md` (the bot section included).
@@ -68,6 +85,7 @@ cd services/gateway && PORT=8099 IDENTITY_URL=http://localhost:8085 \
 # then, from the repo root
 export UNOARENA_API_URL=http://localhost:8099
 node clients/cli/scripts/casual-drill.js /tmp/a.json /tmp/b.json   # after registering two players
+node clients/cli/scripts/bot-drill.js 2                            # seeds its own accounts
 ```
 
 `KAFKA_BROKERS=no-broker:9092` is deliberate: both services log a counted failure and keep serving,
