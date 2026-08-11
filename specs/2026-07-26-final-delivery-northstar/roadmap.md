@@ -127,7 +127,9 @@ pub/sub** half, which the gateway now consumes.
    Redis pub/sub *and* Kafka today; the gateway is the consumer the Redis half was written for
    (Architecture §5.5), and the CLI's `session_superseded` notice (§5.A) becomes reachable.
 
-## P5 — Async spine: outbox relay + timers — **next**
+## P5 — Async spine: outbox relay + timers — **in progress**
+
+Triad: [`../2026-08-11-p5-async-spine/`](../2026-08-11-p5-async-spine/) — decisions E1–E8.
 
 - Ships: outbox-relay (Go) tailing the outbox to Kafka (`GameCompleted` for real, then the rest
   of the catalog); timer-worker (Go) driving the durable deadlines — Uno! 5s window, 60s
