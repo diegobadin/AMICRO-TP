@@ -19,7 +19,7 @@ import java.util.UUID
  * cannot prove a rollback left no rows, or that two writers cannot take one sequence number — so
  * the fixture is a real pool and the guard against running them blind lives in one place.
  */
-val config: Config = Config.fromEnv(mapOf("IDENTITY_JWT_SECRET" to "test-secret"))
+val config: Config = Config.fromEnv(emptyMap())
 
 val ALICE = "11111111-1111-1111-1111-111111111111"
 val BOB = "22222222-2222-2222-2222-222222222222"
