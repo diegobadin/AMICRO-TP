@@ -28,7 +28,7 @@ env:
   - name: REDIS_URL
     value: redis://redis.redis.svc.cluster.local:6379
   - name: ROOM_MIN_PLAYERS
-    value: "2"
+    value: "3"
   - name: TURN_TIMEOUT_SECONDS
     value: "30"
 # No NodePort since P4. It trusts `X-Player-Id` from the gateway and validates nothing itself, so
