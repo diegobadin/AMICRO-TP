@@ -131,7 +131,7 @@ off; a test that stays green here is a test that was never protecting anything.
 | Stop injecting `X-Player-Id` in the gateway's proxy (comment the line). | The gateway's proxy test fails, **and** every room call returns `401` — proving room-gameplay refuses rather than trusting a bare token. |
 | Forward the client's `Authorization` header downstream instead of the injected headers. | room-gameplay still answers `401`. If it answers `200`, it is secretly still validating JWTs and F6 did not land. |
 | Send `X-Player-Id: <someone else>` through the gateway with a valid token. | The request acts as the token's subject, and a unit test on the header whitelist fails if the client's value survives. This is the bypass the whole trust flip stands or falls on. |
-| `kubectl -n redis scale deploy/redis --replicas=0` mid-game. | A `resync` frame reaches every open stream within a second, and exactly one per outage — the client goes back to the REST read, which still works. REST play keeps working (moves still accepted, `412` still correct); when Redis returns the tail resumes and the missing sequence numbers are visible as a gap. **This is the row F8 rewrote**: it used to say "streams drop and the CLI says so", and the first drill found that they do not — see the F8 evidence below. |
+| `kubectl -n redis scale deploy/redis --replicas=0` mid-game. | A `resync` frame reaches every open stream as soon as the tail's read fails — **exactly one per outage**, not one per retry — and the client goes back to the REST read, which still works. Measured at 1 s and at 10 s on two runs: the in-flight `BLOCK` read has to fail first, so the delay is the client library noticing a dead socket, not a fixed budget. REST play keeps working (moves still accepted, `412` still correct); when Redis returns the tail resumes and the missing sequence numbers are visible as a gap. **This is the row F8 rewrote**: it used to say "streams drop and the CLI says so", and the first drill found that they do not — see the F8 evidence below. |
 | Point a bot at a room whose other member has walked away. | It stops at `--timeout` with `error_code: "timeout"` and a summary line, exit non-zero — never a process that hangs silently. (Found for real: a drill killed halfway leaves a `WAITING` room, the next `--casual` player joins it and the game auto-starts with nobody on the other side. Deadlines are lazy until P5's timer worker, so **a drill needs a clean room list**.) |
 | `XTRIM room:{id}:events MAXLEN 1`, then reconnect with an old `Last-Event-ID`. | A `resync` frame — never a silent gap, never a replay that starts mid-game. |
 | Publish an event without `XADD` (comment the publisher) and post one move. | The move commits, `roomgameplay_stream_publish_failures_total` stays 0 but the frame never arrives; the heartbeat's `seq` is ahead of the client's within 15 s and the CLI resyncs. Proves D6 is the safety net it claims to be. |
@@ -301,8 +301,22 @@ against the rebuilt image `sha256:2c9b7c70`:
 18:36:05  event: resync / data: {"reason":"stream-unavailable"}    <- second outage, re-armed
 ```
 
-The unit test bites: reverted, `tells every client once per outage` fails on the first assertion.
-Gateway suite 44 → **45**.
+The unit test bites: reverted to the pre-fix `sse.ts`, `tells every client once per outage` fails
+with `expected [] to have a length of 1`. Gateway suite 44 → **45**.
+
+Re-run once more after the review pass refactored the flag into `loop()`'s scope (image
+`sha256:49501721`), and it is worth keeping both transcripts because the *timing* differs:
+
+```
+19:55:56  redis scaled to 0
+19:56:06  event: resync / data: {"reason":"stream-unavailable"}   <- 10 s this time, not 1 s
+19:56:08  event: heartbeat {"seq":2}   ... one resync across a ~48 s outage, never one per retry
+19:56:44  id: 3  event: PlayerLeft                                <- the tail resumed by itself
+```
+
+The delay is the in-flight `BLOCK` read having to fail before the loop can see anything, so it is
+whatever `ioredis` takes to notice a dead socket — not a budget the gateway controls. The property
+worth asserting is "exactly one, and the tail recovers", which held on both runs.
 
 ### AC-P4.10 — the `main` pipeline
 
