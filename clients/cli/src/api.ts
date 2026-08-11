@@ -28,7 +28,6 @@ export function useSession(s: Session): void {
 }
 
 export function saveSession(s: Session): void {
-  held = s;
   mkdirSync(dirname(SESSION), { recursive: true });
   writeFileSync(SESSION, JSON.stringify(s));
 }

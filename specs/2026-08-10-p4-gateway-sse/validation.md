@@ -101,20 +101,25 @@ unoarena bot --casual --user mixed-2 --pass mixed-pw --seed 502
 UNOARENA_API_URL=http://localhost:9 unoarena bot --casual --user load-1 --pass load-pw ; echo $?
 ```
 
-**F7 gate, met locally against the full stack (gateway → identity + room-gameplay → Redis), 2026-08-11.**
+**F7 gate, met locally against the full stack (gateway → identity + room-gameplay → Redis), 2026-08-11,
+re-run in full after the review pass.**
 
 | Run | Result |
 |-----|--------|
-| `bot-drill.js 2` | both exit `0`; 36 and 34 actions, `errors: 0`; one `"outcome":"won"`, one `"lost"`; every stdout line parses as §6 with the full field set |
-| `bot-drill.js 4` | two tables of two formed without a coordinator; four exits of `0` |
+| `bot-drill.js 2` | both exit `0`, `errors: 0`, one `"outcome":"won"` and one `"lost"`; every stdout line parses as §6 with the full field set |
+| `bot-drill.js 4` | two tables of two formed without a coordinator; four exits of `0`, each bot in and out inside 3 s |
 | `DRILL_TABLE=3 bot-drill.js 3` | one three-player game, three exits of `0` |
 | two bots + one human (`ROOM_MIN_PLAYERS=3`) | one room, three players, `game over - a30d443f wins` on the human's screen, both bots exit `0`, zero `409`s |
 | second login while a bot waits | `session rejected (401)` within 50 ms, summary line emitted, exit `1` |
 | bad URL | `error_code: "unreachable"`, summary line emitted, exit `1` |
+| `--timeout 12` with nobody to play against | gives up at 12.2 s with `error_code: "timeout"` — the flag bounds the wait for a table, not just the game |
+| the drill against a port that accepts and never answers | the guard reports `BOT DRILL TIMED OUT` and exits `1` rather than hanging on a `fetch` that has no timeout |
+| the drill killed mid-run (`SIGTERM`) | reports `interrupted by SIGTERM`, zero surviving bot processes |
 | `casual-drill.js` (P3's harness, re-run after the `enterGame` refactor) | game completed; wild, draw, uno and challenge all observed; zero `409`s |
 
 A challenge only happens when somebody forgets to call, so the drill **reports** which actions a run
-exercised rather than requiring them — one run in four saw `challenge_uno` succeed.
+exercised rather than requiring them: `challenge_uno` appeared in most runs, and a run without one
+is luck rather than a defect.
 
 ## Bite tests — does the harness actually bite?
 

@@ -266,6 +266,38 @@ the replay awaits Redis and the tail is free to run in that gap, so without it f
 frames 5–9. The three stream guards stay for the same reason: each owns a failure the others cannot
 see (D6).
 
+## Review pass (2026-08-11, F7)
+
+Same treatment for the bot: read back as a reviewer, question every decision, delete what only
+looked necessary.
+
+| # | Finding | Change |
+|---|---------|--------|
+| 1 | **The bot's game sense had its state in somebody else's hands.** `decide()` took its dice and the set of already-answered challenge windows as arguments, and the caller had to remember to add to that set after sending a challenge — the decision in one place, its bookkeeping in another. | `brain(me, seed, forgetUno)` returns `think(view)`, a closure over both. The loop asks and acts; nothing to remember on its behalf. Two exports fewer (`rng`, `windowKey`), and the tests read as behaviour ("answers one window once") instead of set plumbing. |
+| 2 | **A retry counter that could not help.** Three re-answers of a refused state, capped by a constant. But a state the server refused will refuse the same move again — the retries were guaranteed-useless load. | One move per state (`view.sequenceNumber !== answered`), and the heartbeat is the retry clock: every 15 s the bot answers its state once more, which is what breaks a stall. One variable and one constant gone, and gentler on the server. |
+| 3 | **`--timeout` did not bound the wait for a table**, only the game — so a bot with nobody to play sat for the poll loop's own 600 s whatever the flag said, and the README promised otherwise. | The deadline goes into `enterGame`/`waitForGame` as well; the summary calls that ending `timeout`, not `no_game`. Verified: `--timeout 12` gives up at 12.2 s. |
+| 4 | **`saveSession` seeded the in-memory session too.** Written for symmetry with `useSession`; no caller needs it, and it would quietly change what `loadSession` returns after a `seed` run. | Deleted. |
+| 5 | **The drill could hang forever and could truncate its own verdict.** `fetch` has no timeout, so a backend that accepts a connection and never answers hangs the harness that is supposed to be doing the judging; and `process.exit` after writing to a pipe can cut the last line. | A hard guard 30 s past the bots' own timeout (verified against a black-hole port: it reports and exits at 5 s), one write of the whole report, and `process.exitCode` instead of `process.exit`. |
+| 6 | **A killed drill left its bots running.** They keep polling, join the *next* run's room, start a game there and strand somebody. This cost three "hangs" that each read like a code defect before the cause was found. | `SIGINT`/`SIGTERM` end the run through the same `finish` that kills the children. Verified: interrupting mid-run leaves zero surviving processes. |
+
+Not changed, and why:
+
+- **`autoplay` handles frames the way `interactive` does**, eight lines apart. The rule they actually
+  share — which events oblige a re-read — is already one function (`mustRefresh`). What repeats is
+  the SSE plumbing (gap, heartbeat, `resync`, control frame), which only changes if the gateway's
+  frame contract changes, and then both sides change anyway. Folding it into one helper means four
+  arguments and an order-sensitive contract serving one caller that narrates and one that acts.
+- **`request()` still has no per-call timeout.** Giving the shared helper one would change every
+  command in the CLI for a failure a human sees and interrupts. Inside a game the bot is already
+  immune (its own timer resolves the run whatever a socket is doing); the exposed window is the
+  pre-game phase, and the drill's guard is the backstop that covers it.
+- **The §6 field list is written out again in `bot-drill.js`** rather than imported from `api.ts`. A
+  check that asks the code for the contract only proves the code agrees with itself.
+- **Room convergence stays P3's.** With more than one table it is a race — two bots can pair while a
+  third is mid-join — and the honest answer is that a stranded bot fails its own run with `timeout`
+  rather than hanging. Redesigning matchmaking for a load-test convenience is P6's business, not a
+  change to smuggle into the phase that added a bot.
+
 ## What this plan deliberately does *not* include
 
 - Draining the outbox, publishing room events to Kafka, or the timer-worker (P5).

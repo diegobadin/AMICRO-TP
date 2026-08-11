@@ -97,11 +97,15 @@ Each of these cost real time and is now guarded by a test — do not undo them b
   `publicPayload(event)` — the raw encoding leaks the RNG seed, which is the deck.
 - **Start the two drill processes simultaneously**, never one after the other (P3's lesson, still
   true).
-- **A drill needs a clean room list.** A run killed halfway leaves a `WAITING` room whose members
-  are gone. The next `--casual` player joins it, the backend starts the game at `ROOM_MIN_PLAYERS`,
-  and the turn parks on somebody who will never move — deadlines are only evaluated when a command
-  arrives, and none does. Nothing recovers until P5's timer worker; locally,
-  `truncate room_events, outbox, rooms, idempotency_keys, consumed_events;` and start again.
+- **A drill needs a clean room list *and* no clients left over from the last one.** A run killed
+  halfway leaves a `WAITING` room whose members are gone: the next `--casual` player joins it, the
+  backend starts the game at `ROOM_MIN_PLAYERS`, and the turn parks on somebody who will never move
+  — deadlines are only evaluated when a command arrives, and none does. Nothing recovers until P5's
+  timer worker. A surviving *process* is worse: it keeps polling, joins the next run's room and
+  strands a bot that then times out. Both read exactly like a code defect; they cost three
+  false alarms in F7. `bot-drill.js` now kills its bots on `SIGINT`/`SIGTERM`, and locally
+  `truncate room_events, outbox, rooms, idempotency_keys, consumed_events;` resets the board.
+  (`pgrep -f` matches the shell running it — check with `ps -eo args | grep cli.js | grep -v grep`.)
 
 ## Working rules that still apply
 

@@ -53,7 +53,7 @@ offered — `pass` appears once you have drawn, not before.
 | `--user U --pass P` / `--token T` | credentials as arguments; without either it uses the stored session |
 | `--seed <n>` | reproducible choices |
 | `--forget-uno <p>` | how often it forgets to call Uno! (default `0.25`) |
-| `--timeout <s>` | give up on a game that stalls (default `300`) |
+| `--timeout <s>` | give up on a run that stalls — the wait for a table included (default `300`) |
 
 The bot picks uniformly among the cards **the server marked playable**, declares a random colour
 for a wild, and challenges an open window on an opponent the board shows has not called. It is a
@@ -167,6 +167,9 @@ no coordinator.
   §6 object with the full field set, every bot must close with a summary, every process must exit
   `0`, and somebody must have won. The count fills whole tables (`DRILL_TABLE`, default 2, follows
   the cluster's `ROOM_MIN_PLAYERS`): a bot with nobody to play would sit there until `DRILL_TIMEOUT_S`.
+  The drill also holds a hard stop 30 s past that: `fetch` has no timeout of its own, so a backend
+  that accepts a connection and never answers would otherwise hang a harness that is supposed to be
+  the thing doing the judging.
 
   Start a drill against a **clean room list**. A run killed halfway leaves a `WAITING` room whose
   members are gone; the next `--casual` player joins it, the backend starts the game at
