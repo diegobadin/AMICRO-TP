@@ -6,7 +6,7 @@
 
 ## Where things stand
 
-Branch `feat/p4-gateway-sse`, **eleven commits, not pushed**. `main` is still `ea1ab15` (P3).
+Branch `feat/p4-gateway-sse`, **twelve commits, not pushed**. `main` is still `ea1ab15` (P3).
 
 | Phase | State |
 |-------|-------|
