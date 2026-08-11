@@ -1,0 +1,18 @@
+{
+    "type": "GameCompleted",
+    "roomType": "CASUAL",
+    "gameNumber": 1,
+    "finishingOrder": [
+        "alice",
+        "bob"
+    ],
+    "cardPointTotals": {
+        "alice": 0,
+        "bob": 17
+    },
+    "isAbandoned": false,
+    "completedAt": "2026-08-11T12:00:00Z",
+    "at": "2026-08-11T12:00:00Z",
+    "roomId": "1c1b0b7e-0000-4000-8000-000000000000",
+    "sequenceNumber": 42
+}
