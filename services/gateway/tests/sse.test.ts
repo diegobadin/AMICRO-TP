@@ -63,11 +63,11 @@ const framesIn = (chunks: string[]) =>
     data: JSON.parse(/^data: (.+)$/m.exec(c)![1]) as Record<string, unknown>,
   }));
 
-const streamsOf = (redis: FakeRedis) =>
+const streamsOf = (redis: FakeRedis, log: (action: string) => void = () => undefined) =>
   new RoomStreams(redis as unknown as Redis, redis as unknown as Redis, {
     delivered: () => undefined,
     connections: () => undefined,
-    log: () => undefined,
+    log,
   });
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -242,13 +242,19 @@ describe("a tail that cannot read Redis", () => {
       await new Promise<void>((done) => setTimeout(done, 5));
       return null;
     };
-    running = streamsOf(redis);
+    // Counting the failed reads is what makes "once per outage" mean anything: without it the
+    // assertion below would also pass if the backoff let only one read fail in the window.
+    let failedReads = 0;
+    running = streamsOf(redis, (action) => {
+      if (action === "stream-tail-failed") failedReads++;
+    });
     const client = connection();
 
     await running.subscribe("r1", "s1", client, undefined);
     await vi.advanceTimersByTimeAsync(4000);
 
     const resync = () => framesIn(client.chunks).filter((f) => f.event === "resync");
+    expect(failedReads).toBeGreaterThan(1);
     expect(resync()).toHaveLength(1);
     expect(resync()[0].data.reason).toBe("stream-unavailable");
 

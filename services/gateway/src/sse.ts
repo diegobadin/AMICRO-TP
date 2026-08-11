@@ -108,7 +108,6 @@ export class RoomStreams {
   private readonly cursors = new Map<string, string>();
   private tailing = false;
   private stopped = false;
-  private tailFailing = false;
 
   constructor(
     private readonly redis: Redis,
@@ -230,6 +229,9 @@ export class RoomStreams {
    * short block handles for free.
    */
   private async loop(): Promise<void> {
+    // Scoped to this run rather than to the object: the loop ends when the last subscriber leaves,
+    // and the next one to arrive deserves to be told afresh if Redis is still gone.
+    let toldThemItIsDown = false;
     while (!this.stopped && this.rooms.size > 0) {
       const roomIds = [...this.rooms.keys()];
       const ids = roomIds.map((roomId) => this.cursors.get(roomId) ?? "0-0");
@@ -248,14 +250,14 @@ export class RoomStreams {
         // cursor this process holds in memory, so it keeps ticking with a sequence number that
         // has stopped moving, and a client watching a room that advances meanwhile is told
         // nothing. One `resync` per outage puts it back on the REST read, which still works.
-        if (!this.tailFailing) {
-          this.tailFailing = true;
+        if (!toldThemItIsDown) {
+          toldThemItIsDown = true;
           this.broadcast({ event: "resync", data: { reason: "stream-unavailable" } });
         }
         await new Promise((resolve) => setTimeout(resolve, BLOCK_MS));
         continue;
       }
-      this.tailFailing = false;
+      toldThemItIsDown = false;
       if (!batches) continue;
 
       for (const [key, entries] of batches) {

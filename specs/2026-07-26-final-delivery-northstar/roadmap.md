@@ -178,12 +178,9 @@ What P5 inherits, and must not break:
    `POST /api/v4/projects/83816735/pipeline?ref=main`. On `main` every job's
    `if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH` rule matches, so the full set runs and the
    production stages stay `manual`. Dropping `[skip ci]` instead would burn a branch pipeline *and*
-   a main one for the same commit.
-
-A red closure run is worth reading before it is believed: P4's first attempt failed in
-`build:gateway` because kaniko could not fetch an **anonymous pull token from `gcr.io`** for the
-distroless base image. The identical build had been green on the branch minutes earlier, and a plain
-retry went green with nothing changed.
+   a main one for the same commit. **Read a red closure run before believing it** — the base-image
+   pull is a public-registry call and can fail for reasons the repo did not cause (P4's first
+   attempt; the detail is in that phase's `validation.md`).
 
 ## P6 — Ranking, spectator, analytics
 

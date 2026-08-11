@@ -307,6 +307,39 @@ the same: it gets a table.
 |---|---------|--------|
 | 1 | **A Redis outage was invisible to the client.** Killing Redis under a live stream did not drop it: `ioredis` parks a blocking `XREAD` in its offline queue rather than rejecting it, so the tail never errored (`stream-tail-failed` logged **0** times), and the heartbeat — which reads this process's in-memory cursor, not Redis — kept ticking every 15 s with a sequence number that had stopped moving. A client watching a room that advanced during the outage was told nothing. | The tail connection stops queueing (`enableOfflineQueue: false`); its loop is already a retry loop, so a parked read is only an outage nobody can see. The first failed read of an outage broadcasts `resync` — the frame the client already re-reads on — once, re-armed when the tail recovers. D6's three guards are unchanged; this closes the case none of them covered, which is the *transport* failing rather than a frame going missing. |
 
+### Review pass over F8's own change (2026-08-11)
+
+The fix above was written under drill pressure, so it got the same treatment as everything else.
+
+| # | Finding | Change |
+|---|---------|--------|
+| 1 | **A flag outliving the loop that owns it.** `tailFailing` was a field on `RoomStreams`, but the only thing that reads it is one `while` inside `loop()` — and `loop()` ends whenever the last subscriber leaves. A field that survives its own loop invites the question "what is this on restart?" every time someone reads the class. | A local `toldThemItIsDown` inside `loop()`. One field fewer on the class, and the invariant is now visible in the six lines that use it: each tail run notifies once. Behaviour is identical — during an outage `subscribe()` fails fast on the request-path client anyway, so a loop cannot restart mid-outage. |
+| 2 | **The test proved less than it claimed.** It asserted one `resync` over a 4 s window, but the backoff constant it depends on (`BLOCK_MS`) is module-private: had it grown past the window, only one read would have failed and "once per outage" would have passed without ever being exercised. | The test now counts `stream-tail-failed` through the `log` hook and asserts `failedReads > 1` beside `resync === 1`. The claim is self-evidencing whatever the constant is. Exporting `BLOCK_MS` purely for a test was the alternative, and adding API surface for a test is the smell the F0–F6 pass removed. |
+| 3 | **The same CI flake was written out three times** (`validation.md`, `ESTADO-FINAL.md` and the roadmap). Evidence plus summary is the normal pair; a third copy in the program roadmap was retelling an incident where procedure belongs. | The roadmap keeps one clause — *read a red closure run before believing it* — and points at the phase's `validation.md` for the detail. |
+
+Questioned and deliberately left alone:
+
+- **`broadcast()` has one call site and could be inlined.** Five lines with a name beats a nested
+  loop inside a `catch` that is already carrying the reasoning about why the notice exists, and it
+  mirrors `kill()`'s shape — the other place that walks every subscriber to send a control frame.
+- **Every subscriber re-reads at once when the tail fails.** A real thundering herd in principle:
+  one Redis blip sends every open stream to `GET /rooms/{id}/games/{n}` at the moment the platform
+  is least healthy. Not worth jitter or backoff here — the herd is bounded by the connection count
+  (a demo cluster, not a stadium), the read is the same one each client already makes on its own
+  turn, and the alternative is the silent freeze this whole fix exists to remove. Rate limiting is
+  P7's, and that is where a real answer belongs.
+- **The heartbeat still reports a frozen `seq` during an outage.** It is not lying — that *is* the
+  last sequence this pod saw — and the client has already been told to re-read. Teaching the
+  heartbeat about outage state would add a second mechanism carrying the same news.
+- **The tail keeps `maxRetriesPerRequest: 1`, matching the request-path client.** With the offline
+  queue off, a command issued while the socket is down is rejected outright, so the retry count is
+  nearly moot; matching the neighbouring connection is easier to read than a third combination.
+- **The two chart-comment commits were chosen to trigger change detection**, and that is worth
+  naming rather than hiding: a build of one service can only be provoked by touching that service's
+  path (an API-triggered branch pipeline evaluates `rules:changes` as all-changed and would run all
+  ten). Both were genuine stale-fact corrections that were owed anyway — but if nothing had been
+  stale, the honest options would have been a no-op commit or ten services' worth of CI.
+
 Two things the drill did **not** change, and why:
 
 - **`ROOM_MIN_PLAYERS` stays a lever, not a per-room setting.** The mixed case needs three at a
