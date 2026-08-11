@@ -1,4 +1,5 @@
-# outbox-relay — placeholder background worker (NOT fully-wired: stops at a manual deploy stub).
+# outbox-relay — the transactional outbox's second half (P5): drains committed rows to Kafka.
+# Fully-wired since P5; deploy-staging is a real GitOps deploy.
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
 
@@ -37,16 +38,18 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/outbox-relay/**/*", "ci/templates/**/*"]
 
-# ── Stub: not fully-wired. Manual on default branch; no integration-staging job yet.
+# Real GitOps deploy since P5, like gateway's and room-gameplay's: pin the delivered digest into
+# the staging overlay and let Argo reconcile. `needs` includes build:outbox-relay for its dotenv
+# ($IMAGE, $IMAGE_DIGEST) — deliver alone does not carry them.
 "deploy-staging:outbox-relay":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:outbox-relay"]
+  needs: ["deliver:outbox-relay", "build:outbox-relay"]
   variables:
     SVC: outbox-relay
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/outbox-relay/**/*"]
-      when: manual
-      allow_failure: true
+      when: on_success
+    - changes: ["services/outbox-relay/**/*"]
+      when: on_success

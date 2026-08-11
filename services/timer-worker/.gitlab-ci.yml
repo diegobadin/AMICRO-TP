@@ -1,4 +1,5 @@
-# timer-worker — placeholder background worker (NOT fully-wired: stops at a manual deploy stub).
+# timer-worker — the durable-deadline clock (P5): finds overdue rooms and ticks room-gameplay.
+# Fully-wired since P5; deploy-staging is a real GitOps deploy.
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
 
@@ -37,16 +38,18 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/timer-worker/**/*", "ci/templates/**/*"]
 
-# ── Stub: not fully-wired. Manual on default branch; no integration-staging job yet.
+# Real GitOps deploy since P5, like gateway's and room-gameplay's: pin the delivered digest into
+# the staging overlay and let Argo reconcile. `needs` includes build:timer-worker for its dotenv
+# ($IMAGE, $IMAGE_DIGEST) — deliver alone does not carry them.
 "deploy-staging:timer-worker":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:timer-worker"]
+  needs: ["deliver:timer-worker", "build:timer-worker"]
   variables:
     SVC: timer-worker
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/timer-worker/**/*"]
-      when: manual
-      allow_failure: true
+      when: on_success
+    - changes: ["services/timer-worker/**/*"]
+      when: on_success
