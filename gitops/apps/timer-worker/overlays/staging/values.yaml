@@ -3,5 +3,24 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/timer-worker
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: room-gameplay-secrets # the same role that owns the projection this reads
+# It reads `rooms.next_deadline` from room-gameplay's database and knocks on room-gameplay's
+# internal route; it is never reached from outside, and the gateway has no path that routes to it.
+# TICK_INTERVAL_MS is the lever a drill or the demo turns to make a deadline visible on stage.
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: room_gameplay
+  - name: DATABASE_USER
+    value: room_gameplay
+  - name: ROOM_GAMEPLAY_URL
+    value: http://room-gameplay.unoarena-staging.svc.cluster.local
+  - name: TICK_INTERVAL_MS
+    value: "1000"

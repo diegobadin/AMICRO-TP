@@ -7,9 +7,21 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# One replica, deliberately. A missed tick is a latency problem and never a correctness one — the
+# aggregate settles overdue deadlines on the next command regardless — so leader election would buy
+# promptness during a restart and nothing else. Documented in the phase's ESTADO-FINAL rather than built.
 replicas: 1
 port: 8089
 healthPath: /health
 logLevel: info
+
+imagePullSecrets: []
+# The database password comes from room-gameplay's own SealedSecret: same bounded context, same
+# login role, so nothing new had to be sealed for this service.
+secretName: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
 
 env: []

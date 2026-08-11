@@ -1,0 +1,18 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Prometheus scrapes the service the moment it exists — instrument-as-you-go, so P8 only has to
+# build dashboards on metrics that have been collecting since this phase.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "svc.name" . }}
+  labels:
+    app: {{ include "svc.name" . }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "svc.name" . }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
