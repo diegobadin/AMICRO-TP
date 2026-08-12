@@ -65,6 +65,7 @@ func (w *worker) sweep(ctx context.Context) error {
 		sweepFailures.Inc()
 		return err
 	}
+	sweeps.Inc()
 	dueRooms.Set(float64(len(rooms)))
 
 	for _, room := range rooms {

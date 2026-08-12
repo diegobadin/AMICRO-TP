@@ -15,6 +15,7 @@ func TestMetricsExposeTheExactNamesDashboardsQuery(t *testing.T) {
 	ticksTotal.WithLabelValues("sent").Inc()
 	ticksTotal.WithLabelValues("failed").Inc()
 	sweepFailures.Inc()
+	sweeps.Inc()
 	dueRooms.Set(3)
 	tickLag.Observe(1.5)
 
@@ -26,6 +27,8 @@ func TestMetricsExposeTheExactNamesDashboardsQuery(t *testing.T) {
 		`timerworker_ticks_total{result="sent"}`,
 		`timerworker_ticks_total{result="failed"}`,
 		"timerworker_sweep_failures_total",
+		// Without this one, "0 due rooms" and "never swept" are the same reading.
+		"timerworker_sweeps_total",
 		"timerworker_due_rooms",
 		"timerworker_tick_lag_seconds_bucket",
 	} {

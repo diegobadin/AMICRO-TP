@@ -127,9 +127,17 @@ pub/sub** half, which the gateway now consumes.
    Redis pub/sub *and* Kafka today; the gateway is the consumer the Redis half was written for
    (Architecture §5.5), and the CLI's `session_superseded` notice (§5.A) becomes reachable.
 
-## P5 — Async spine: outbox relay + timers — **in progress**
+## P5 — Async spine: outbox relay + timers — **SHIPPED 2026-08-12**
 
-Triad: [`../2026-08-11-p5-async-spine/`](../2026-08-11-p5-async-spine/) — decisions E1–E8.
+Triad + closure: [`../2026-08-11-p5-async-spine/`](../2026-08-11-p5-async-spine/) — decisions E1–E8,
+evidence in [`validation.md`](../2026-08-11-p5-async-spine/validation.md) and
+[`ESTADO-FINAL.md`](../2026-08-11-p5-async-spine/ESTADO-FINAL.md); design deltas in
+`CHANGELOG-design.md` §10.
+
+**The outbox drains and time passes on its own.** `published_at IS NULL` reached 0 for the first
+time since P3; a game where a player walks away ends by itself after three lapsed turns; a room
+nobody joined closes on the clock. Two placeholders became real, so five of ten deployables are now
+fully wired.
 
 - Ships: outbox-relay (Go) tailing the outbox to Kafka (`GameCompleted` for real, then the rest
   of the catalog); timer-worker (Go) driving the durable deadlines — Uno! 5s window, 60s

@@ -295,3 +295,22 @@ both `services/*/chart/**`, both `services/*/.gitlab-ci.yml`
 - **No new deployable and no new stage.** Two placeholders become real inside the frozen pipeline
   shape; the count stays at ten.
 - **No building of the seven canned placeholders.** They keep `digest: ""`.
+
+## Review pass (2026-08-12, after the drill)
+
+Reading the branch back as a reviewer, per the standing convention. Five findings, three acted on.
+
+| # | Finding | Done |
+|---|---------|------|
+| R1 | **`timerworker_due_rooms` cannot distinguish "swept, none due" from "never swept"** — a Prometheus gauge that has never been `Set` reads `0`. This is exactly the ambiguity that made the 2699 s outlier hard to diagnose: the reading looked like a healthy idle worker either way. | Added `timerworker_sweeps_total`, asserted in the metrics test with the reason written down. |
+| R2 | **`drain` reports an error after a successful publish** when `markPublished` fails, and the caller logs it as `drain-failed` — but the rows *are* on the broker, and the consequence is a duplicate, not a loss. The log line invites the opposite conclusion at 3am. | Not changed. The return already carries `len(rows)` so the caller can tell, the code comment says which failure it is, and inventing a second error type for a case that has never fired is speculative. Revisit if it ever does. |
+| R3 | **Two near-identical `backoff` functions and two `run` loops**, one per Go service. | Not changed, and D9 is the reason: they are ~300-line services the pipeline treats as independently deployable, and a shared module would be a fourth thing to version for forty duplicated lines. |
+| R4 | **`relay.observeBacklog` swallows its error silently** — if the backlog query starts failing, `lag_seconds` and `backlog_rows` freeze at their last value rather than going stale visibly. That is the P4 Redis lesson in miniature: a metric that stops moving looks like a system that stopped changing. | Not changed *yet*, and named here rather than fixed quietly: the drain loop that runs beside it reports the same database being unreachable, so the failure is never silent overall. Worth a `stale` flag if P8 alerts on the gauge. |
+| R5 | **The `--idle` bot was tested against a stale `dist/`** during the drill, and appeared to play a normal game. The build is not part of the drill script. | Corrected in the run, and it is the reason `npm run build` is now called out explicitly in the drill checklist rather than assumed. Exactly the "verify the running binary is the one just built" lesson, arriving on schedule. |
+
+**Not changed, and why** — beyond R2/R3/R4: the `Tick` command stays an engine `Command` rather than
+a bypass on `Rooms` (D1 earned its keep: the whole retry/append/projection/outbox/stream path is
+reused unchanged); `nextDeadline` stays in the engine rather than in `EventStore`, so there is one
+`EngineConfig` in the process and the projection cannot drift from the rules; and the CLI's
+`remaining()` takes an injectable `now` purely so the render is pinnable in a test — the client still
+never decides that a deadline passed.

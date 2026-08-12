@@ -23,6 +23,15 @@ var (
 		Help: "Polls of the rooms projection that failed",
 	})
 
+	// Counts the polls that worked, which the gauge below cannot tell you: a gauge that has never
+	// been Set reads 0, exactly like one set to zero by a sweep that found nothing. The P5 drill
+	// spent real time on that ambiguity — "is it idle or has it never run?" — so the answer is a
+	// counter, not an inference.
+	sweeps = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "timerworker_sweeps_total",
+		Help: "Polls of the rooms projection that succeeded",
+	})
+
 	dueRooms = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "timerworker_due_rooms",
 		Help: "Rooms found overdue on the last sweep",

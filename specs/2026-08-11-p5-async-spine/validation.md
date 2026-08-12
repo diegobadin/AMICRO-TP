@@ -21,6 +21,48 @@
 | AC-P5.12 | **From empty.** `kind delete cluster` → `install.sh` → five real services `Synced/Healthy`, digest-pinned, secrets decrypted, both new targets scraped; a bot game plays through and drains to Kafka |
 | AC-P5.13 | **Green `main` pipeline**, triggered explicitly after the `[skip ci]` closure commit |
 
+## Evidence (drill, 2026-08-11 → 12)
+
+Cluster rebuilt from empty on `feat/p5-async-spine`. **Five real services `Synced/Healthy`** where P4
+had three; the remaining five canned placeholders sit `Degraded`, as always.
+
+| AC | Verdict |
+|---|---|
+| AC-P5.1 | Two bots played a full game through the gateway (0 errors). `select count(*) filter (where published_at is null) from outbox` → **0**, against 160 rows total. The relay's own counters reconcile exactly: `rows_published_total{room.public.events} 147` + `{room.lifecycle.events} 13` = 160. |
+| AC-P5.2 | Proved twice. In-cluster the relay met a Postgres with no schema yet and backed off without crashing (below). Against a real broker it met an unreachable Kafka: **22/22 writes refused, 0 rows marked published**, backoff 853 → 1958 → 4301 → 9451 → 21288 ms, and the rows drained intact once a broker existed. |
+| AC-P5.3 | `ce-specversion:1.0, ce-id:7fbbde98…:92, ce-source:/room-gameplay, ce-type:com.unoarena.room.GameCompleted.v1, ce-time:…, ce-subject:…, ce-correlationid:…`, key = `roomId`. **`grep -c seed` over the full dump of both topics → 0**, and `GameStarted` on the wire carries `gameNumber`/`initialColor`/`playerOrder` and no seed. |
+| AC-P5.4 | Grouped by room, not flattened — the first flat check was wrong because two rooms interleave across three partitions. Per room: `7fbbde98` 90 events increasing, `ed63330d` 2 events increasing. |
+| AC-P5.5 | `bot --casual` against `bot --casual --idle`: the idle seat's turns lapsed at sequence 6, 11 and 15, each auto-drawn and passed, with nobody sending a command. |
+| AC-P5.6 | The third lapse produced `PlayerForfeited` reason **`idle`** (seq 18) → `GameCompleted isAbandoned=true` (19) → `RoomCompleted` (20). The opponent's real plays never reset the idle player's streak. Counted **twice, 19 minutes apart: 20 events both times**, `next_deadline` NULL. The room is finished, not ticking. |
+| AC-P5.7 | Two rooms expired on their own. `ed63330d`: `RoomExpired waiting_timeout` — but the tick arrived **2699 s late** (see below). `d8312e79`, created deliberately as a control: due 02:16:31, ticked 02:16:31, **0.26 s late**. |
+| AC-P5.8 | **Covered by suite, not by the cluster — and the reason is worth keeping.** Holding the worker down is not possible on this cluster: `kubectl scale --replicas=0` is undone by Argo's `selfHeal` well inside the 30 s turn deadline, and patching the child `Application` does not help because the app-of-apps restores its sync policy. Two attempts both produced a fired deadline (5→8 and 6→9 events) — the worker was back before the probe could observe its absence. The backstop itself is proved by P3's `DeadlinesTest` (unchanged, green) and by `TimerTickTest`, both against a real Postgres. The GitOps behaviour is a feature on demo day and an obstacle to this one probe. |
+| AC-P5.9 | `POST :30080/internal/rooms/{id}/tick` → **404** at the gateway, as does any internal path. Direct over a port-forward: no headers **401**, player-id only **401**, session-id only **401**, both **200**. A real player id on the internal route → **401**; a `system:` id on `/rooms` → **401**. The fence holds in both directions. |
+| AC-P5.10 | **Half proved.** The routing half is closed: the gateway suite asserts `PATCH` reaches room-gameplay on the membership path, and the reconnect call is wired to the stream's `onReconnect`. The live half — drop a client, return inside 60 s — was not run, because the window only opens on a session invalidation and staging that on top of an in-flight game is a probe in its own right. **Open, and named as such.** |
+| AC-P5.11 | `python ci/contracts/validate.py` green on the generated sample. Red on a hand-edit, in both directions: `'gameNumber' is a required property` **and** `Additional properties are not allowed ('gameId' was unexpected)` — the leak detector works. The producer-side golden test goes red on the same edit. |
+| AC-P5.12 | `kind delete cluster` → `TARGET_REVISION=feat/p5-async-spine install.sh` → gateway, identity, room-gameplay, outbox-relay, timer-worker all `Synced/Healthy`, digest-pinned, secrets decrypted, both new targets scraped. |
+| AC-P5.13 | Branch pipelines green: room-gameplay (5 jobs), timer-worker (3), outbox-relay (3), and the combined run (**23 jobs, all green**). Every changed service's pinned digest verified to differ from `main`'s; identity's, untouched, is identical. |
+
+### What the drill caught that nothing else did
+
+**Two services that read a schema they do not own must tolerate its absence.** Both Go workers came
+up before room-gameplay had migrated and spent the cold start logging
+`relation "outbox" does not exist` / `relation "rooms" does not exist`. They backed off and recovered
+on their own — **0 restarts each** — and the backlog and due queries were answering by the time the
+first game was played. Nothing in the repo was wrong; the ordering simply is not guaranteed, and only
+an empty cluster asks that question.
+
+**One tick arrived 2699 seconds late, and it is not yet explained.** `ed63330d` was due at 01:09:41
+and ticked at 01:54:40 — the worker's *first ever* tick. `timerworker_sweep_failures_total` stayed at
+12 throughout that window, so the poller was not failing; it simply returned no due rooms for
+45 minutes. The control room created afterwards fired 0.26 s late on the same code path, and the
+three turn timeouts in the idle game were all sub-second, so the mechanism is right and this was a
+one-off. It is recorded rather than explained because the evidence does not support a cause: the row
+is gone, and `lateBySeconds` (2699) and the SQL predicate disagree about when it became due.
+
+The review pass acted on the part that *was* actionable: `timerworker_due_rooms` reads `0` both when
+a sweep found nothing and when no sweep has ever run, which is precisely the ambiguity that made the
+above hard to diagnose. `timerworker_sweeps_total` now distinguishes them.
+
 ## Local backend
 
 - [ ] `./gradlew test` green (engine + room-gameplay), including the new deadline tests
