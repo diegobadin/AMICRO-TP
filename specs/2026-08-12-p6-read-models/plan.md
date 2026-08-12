@@ -43,8 +43,13 @@ where the consume *loop* backs off (delta §10.11) but a service that cannot cre
 nothing to back off toward.
 
 **Done when** `kubectl -n postgres get database ranking analytics` shows both owned by their own
-role, `seal.sh` runs clean and produces no diff on the two pre-existing secrets, and the contract
-check is green with three consumers listed.
+role, and the contract check is green with three consumers listed.
+
+*Note on re-sealing:* `kubeseal` draws a fresh session key per run, so re-sealing an **unchanged**
+plaintext still rewrites its ciphertext. Every existing `SealedSecret` therefore shows a diff after
+`seal.sh`, and that diff means nothing. Restore the ones whose plaintext did not change
+(`git checkout --`) and commit only the new files — otherwise the commit claims to have touched
+credentials it did not.
 
 ---
 

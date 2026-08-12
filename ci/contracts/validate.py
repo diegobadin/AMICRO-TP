@@ -24,12 +24,16 @@ HERE = Path(__file__).parent
 SCHEMA = json.loads((HERE / "game-completed.schema.json").read_text())
 SAMPLE = HERE / "samples" / "game-completed.json"
 
-# Fields each CONSUMER placeholder reads (must remain required by the schema).
+# Fields each CONSUMER reads (must remain required by the schema).
 # ranking filters casual, non-abandoned games and scores Elo off the finishing order;
-# analytics-workers key their projections on the room and its position in that room's log.
+# analytics-workers key their projections on the room and its position in that room's log;
+# spectator needs only enough to recognise the event and place it in the room's log — this is the
+# terminal signal that tells its projection the game is over, and it arrives on the lifecycle topic
+# rather than the public one it reads the board from.
 CONSUMER_REQUIRED = {
     "ranking": ["roomType", "isAbandoned", "finishingOrder", "cardPointTotals", "gameNumber"],
     "analytics-workers": ["roomId", "sequenceNumber", "gameNumber", "at"],
+    "spectator": ["type", "roomId", "sequenceNumber"],
 }
 
 

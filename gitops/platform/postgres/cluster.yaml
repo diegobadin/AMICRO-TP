@@ -23,6 +23,16 @@ spec:
         login: true
         passwordSecret:
           name: room-gameplay-db-role
+      - name: ranking
+        ensure: present
+        login: true
+        passwordSecret:
+          name: ranking-db-role
+      - name: analytics
+        ensure: present
+        login: true
+        passwordSecret:
+          name: analytics-db-role
   storage:
     size: 2Gi
   resources:

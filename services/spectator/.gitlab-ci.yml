@@ -12,16 +12,22 @@
     - npm test
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+    - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "build:spectator":
   extends: .build-image
-  needs: ["test:spectator"]
+  # Same shape as the other two consumers: optional because the check only enters the pipeline when
+  # the schema or one of the paired services changes, and a `needs:` on an absent job is a config
+  # error. When it IS present it gates.
+  needs:
+    - "test:spectator"
+    - job: "test:contract:game-completed"
+      optional: true
   variables:
     SVC: spectator
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+    - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "deliver:spectator":
   stage: deliver
@@ -36,7 +42,7 @@
     # helm push /tmp/spectator-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/spectator/**/*", "ci/templates/**/*"]
+    - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 # Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
 "deploy-staging:spectator":
