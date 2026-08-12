@@ -7,9 +7,18 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# One replica. The consumer group would rebalance correctly across more, but this system plays one
+# game at a time — a second replica buys nothing except a rebalance to reason about.
 replicas: 1
 port: 8084
 healthPath: /health
 logLevel: info
+
+imagePullSecrets: []
+secretName: "" # ranking-secrets: its own database password, and nothing else
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
 
 env: []

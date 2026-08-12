@@ -3,5 +3,24 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/ranking
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: ranking-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
+# Its own database and its own role since P6 — the connection parts are plain config and the
+# password arrives through secretName above. It reads Kafka and writes only its own projections, so
+# there is nothing else for it to hold.
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: ranking
+  - name: DATABASE_USER
+    value: ranking
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+# No `service:` block: this chart only ever renders a ClusterIP, which is what P6 wants anyway —
+# the gateway is the only door and it proxies the rating reads (decision E4).
