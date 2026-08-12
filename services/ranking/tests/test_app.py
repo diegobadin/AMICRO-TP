@@ -59,7 +59,10 @@ def test_unknown_path_returns_404() -> None:
     assert body["error"] == "not_found"
 
 
-def test_a_write_verb_is_not_a_route() -> None:
-    # Ranking is a read model. Nothing here is writable through HTTP.
-    status, _ = route("POST", "/players/alice/rating", StubStore())
-    assert status == 404
+def test_it_is_read_only() -> None:
+    # Read-only is structural, not a branch: the handler defines `do_GET` and nothing else, so the
+    # stdlib answers 501 to any other verb without the router being consulted.
+    import app
+
+    handler = app.make_handler(StubStore(), lambda: (b"", "text/plain"))
+    assert not [name for name in dir(handler) if name.startswith("do_") and name != "do_GET"]

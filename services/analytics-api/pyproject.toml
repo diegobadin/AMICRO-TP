@@ -1,9 +1,12 @@
 [project]
 name = "unoarena-analytics-api"
-version = "0.1.0"
-description = "UnoArena analytics-api service (placeholder, stdlib-only runtime)"
+version = "0.2.0"
+description = "UnoArena analytics query API — read-only over the analytics projections"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "psycopg[binary]==3.2.3",
+  "prometheus-client==0.21.1",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
@@ -23,7 +26,10 @@ ignore = ["UP017"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app.py", "server.py", "tests"]
+# tests/test_queries.py imports the WRITER's schema off the checkout — that import is the CQRS seam
+# and is deliberately not in the runtime image, so mypy needs to be pointed at it explicitly.
+mypy_path = ["../analytics-workers"]
+files = ["app.py", "server.py", "reader.py", "queries.py", "metrics.py", "tests"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

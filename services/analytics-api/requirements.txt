@@ -1,0 +1,4 @@
+# Runtime dependencies, pinned exactly. No Kafka client: this service is the READ side and never
+# consumes anything — it only queries the projections analytics-workers writes.
+psycopg[binary]==3.2.3
+prometheus-client==0.21.1

@@ -35,12 +35,15 @@ def _limit(query: dict[str, list[str]]) -> int:
 
 
 def route(method: str, path: str, store: Any) -> tuple[int, dict[str, Any]]:
-    """Pure router: map (method, path, store) to (status_code, body)."""
+    """Pure router: map (path, store) to (status_code, body).
+
+    `method` is always `GET`: the handler below defines `do_GET` and nothing else, so the stdlib
+    answers `501` to every other verb before this function is reached. Ranking is a read model, and
+    that is enforced by what exists rather than by a branch here.
+    """
     parts = urlsplit(path)
     query = parse_qs(parts.query)
 
-    if method != "GET":
-        return 404, {"error": "not_found", "service": SERVICE}
     if parts.path == "/health":
         return 200, {"status": "ok", "service": SERVICE}
 

@@ -1,7 +1,22 @@
-# Environment overlay for analytics-api (staging). image.digest is pinned by the deploy-gitops CI job at
-# deploy time — build once, promote the SAME digest from staging to production (no rebuild).
+# Environment overlay for analytics-api (staging). image.digest is pinned by the deploy-gitops CI job
+# at deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/analytics-api
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+secretName: analytics-secrets # the same role that owns the projections it reads
+# The read side of the analytics CQRS split. It shares analytics-workers' database and role because
+# it reads that context's own projections — and it holds no Kafka connection at all, because the
+# query side consumes nothing.
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: analytics
+  - name: DATABASE_USER
+    value: analytics
