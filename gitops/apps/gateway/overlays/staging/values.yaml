@@ -17,6 +17,14 @@ env:
     value: http://identity.unoarena-staging.svc.cluster.local
   - name: ROOM_GAMEPLAY_URL
     value: http://room-gameplay.unoarena-staging.svc.cluster.local
+  # P6's read models. All ClusterIP: the gateway proxies their reads and relays the spectator's SSE,
+  # so none of them is reachable from outside the cluster any more than room-gameplay is.
+  - name: SPECTATOR_URL
+    value: http://spectator.unoarena-staging.svc.cluster.local
+  - name: RANKING_URL
+    value: http://ranking.unoarena-staging.svc.cluster.local
+  - name: ANALYTICS_API_URL
+    value: http://analytics-api.unoarena-staging.svc.cluster.local
   # The session-kill channel identity has been publishing to since P2 (Architecture §5.5), and from
   # F4 the source of the room streams as well.
   - name: REDIS_URL

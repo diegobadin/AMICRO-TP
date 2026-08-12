@@ -45,3 +45,42 @@ export async function forward(
   const text = response.status === 304 || response.status === 204 ? "" : await response.text();
   return { status: response.status, headers: out, body: text };
 }
+
+export interface StreamSink {
+  write(chunk: string): void;
+  end(): void;
+}
+
+/**
+ * Relay an upstream SSE response chunk by chunk. Used only for `/rooms/:id/spectate`, where the
+ * spectator service owns the projection and the gateway is a pipe.
+ *
+ * This is NOT the player stream: that one is served here, from Redis, by `sse.ts`. The two are kept
+ * apart because their guards differ — the player's feed detects gaps and resyncs against a log,
+ * while a spectator's frames each carry the whole view and there is nothing to reconstruct.
+ *
+ * `signal` is the client's disconnect. Without it a spectator who closes the tab leaves the gateway
+ * holding an upstream connection that the spectator service still counts.
+ */
+export async function forwardStream(
+  baseUrl: string,
+  path: string,
+  headers: Record<string, string>,
+  sink: StreamSink,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { ...headers, accept: "text/event-stream" },
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    sink.end();
+    return;
+  }
+  const decoder = new TextDecoder();
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    if (signal.aborted) break;
+    sink.write(decoder.decode(chunk, { stream: true }));
+  }
+  sink.end();
+}

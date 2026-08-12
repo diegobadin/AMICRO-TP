@@ -8,6 +8,9 @@ export interface Config {
   port: number;
   identityUrl: string;
   roomsUrl: string;
+  spectatorUrl: string;
+  rankingUrl: string;
+  analyticsUrl: string;
   redisUrl: string;
   jwtSecret: string;
   sessionTtlSeconds: number;
@@ -18,6 +21,10 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 8080),
     identityUrl: (env.IDENTITY_URL ?? "http://localhost:8085").replace(/\/$/, ""),
     roomsUrl: (env.ROOM_GAMEPLAY_URL ?? "http://localhost:8081").replace(/\/$/, ""),
+    // P6's three read models. All ClusterIP behind this one door, like every backend since P4.
+    spectatorUrl: (env.SPECTATOR_URL ?? "http://localhost:8086").replace(/\/$/, ""),
+    rankingUrl: (env.RANKING_URL ?? "http://localhost:8084").replace(/\/$/, ""),
+    analyticsUrl: (env.ANALYTICS_API_URL ?? "http://localhost:8091").replace(/\/$/, ""),
     redisUrl: env.REDIS_URL ?? "redis://localhost:6379",
     // The key identity signs with. Symmetric, so the gateway is the one verifier and identity is
     // unchanged; RS256 + JWKS is the upgrade when there is a second one (CHANGELOG-design.md).

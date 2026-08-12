@@ -8,7 +8,7 @@
 import { Principal, Tokens } from "./auth.js";
 import { SERVICE } from "./config.js";
 
-export type Target = "identity" | "room-gameplay" | "gateway";
+export type Target = "identity" | "room-gameplay" | "spectator" | "ranking" | "analytics" | "gateway";
 
 export interface Route {
   target: Target;
@@ -31,6 +31,9 @@ interface Entry {
 
 const identity = (label: string, auth: boolean): Route => ({ target: "identity", label, auth, stream: false });
 const rooms = (label: string): Route => ({ target: "room-gameplay", label, auth: true, stream: false });
+// P6's read models. Every one of them needs a session (decision E4): a spectator is a logged-in
+// player who is not seated at the table, which is what makes a spectator count mean anything.
+const read = (target: Target, label: string): Route => ({ target, label, auth: true, stream: false });
 
 // `[^/]+` rather than a uuid pattern: the id format is room-gameplay's business, and a gateway that
 // disagrees with it would reject requests the service would have accepted.
@@ -53,6 +56,21 @@ const TABLE: Entry[] = [
     pattern: /^\/rooms\/[^/]+\/stream$/,
     route: { target: "gateway", label: "/rooms/:id/stream", auth: true, stream: true },
   },
+  // The second streaming route, and deliberately not the same one. `/stream` is the PLAYER's feed:
+  // the gateway tails Redis itself and enforces membership. `/spectate` is served by the spectator
+  // service off its own projection, and membership is exactly what must NOT be required — a
+  // spectator is by definition not at the table. Same verb, same shape, opposite rule.
+  {
+    methods: ["GET"],
+    pattern: /^\/rooms\/[^/]+\/spectate$/,
+    route: { target: "spectator", label: "/rooms/:id/spectate", auth: true, stream: true },
+  },
+  { methods: ["GET"], pattern: /^\/players\/[^/]+\/rating$/, route: read("ranking", "/players/:id/rating") },
+  { methods: ["GET"], pattern: /^\/players\/[^/]+\/rating-history$/, route: read("ranking", "/players/:id/rating-history") },
+  { methods: ["GET"], pattern: /^\/leaderboard$/, route: read("ranking", "/leaderboard") },
+  { methods: ["GET"], pattern: /^\/stats\/overview$/, route: read("analytics", "/stats/overview") },
+  { methods: ["GET"], pattern: /^\/stats\/players\/[^/]+$/, route: read("analytics", "/stats/players/:id") },
+  { methods: ["GET"], pattern: /^\/stats\/rooms\/[^/]+$/, route: read("analytics", "/stats/rooms/:id") },
 ];
 
 // A path that matches but a verb that does not is a 404 here, where the backend would have said
@@ -90,7 +108,11 @@ export function downstreamHeaders(
     const authorization = incoming["authorization"];
     if (typeof authorization === "string") out["authorization"] = authorization;
   }
-  if (route.target === "room-gameplay" && principal) {
+  // Every backend inside the trust boundary is told who the caller is, and can never be told by the
+  // caller. Injecting for all of them rather than only the ones that read it today is the safer
+  // default: the day a read model starts caring about the requester, it must not be the first time
+  // the header is trustworthy.
+  if (route.target !== "identity" && route.target !== "gateway" && principal) {
     out[PLAYER_HEADER] = principal.playerId;
     out[SESSION_HEADER] = principal.sessionId;
   }
@@ -100,7 +122,7 @@ export function downstreamHeaders(
 export type Outcome =
   | { kind: "reply"; route?: Route; reply: Reply }
   | { kind: "proxy"; route: Route; headers: Record<string, string>; principal?: Principal }
-  | { kind: "stream"; route: Route; principal: Principal };
+  | { kind: "stream"; route: Route; principal: Principal; headers: Record<string, string> };
 
 export interface Deps {
   tokens: Tokens;
@@ -132,6 +154,15 @@ export async function resolve(
     return { kind: "reply", route: matched, reply: { status: 401, json: { error: "session_superseded" } } };
   }
 
-  if (matched.stream) return { kind: "stream", route: matched, principal: principal! };
+  // A stream carries headers too: the spectator one is proxied upstream and the service on the far
+  // side requires both trust headers, exactly as room-gameplay does.
+  if (matched.stream) {
+    return {
+      kind: "stream",
+      route: matched,
+      principal: principal!,
+      headers: downstreamHeaders(matched, headers, correlationId, principal),
+    };
+  }
   return { kind: "proxy", route: matched, headers: downstreamHeaders(matched, headers, correlationId, principal), principal };
 }

@@ -11,7 +11,7 @@ import { CORRELATION_HEADER, Outcome, PLAYER_HEADER, SESSION_HEADER, resolve } f
 import { Principal, Tokens } from "./auth.js";
 import { SERVICE, fromEnv } from "./config.js";
 import * as metrics from "./metrics.js";
-import { forward } from "./proxy.js";
+import { forward, forwardStream } from "./proxy.js";
 import { Revocations, listen } from "./revocations.js";
 import { RoomStreams } from "./sse.js";
 
@@ -54,6 +54,19 @@ listen(
   },
   (e) => log("session-subscribe-failed", 0, "-", { error: String(e) }),
 );
+
+// One place that knows where each backend lives. Everything but the gateway's own routes is a
+// ClusterIP service behind this single door.
+const baseUrlFor = (target: string): string =>
+  target === "identity"
+    ? config.identityUrl
+    : target === "spectator"
+      ? config.spectatorUrl
+      : target === "ranking"
+        ? config.rankingUrl
+        : target === "analytics"
+          ? config.analyticsUrl
+          : config.roomsUrl;
 
 const playerOf = (outcome: Outcome) => (outcome.kind === "reply" ? undefined : outcome.principal?.playerId);
 
@@ -123,7 +136,7 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
   };
 
   if (outcome.kind === "proxy") {
-    const base = outcome.route.target === "identity" ? config.identityUrl : config.roomsUrl;
+    const base = baseUrlFor(outcome.route.target);
     const backend = await forward(base, method, url, outcome.headers, body);
     res.writeHead(backend.status, { ...backend.headers, [CORRELATION_HEADER]: correlationId });
     res.end(backend.body);
@@ -133,7 +146,10 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
 
   if (outcome.kind === "stream") {
     const roomId = url.split("/")[2];
-    if (!(await isMember(roomId, outcome.principal, correlationId))) {
+    // Membership is the PLAYER stream's rule and only its rule. A spectator is by definition not at
+    // the table, so requiring it here would make `/spectate` answer 403 to exactly the people it
+    // exists for.
+    if (outcome.route.target === "gateway" && !(await isMember(roomId, outcome.principal, correlationId))) {
       reply(403, { error: "not_a_member" });
       return;
     }
@@ -152,6 +168,28 @@ createServer(async (req: IncomingMessage, res: ServerResponse) => {
     // waiting on a connection that is in fact open and working.
     res.flushHeaders();
     finish(200);
+
+    if (outcome.route.target === "spectator") {
+      // The spectator service owns this projection; the gateway is a pipe. The abort is what tells
+      // it a spectator has gone, so its own count and gauge come back down.
+      const controller = new AbortController();
+      req.on("close", () => controller.abort());
+      try {
+        await forwardStream(
+          config.spectatorUrl,
+          url,
+          outcome.headers,
+          { write: (chunk) => res.write(chunk), end: () => res.end() },
+          controller.signal,
+        );
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          log("spectate-stream-failed", 0, correlationId, { room: roomId, error: String(e) });
+        }
+        res.end();
+      }
+      return;
+    }
 
     // The client can vanish while the replay is still being read out of Redis, and a subscriber
     // nobody detaches keeps the room tailing and the connection gauge wrong.
