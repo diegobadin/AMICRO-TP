@@ -1,7 +1,7 @@
 # Environment overlay for ranking (staging). image.digest is pinned by the deploy-gitops CI job at
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
-  repository: ""
+  repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/ranking
   digest: "" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry

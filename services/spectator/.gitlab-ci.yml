@@ -54,11 +54,13 @@
     - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 # A real gate since P6: it pins the digest into the staging overlay and waits for Argo to report the
-# app healthy, exactly as the other wired services do.
+# app healthy, exactly as the other wired services do. `needs` includes build:spectator for its dotenv
+# ($IMAGE, $IMAGE_DIGEST) — deliver alone does not carry them, and without it the pin writes empty
+# strings into the overlay and the job still goes green.
 "deploy-staging:spectator":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:spectator"]
+  needs: ["deliver:spectator", "build:spectator"]
   variables:
     SVC: spectator
     ENV: staging
