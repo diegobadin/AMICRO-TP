@@ -7,9 +7,18 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# One replica. The consumer projects into Redis and fans out to the streams it holds itself, so a
+# second replica would serve spectators the partitions it does not consume — see src/broker.ts for
+# the Redis pub/sub hop that would fix it. Written down rather than built.
 replicas: 1
 port: 8086
 healthPath: /health
 logLevel: info
+
+imagePullSecrets: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
 
 env: []

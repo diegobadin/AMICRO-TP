@@ -123,9 +123,11 @@ test is decoration.
 - [ ] **Dedup.** Delete the `consumed_events` insert from ranking's transaction → the replay test
       goes red (a rating moves twice).
 - [ ] **Enum name.** Change the filter to `"Casual"` → the skip test goes red.
-- [ ] **Interleaving.** Replace spectator's seen-set with a `seq` high-water mark → the interleaving
-      property goes red. *This one is the point of E3's refinement; if it stays green the property is
-      not probing the cross-topic case.*
+- [ ] **Interleaving.** Replace spectator's seen-set with a `seq` high-water mark → three tests in
+      `tests/store.test.ts` go red, including *"survives a lifecycle event overtaking an earlier
+      public one"*. **Not** the projection property in `tests/view.test.ts`: that one exercises
+      `apply()`, which never sees the dedup, and it stays green under this break. The two layers need
+      two tests, and naming the wrong one would send the next reader chasing a phantom.
 - [ ] **Sticky terminal.** Remove the stickiness rule → the out-of-order `GameCompleted` test goes
       red.
 - [ ] **Privacy.** Add `seed` to the spectator view's field list → the ACL test **and** the

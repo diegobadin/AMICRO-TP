@@ -3,5 +3,19 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/spectator
   digest: "" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
+# No secretName: this service holds no credential. Its input is Kafka and its store is Redis, and on
+# this platform neither asks for one — persistence-layer §5 makes the whole context a Redis read
+# model, so there is not even a database password to seal.
+env:
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+  # The same Redis the gateway and room-gameplay use, under its own `spectator:*` keyspace
+  # (persistence-layer §7). Losing it costs the projection, which Kafka can rebuild.
+  - name: REDIS_URL
+    value: redis://redis.redis.svc.cluster.local:6379

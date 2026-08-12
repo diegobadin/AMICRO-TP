@@ -116,10 +116,25 @@ nothing, and `GET /leaderboard` returns them in order.
     connection inside a retrying loop, left on for a one-shot.
 
 3.2 `view.ts` — the projection, a pure function `(view, event) → view`. Fields, and only these:
-    `roomId`, `status`, `players[{id, cardCount, isConnected}]`, `topCard`, `direction`,
-    `currentTurn`, `turnDeadline`, `gameNumber`, `lastSequence`, `spectatorCount`. There is
+    `roomId`, `roomType`, `status`, `maxPlayers`, `gameNumber`, `playerOrder`,
+    `players[{id, cardCount, isConnected, calledUno, forfeited}]`, `topCard`, `color`, `direction`,
+    `currentTurn`, `deckSize`, `finishingOrder`, `lastSequence`, `spectatorCount`. There is
     physically nowhere to put a hand, which is architecture §6's third privacy layer and the reason
     it is a layer rather than a check.
+
+    **Two refinements against the field list this plan first carried**, both the same trap — a rule
+    that belongs to another context being copied into this one, which is precisely the defect P5's
+    review pass found:
+
+    - **`turnDeadline` is not a spectator field.** No public event carries it. Deriving it from
+      `GameStarted.turnTimeoutSeconds` plus the last event's `at` would put room-gameplay's deadline
+      rule in a second place, free to drift. The *player's* board still shows it, because
+      room-gameplay serves it there from the projection that owns it.
+    - **`cardCount` starts `null`, not 7.** The deal size is nowhere in `GameStarted`'s public
+      payload, and hardcoding it here would be the same second copy. Counts fill themselves in as
+      players act — `CardPlayed` carries `playerCardCount`, `CardDrawn` `newCardCount`, `ForcedDraw`
+      `newHandSize` — so a spectator who joins at the first move sees real numbers, and one who
+      joins at the deal sees that they are not yet known. Honest beats plausible.
 
 3.3 `consumer.ts` — consumer group `spectator-view` on **both** `room.public.events` and
     `room.lifecycle.events` (the delta: architecture §1 has it on the public topic alone, which

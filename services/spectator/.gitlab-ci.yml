@@ -1,10 +1,19 @@
-# spectator — a PLACEHOLDER service (not fully-wired): test → build → deliver → deploy-staging (stub).
+# spectator — the privacy-filtered Kafka projection and its SSE fan-out (P6). Fully wired since
+# this phase, and a declared consumer of the GameCompleted contract.
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
 
 "test:spectator":
   stage: test
   image: node:20-alpine
+  # The dedup IS `SADD`'s return value and the TTL IS a Redis behaviour, so the store suite runs
+  # against a real one. Without TEST_REDIS_URL it fails instead of skipping: a silently-skipped
+  # proof is worse than no proof.
+  services:
+    - name: redis:7.4.10-alpine
+      alias: redis
+  variables:
+    TEST_REDIS_URL: "redis://redis:6379"
   script:
     - cd services/spectator
     - npm install --no-audit --no-fund
@@ -44,7 +53,8 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
-# Stub deploy — placeholder service. Manual on default branch until the Argo target is confirmed.
+# A real gate since P6: it pins the digest into the staging overlay and waits for Argo to report the
+# app healthy, exactly as the other wired services do.
 "deploy-staging:spectator":
   extends: .deploy-gitops
   stage: deploy-staging
@@ -54,6 +64,4 @@
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/spectator/**/*"]
-      when: manual
-      allow_failure: true
+    - changes: ["services/spectator/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
