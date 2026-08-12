@@ -1,9 +1,13 @@
 [project]
 name = "unoarena-analytics-workers"
-version = "0.1.0"
-description = "UnoArena analytics-workers service (placeholder worker, stdlib-only runtime)"
+version = "0.2.0"
+description = "UnoArena analytics projection workers — CQRS read models from both room topics"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "confluent-kafka==2.6.1",
+  "psycopg[binary]==3.2.3",
+  "prometheus-client==0.21.1",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
@@ -23,7 +27,13 @@ ignore = ["UP017"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app.py", "server.py", "tests"]
+files = ["app.py", "server.py", "consumer.py", "store.py", "schema.py", "project.py", "metrics.py", "tests"]
+
+# confluent-kafka ships no type stubs. The seam is narrow — a Consumer and a Message — and both are
+# behind `Any` parameters in consumer.py so the rules themselves stay typed.
+[[tool.mypy.overrides]]
+module = ["confluent_kafka.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -8,9 +8,19 @@
 "test:analytics-workers":
   stage: test
   image: python:3.12-slim
+  # "a replay does not double-count" is a property of the transaction, not of any branch — a fake
+  # would only test the fake. Without TEST_DATABASE_URL the suite fails rather than skips.
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: analytics
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: analytics
+    TEST_DATABASE_URL: "postgresql://analytics:test@postgres:5432/analytics"
   script:
     - cd services/analytics-workers
-    - pip install ruff mypy pytest
+    - pip install --quiet -r requirements.txt ruff mypy pytest
     - ruff check .
     - mypy .
     - pytest
@@ -48,16 +58,16 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/analytics-workers/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
-# Stub: not fully-wired (no integration-staging). Manual on default branch until cluster confirmed.
+# A real gate since P6. `needs` includes build:analytics-workers for its dotenv ($IMAGE,
+# $IMAGE_DIGEST) — deliver alone does not carry them, and without it the pin writes empty strings
+# into the overlay and the job still goes green.
 "deploy-staging:analytics-workers":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:analytics-workers"]
+  needs: ["deliver:analytics-workers", "build:analytics-workers"]
   variables:
     SVC: analytics-workers
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/analytics-workers/**/*"]
-      when: manual
-      allow_failure: true
+    - changes: ["services/analytics-workers/**/*", "ci/templates/**/*", "ci/contracts/**/*"]

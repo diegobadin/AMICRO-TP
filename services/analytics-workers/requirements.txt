@@ -1,0 +1,5 @@
+# Runtime dependencies, pinned exactly. Until P6 every Python service here was stdlib-only; a
+# consumer needs a broker client and a database driver, so this is the first one that is not.
+confluent-kafka==2.6.1
+psycopg[binary]==3.2.3
+prometheus-client==0.21.1

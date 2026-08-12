@@ -9,4 +9,5 @@ spec:
     app: {{ include "svc.name" . }}
   ports:
     - port: 80
+      name: http # named so the ServiceMonitor can point at it
       targetPort: {{ .Values.port }}

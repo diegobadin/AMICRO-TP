@@ -183,8 +183,16 @@ and the TTL survive it.
 
 4.2 `schema.py` — `player_stats(player_id pk, games_played, games_won, games_abandoned,
     total_card_points, last_played_at)`; `room_games(room_id, game_number, room_type, is_abandoned,
-    finishing_order jsonb, move_count, completed_at, primary key (room_id, game_number))`;
-    `overview(metric pk, value)` for the global counters; and `consumed_events`.
+    finishing_order jsonb, completed_at, primary key (room_id, game_number))`;
+    `room_activity(room_id pk, ...)`; `overview(metric pk, value)` for the global counters; and
+    `consumed_events`.
+
+    **Refinement: `move_count` cannot live on `room_games`.** This plan first put it there, but the
+    public events that would feed it — `CardPlayed`, `CardDrawn` — carry no `gameNumber`, so a move
+    cannot be attributed to a game without re-deriving "which game was open at sequence N", which is
+    room-gameplay's state and not analytics'. Per-**room** is the honest granularity the events
+    actually support, so activity counters move to `room_activity` and `room_games` keeps only what
+    `GameCompleted` states. `/stats/rooms/{id}` returns both.
 
 4.3 `project.py` — the apply functions, pure where they can be. `GameCompleted` feeds player stats
     and `room_games`; the public topic's card events feed `move_count` and the overview's move

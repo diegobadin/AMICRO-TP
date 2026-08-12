@@ -14,8 +14,13 @@ spec:
       labels:
         app: {{ include "svc.name" . }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001 # matches the Dockerfile's numeric USER — kubelet cannot verify a named one
       containers:
         - name: {{ include "svc.name" . }}
           image: {{ include "svc.image" . | quote }}
@@ -30,6 +35,11 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.healthPath }}
