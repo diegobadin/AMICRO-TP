@@ -90,7 +90,9 @@ func (w *worker) sweep(ctx context.Context) error {
 // Backoff applies to the *poll*, not to the tick: a database that is down should not be asked every
 // second, whereas a room that is still due costs one row and would be found again anyway.
 func (w *worker) run(ctx context.Context) {
-	wait := w.interval
+	// Sweep immediately on start, like the relay does: a pod that has just replaced another may
+	// already have overdue rooms waiting for it, and there is nothing to gain by sleeping first.
+	wait := time.Duration(0)
 	for {
 		select {
 		case <-ctx.Done():

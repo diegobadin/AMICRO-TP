@@ -34,6 +34,15 @@ var (
 		Name: "outboxrelay_backlog_rows",
 		Help: "Outbox rows still unpublished",
 	})
+
+	// The two gauges above are the ones an alert would watch, and unset they both read 0 — "no
+	// backlog, no lag", the healthiest possible reading, which is exactly what a relay that has
+	// never managed to query the database would also report. This counter is what tells the two
+	// apart. Same shape of lie as P4's Redis outage, caught here by review rather than by a drill.
+	backlogReads = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "outboxrelay_backlog_reads_total",
+		Help: "Backlog queries that succeeded, so an unset gauge is distinguishable from a healthy one",
+	})
 )
 
 func logLine(level, action string, fields map[string]any) {

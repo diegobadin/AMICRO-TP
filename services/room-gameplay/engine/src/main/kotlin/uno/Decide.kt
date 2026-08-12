@@ -59,13 +59,18 @@ fun expire(state: RoomState, now: Instant, config: EngineConfig = EngineConfig()
  */
 fun nextDeadline(state: RoomState, config: EngineConfig = EngineConfig()): Instant? = when {
     !state.exists || state.status == RoomStatus.COMPLETED -> null
+    // The room's own clock: the last arrival starts the window, so a late joiner gets a full one.
     state.status == RoomStatus.WAITING ->
         (state.players.maxOfOrNull { it.joinedAt } ?: state.createdAt)?.plusSeconds(config.waitingRoomExpirySeconds)
-    else -> listOfNotNull(
-        state.game?.takeIf { it.status == GameStatus.IN_PROGRESS }?.turnTimerDeadline,
-        state.game?.challengeWindow?.expiresAt,
-        *state.players.map { (it.connection as? ConnectionStatus.Disconnected)?.deadline }.toTypedArray(),
-    ).minOrNull()
+    // Mirrors `expireOverdue` below, deadline for deadline: the turn timer only while a game is
+    // running, the challenge window and the reconnection windows whenever they are open. A property
+    // test holds the two together, because a deadline the engine acts on but this does not advertise
+    // is one the worker would never come for.
+    else -> {
+        val disconnections = state.players.mapNotNull { (it.connection as? ConnectionStatus.Disconnected)?.deadline }
+        val running = state.game?.takeIf { it.status == GameStatus.IN_PROGRESS }
+        (disconnections + listOfNotNull(running?.turnTimerDeadline, state.game?.challengeWindow?.expiresAt)).minOrNull()
+    }
 }
 
 /**
@@ -432,9 +437,11 @@ private fun Log.expireOverdue(now: Instant, config: EngineConfig) {
  * gets a full one instead of inheriting the tail of somebody else's.
  */
 private fun Log.expireWaitingRoom(now: Instant, config: EngineConfig) {
-    if (!state.exists) return
-    val since = state.players.maxOfOrNull { it.joinedAt } ?: state.createdAt ?: return
-    if (now.isBefore(since.plusSeconds(config.waitingRoomExpirySeconds))) return
+    // Asks the same function the projection caches, rather than restating the rule. The two were
+    // written out separately at first, which is a divergence waiting to happen: the cached deadline
+    // is only useful because it is the *same* number this line compares against.
+    val deadline = nextDeadline(state, config) ?: return
+    if (now.isBefore(deadline)) return
     emit(RoomExpired("waiting_timeout", now))
 }
 

@@ -75,8 +75,12 @@ func (r *relay) drain(ctx context.Context) (int, error) {
 func (r *relay) observeBacklog(ctx context.Context) {
 	oldest, rows, err := r.store.backlog(ctx)
 	if err != nil {
+		// Left deliberately unlogged: the drain that ran a moment ago hit the same database and
+		// reported it. What must not happen is the gauges quietly staying at a healthy-looking
+		// value with nothing to say they are stale — hence the counter rather than a log line.
 		return
 	}
+	backlogReads.Inc()
 	lagSeconds.Set(oldest)
 	backlogRows.Set(float64(rows))
 }

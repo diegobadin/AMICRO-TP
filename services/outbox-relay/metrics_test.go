@@ -17,6 +17,7 @@ func TestMetricsExposeTheExactNamesDashboardsQuery(t *testing.T) {
 	publishFailures.Inc()
 	lagSeconds.Set(12)
 	backlogRows.Set(596)
+	backlogReads.Inc()
 
 	res := httptest.NewRecorder()
 	promhttp.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -27,6 +28,8 @@ func TestMetricsExposeTheExactNamesDashboardsQuery(t *testing.T) {
 		"outboxrelay_publish_failures_total",
 		"outboxrelay_lag_seconds",
 		"outboxrelay_backlog_rows",
+		// Without this, an unset lag gauge and a healthy one read the same.
+		"outboxrelay_backlog_reads_total",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q from /metrics", want)

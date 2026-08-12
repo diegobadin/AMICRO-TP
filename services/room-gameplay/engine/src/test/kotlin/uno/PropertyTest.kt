@@ -149,6 +149,63 @@ class PropertyTest {
             }
         }
     }
+
+    /**
+     * P5: `nextDeadline` is cached on the `rooms` projection and is the *only* thing the timer worker
+     * looks at, so a deadline the engine would act on but the cache does not advertise is one nobody
+     * ever comes for — the room simply stops. This holds the two together over generated games rather
+     * than trusting that whoever adds the next deadline remembers to update both.
+     */
+    @Test
+    fun `every state the engine would expire advertises a deadline`() {
+        runBlocking {
+            checkAll(Arb.long()) { seed ->
+                val table = Table(listOf("a", "b", "c"), seed)
+                table.seat()
+                var steps = 0
+                while (steps++ < 300 && table.state.game?.status == GameStatus.IN_PROGRESS) {
+                    table.tick()
+                    val advertised = nextDeadline(table.state, table.config)
+                    if (advertised == null) {
+                        // Nothing advertised means nothing to come for, however long we wait.
+                        assertTrue(
+                            expire(table.state, table.now.plusSeconds(100_000), table.config).isEmpty(),
+                            "seed $seed step $steps: advertises no deadline but the engine expires something",
+                        )
+                    } else {
+                        // The advertised instant must be the *earliest* the engine would act, not
+                        // merely one of them: a later one leaves the earlier deadline unserved. The
+                        // boundary differs by deadline — the challenge window and the room expiry
+                        // fire at their instant, the turn and reconnection timers strictly after —
+                        // so the property is checked a millisecond either side of it.
+                        assertTrue(
+                            expire(table.state, advertised.minusMillis(1), table.config).isEmpty(),
+                            "seed $seed step $steps: the engine expires something before $advertised",
+                        )
+                        assertTrue(
+                            expire(table.state, advertised.plusMillis(1), table.config).isNotEmpty(),
+                            "seed $seed step $steps: advertises $advertised but expires nothing there",
+                        )
+                    }
+                    table.step()
+                }
+            }
+        }
+    }
+
+    /** The other direction: a room that is finished must advertise nothing, or the worker never stops. */
+    @Test
+    fun `a finished room advertises no deadline`() {
+        runBlocking {
+            checkAll(Arb.long()) { seed ->
+                val table = Table(listOf("a", "b"), seed).playOut()
+                if (table.state.status == RoomStatus.COMPLETED) {
+                    assertEquals(null, nextDeadline(table.state, table.config), "seed $seed")
+                }
+            }
+        }
+    }
+
 }
 
 /**
@@ -214,4 +271,5 @@ class ReplayTest {
             }
         }
     }
+
 }

@@ -50,18 +50,17 @@ func (t *tickClient) tick(ctx context.Context, roomID string) error {
 	return nil
 }
 
-func correlationID() string {
-	buf := make([]byte, 8)
+// Both ids exist to be greppable across two services' logs, not to be unguessable; the clock is a
+// good enough fallback if the entropy source ever refuses, because a duplicate id costs a confusing
+// log line and nothing else.
+func randomID(prefix string, bytes int) string {
+	buf := make([]byte, bytes)
 	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("tick-%d", time.Now().UnixNano())
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	}
-	return "tick-" + hex.EncodeToString(buf)
+	return prefix + "-" + hex.EncodeToString(buf)
 }
 
-func newSessionID() string {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("worker-%d", time.Now().UnixNano())
-	}
-	return "worker-" + hex.EncodeToString(buf)
-}
+func correlationID() string { return randomID("tick", 8) }
+
+func newSessionID() string { return randomID("worker", 16) }

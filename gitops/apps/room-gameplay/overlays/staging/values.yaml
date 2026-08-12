@@ -31,6 +31,14 @@ env:
     value: "2"
   - name: TURN_TIMEOUT_SECONDS
     value: "30"
+  # P5's two levers, written out at their defaults rather than left implicit: they change what a
+  # demo looks like, and a value you cannot see in the overlay is one nobody knows they can turn.
+  # Lowering the expiry mid-flight is safe; raising it leaves already-cached deadlines early, which
+  # costs a few wasted ticks until the longer window passes (see ESTADO-FINAL).
+  - name: IDLE_TIMEOUTS_BEFORE_FORFEIT
+    value: "3"
+  - name: WAITING_ROOM_EXPIRY_SECONDS
+    value: "900"
 # No NodePort since P4. It trusts `X-Player-Id` from the gateway and validates nothing itself, so
 # being unreachable from outside the cluster is part of the security argument, not an inconvenience.
 service:

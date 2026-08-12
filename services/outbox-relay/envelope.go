@@ -22,7 +22,7 @@ const (
 )
 
 func message(row outboxRow) (kafka.Message, error) {
-	body, occurredAt, err := body(row)
+	value, occurredAt, err := renderBody(row)
 	if err != nil {
 		return kafka.Message{}, err
 	}
@@ -48,14 +48,14 @@ func message(row outboxRow) (kafka.Message, error) {
 		Topic: row.topic,
 		// Partition key: per-room ordering is what every consumer in §2.3.2 relies on.
 		Key:     []byte(row.roomID),
-		Value:   body,
+		Value:   value,
 		Headers: headers,
 	}, nil
 }
 
 // roomId and sequenceNumber are merged in rather than wrapped around: the catalog's payloads carry
 // them as fields, and an envelope-around-payload would make every consumer unwrap a level.
-func body(row outboxRow) ([]byte, string, error) {
+func renderBody(row outboxRow) ([]byte, string, error) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(row.payload, &payload); err != nil {
 		return nil, "", err

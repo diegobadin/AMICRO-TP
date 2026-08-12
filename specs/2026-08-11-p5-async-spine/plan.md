@@ -16,7 +16,7 @@ self-review pass at the end of the phase.
 | D4 | **The consecutive-timeout counter is replayed, not stored** | `EventStore.load` replays every event from `room_events` with no snapshot, so a derived field on `Game` costs nothing to add and cannot go stale. It increments on `TurnTimedOut` and resets **only** on events a player command can produce (R2) |
 | D5 | **`system:`-prefixed player ids are fenced**: the internal tick route requires one, the player-facing routes reject one | The gateway builds `X-Player-Id` from the JWT `sub` (a UUID from identity), so this cannot happen today — the whitelist is the control. This is the second lock on the same door, and it costs one predicate |
 | D6 | **Kafka client: `segmentio/kafka-go`** (pure Go) | No cgo, so `CGO_ENABLED=0` and the distroless *static* base stay exactly as they are. `confluent-kafka-go` would drag in librdkafka and change both Dockerfiles' base images to justify one producer |
-| D7 | **`outboxrelay_lag_seconds` is read from Postgres** — `now() - min(created_at) where published_at is null` — never from an in-memory cursor | P4/F8's lesson one layer down: a heartbeat that reads this process's own idea of progress keeps ticking happily while the thing it measures has stopped. The number has to come from the source of truth |
+| D7 | **`outboxrelay_lag_seconds` is read from Postgres** — `now() - min(created_at) where published_at is null` — never from an in-memory cursor | P4/F8's lesson one layer down: a heartbeat that reads this process's own idea of progress keeps ticking happily while the thing it measures has stopped. The number has to come from the source of truth. *Corrected in review*: this plan first said the query would run "on a slower timer". It runs on every poll, and should — both aggregates are served by the partial index over unpublished rows, which is empty in the steady state, so the throttle would have been complexity guarding against nothing |
 | D8 | **The worker's `X-Session-Id` is a per-pod UUID generated at start**, logged once | Makes a tick traceable to the pod that sent it, and satisfies `Auth.kt`'s requirement for both headers with something honest rather than a constant string |
 | D9 | **The two Go services stay two independent modules** with their own tiny health/metrics/log shape | They are ~300 lines each and deploy independently; a shared module would be a fourth thing to version for the sake of forty duplicated lines, and it would couple two services the pipeline treats as independent |
 | D10 | **Metric names follow architecture §5** (`rows_published`, `publish_failure`, `lag_seconds`) with a service prefix, and tests assert the **exact exposed strings** | P3's lesson: Prometheus rewrites names it dislikes (`_created` is reserved by OpenMetrics), so "some metrics came back" is not an assertion |
@@ -314,3 +314,34 @@ reused unchanged); `nextDeadline` stays in the engine rather than in `EventStore
 `EngineConfig` in the process and the projection cannot drift from the rules; and the CLI's
 `remaining()` takes an injectable `now` purely so the render is pinnable in a test — the client still
 never decides that a deadline passed.
+
+## Second review pass (2026-08-12, post-merge)
+
+A full re-read of the branch as a reviewer, on the standing "question every decision" prompt. Six
+findings; four changed, two argued and left. The first is the one that mattered.
+
+| # | Finding | Done |
+|---|---------|------|
+| R6 | **The `WAITING` expiry rule was written out twice** — once in `expireWaitingRoom` (the decision) and once in `nextDeadline` (the cache the timer worker polls). Two copies of one rule, where the whole point of the second is to be the same number as the first. Nothing forced them to agree, and if they ever drifted the worker would arrive early forever or never arrive at all. | `expireWaitingRoom` now asks `nextDeadline` instead of restating the rule. One definition, used both to advertise and to decide. |
+| R7 | **Nothing tied the cache to the rule for the other three deadlines** either — turn timer, challenge window, reconnection. A deadline added to `expireOverdue` and forgotten in `nextDeadline` is a room that quietly stops. | New property over generated games: the advertised instant must be the *earliest* the engine would act — nothing expires a millisecond before it, something expires a millisecond after. **The first version of this test did not bite** (it probed 100 000 s out, which any deadline satisfies); tightened until removing the challenge-window term turned it red. |
+| R8 | **`outboxrelay_lag_seconds` and `outboxrelay_backlog_rows` both read `0` when the backlog query has never succeeded** — "no backlog, no lag", the healthiest possible reading, from a relay that cannot reach its database. The same shape of lie as P4's Redis outage, and on the two numbers an alert would watch. | `outboxrelay_backlog_reads_total` separates "observed and empty" from "never observed", mirroring `timerworker_sweeps_total`. |
+| R9 | **`body` shadowed `body`** in `envelope.go` — a local variable with the same name as the function producing it. Legal Go, confusing to read. | Renamed to `renderBody` / `value`. |
+| R10 | **Two near-identical id generators** in the worker (`correlationID`, `newSessionID`). | Folded into `randomID(prefix, bytes)`. |
+| R11 | **The relay drains immediately on start; the worker slept one interval first.** No reason for the difference. | Both start immediately — a replacement pod may already have overdue rooms waiting. |
+
+**Argued and left unchanged.** The ~80 lines duplicated between the two Go services (`env`, `logLine`,
+`backoff`, the health handler) stay duplicated: each service's image is built with kaniko from *its
+own directory as the build context*, so a shared package would have to live inside both contexts or
+be published as a versioned module — restructuring the build to remove forty lines of `os.Getenv`
+wrappers is a worse trade than the duplication. And `drain` still reports an error after a successful
+publish when `markPublished` fails; the return already carries the row count so the caller can tell,
+and inventing an error type for a case that has never fired is speculative.
+
+**A known edge, found by this pass and documented rather than fixed.** The `WAITING` deadline is
+recomputed from configuration, while the projection caches the value computed when the row was last
+written. *Raising* `WAITING_ROOM_EXPIRY_SECONDS` while a room is waiting therefore leaves a cached
+deadline in the past that the engine will not act on yet, and the worker re-ticks that room every
+second until the longer window passes. It is self-healing, bounded by the new window, costs a read
+per tick, and shows up as a climb in `roomgameplay_timer_ticks_total{result="nothing_due"}`. Storing
+the deadline in an event instead would remove it, at the cost of a non-additive event change — not
+worth it for a lever that is turned by hand.
