@@ -91,7 +91,11 @@
     - 'docker tag "$IMAGE@$IMAGE_DIGEST" ci-identity:smoke'
     # 2) kind cluster: publish the API server + NodePort on the dind host's IP so the job container
     #    can reach them (the `docker` dind service alias is in /etc/hosts).
-    - 'DIND_IP=$(grep -w docker /etc/hosts | awk "{ print \$1 }" | head -1); echo "DIND_IP=$DIND_IP"'
+    #    One awk over the file rather than `grep | awk | head -1`: the runner sets `pipefail`, so
+    #    `head` closing the pipe early makes grep die of SIGPIPE and the line exits 141. It is a
+    #    race on how much grep has written — which is why this passed for months and then did not.
+    #    Matching the alias field exactly also beats `grep -w docker`, which matched docker.local too.
+    - 'DIND_IP=$(awk "{ for (i = 2; i <= NF; i++) if (\$i == \"docker\") { print \$1; exit } }" /etc/hosts); echo "DIND_IP=$DIND_IP"'
     - |
       cat > /tmp/kind.yaml <<EOF
       kind: Cluster
