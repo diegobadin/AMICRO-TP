@@ -101,6 +101,21 @@ them.
 - **Five canned placeholders remain** (`analytics-api`, `analytics-workers`, `ranking`, `spectator`,
   `tournament`) — down from seven. They still carry `digest: ""` and sit in `ImagePullBackOff`.
 
+## After closure — the second review pass (2026-08-12)
+
+Re-read as a reviewer once the phase was already merged, which is where the standing convention says
+the value is. It found the defect the first pass missed: **the `WAITING` expiry rule was written out
+twice**, once as the decision and once as the cache the timer worker polls, with nothing forcing the
+two to agree. Fixed by making the decision ask the cache's own function, and generalised into a
+property over generated games — the advertised deadline must be the *earliest* the engine would act.
+That property **did not bite on its first version** (it probed 100 000 s out, which any deadline
+satisfies) and was tightened until deleting a deadline from the cache turned it red.
+
+It also found `outboxrelay_lag_seconds` and `backlog_rows` reading `0` when the backlog query had
+never succeeded — the healthiest possible reading from a relay that cannot reach its database — and a
+SIGPIPE flake in `integration-staging:identity` that had nothing to do with P5 and would have bitten
+on demo day. Both fixed. Full table in `plan.md`; deltas 10.11 in `CHANGELOG-design.md`.
+
 ## Next
 
 **P6 — ranking, spectator, analytics.** Every one of them is now a consumer group away rather than a

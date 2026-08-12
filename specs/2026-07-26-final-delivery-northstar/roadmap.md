@@ -193,13 +193,45 @@ What P5 inherits, and must not break:
    pull is a public-registry call and can fail for reasons the repo did not cause (P4's first
    attempt; the detail is in that phase's `validation.md`).
 
-## P6 — Ranking, spectator, analytics
+## P6 — Ranking, spectator, analytics — **next**
 
 - Ships: ranking Elo consumer (casual-only, non-abandoned filter); spectator projection with the
   privacy boundary (public info only — no hands, ever) behind `spectate <roomId>`;
   analytics-workers CQRS projections + analytics-api reads (stats, brackets store).
 - CLI: `spectate`.
 - Depends on: P5 (events flowing).
+
+### Handoff from P5 (2026-08-12)
+
+What P6 inherits, and must not break:
+
+- **Both topics are flowing and the envelope is fixed.** `room.public.events` and
+  `room.lifecycle.events` carry CloudEvents in **binary** mode: metadata in `ce-*` headers, the
+  domain event in the body. `ce-id` is `{roomId}:{sequenceNumber}` — the log's primary key — so
+  **that pair is the dedup key** every consumer should use. At-least-once is real, not theoretical:
+  the relay publishes before it marks, so a crash redelivers.
+- **The body is `publicPayload(event)` plus `roomId` and `sequenceNumber`.** No wrapper to unwrap.
+  The privacy filter has been applied *before* the row was written, in the same transaction as the
+  event — the spectator boundary P6 builds on is already true on the wire, and `grep -c seed` over
+  both topics returning 0 is a drill check, not an aspiration.
+- **Per-room ordering holds because the relay drains in `id` order with `roomId` as the partition
+  key.** A consumer that parallelises across partitions keeps it; one that re-orders within a room
+  breaks a guarantee nothing else will restore.
+- **`roomType` on the wire is the Kotlin enum name** (`CASUAL`, `TOURNAMENT`), not the catalog's
+  `Casual`. Ranking filters on it. The contract schema says so; `CHANGELOG-design.md` §10.5 records why.
+- **The contract check now validates a producer-generated sample.** Adding a consumer means adding
+  its required fields to `CONSUMER_REQUIRED` in `ci/contracts/validate.py`, and the schema has
+  `additionalProperties: false` on purpose — a new field is a deliberate two-file change, which is
+  what makes it a leak detector.
+- **`consumed_events` already exists** in room-gameplay's schema, keyed `(source, event_key)`, and is
+  the pattern P5 did *not* need but P6 does: it is how a Kafka consumer is idempotent.
+- **Five of ten deployables are real.** `ranking`, `spectator`, `analytics-workers`, `analytics-api`
+  and `tournament` are the canned placeholders left; they carry `digest: ""` and sit
+  `ImagePullBackOff`, which is their normal state and not a drill regression.
+- **The two Go workers are the shape to copy** for any new poller/consumer: health that reports only
+  that the process is alive (delta 10.11), a success *counter* beside every gauge, and backoff on the
+  loop rather than a crash. Do not add a shared Go module without solving the build context first —
+  kaniko builds each service from its own directory.
 
 ## P7 — Tournaments
 
