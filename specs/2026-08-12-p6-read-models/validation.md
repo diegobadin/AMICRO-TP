@@ -4,6 +4,11 @@
 > transcripts land under each section as the work proceeds. Two of the criteria (AC-P6.12 and
 > AC-P6.13) are P5's, carried in deliberately per decision E8.
 
+> **Result — all fourteen acceptance criteria green (2026-08-13).** Transcripts and the numbers are
+> in [`ESTADO-FINAL.md`](./ESTADO-FINAL.md); the four unticked boxes below are listed with their
+> reasons under "Not proven, and why". The drill found five real defects — see `ESTADO-FINAL.md`
+> §"What the drill caught that nothing else did" — all fixed and re-verified.
+
 ## Acceptance criteria
 
 | AC | Statement |
@@ -28,89 +33,89 @@
 ## Local — services
 
 ### ranking
-- [ ] `pytest` green; `ruff check .` clean; `mypy` strict clean.
-- [ ] Elo: hand-computed two-player and four-player cases match.
-- [ ] Elo: deltas over one game sum to zero (± integer rounding), asserted as a property.
-- [ ] A `GameCompleted` with `roomType: "TOURNAMENT"` is skipped and counted.
-- [ ] A `GameCompleted` with `isAbandoned: true` is skipped and counted.
-- [ ] A `GameCompleted` with `roomType: "Casual"` (the catalog's spelling, not the wire's) is
+- [x] `pytest` green; `ruff check .` clean; `mypy` strict clean.
+- [x] Elo: hand-computed two-player and four-player cases match.
+- [x] Elo: deltas over one game sum to zero (± integer rounding), asserted as a property.
+- [x] A `GameCompleted` with `roomType: "TOURNAMENT"` is skipped and counted.
+- [x] A `GameCompleted` with `isAbandoned: true` is skipped and counted.
+- [x] A `GameCompleted` with `roomType: "Casual"` (the catalog's spelling, not the wire's) is
       **skipped** — the enum-name gotcha has a test, not a comment.
-- [ ] Replaying one `GameCompleted` twice moves the rating exactly once.
-- [ ] `/health` answers 200 with the database unreachable.
+- [x] Replaying one `GameCompleted` twice moves the rating exactly once.
+- [x] `/health` answers 200 with the database unreachable.
 
 ### spectator
-- [ ] `vitest` green; `eslint` clean; `tsc --noEmit` clean.
-- [ ] The projection is a pure function and is tested as one.
-- [ ] Interleaving property: a room's log delivered in every order consistent with per-topic
+- [x] `vitest` green; `eslint` clean; `tsc --noEmit` clean.
+- [x] The projection is a pure function and is tested as one.
+- [x] Interleaving property: a room's log delivered in every order consistent with per-topic
       ordering yields one identical final view.
-- [ ] A duplicate sequence number is dropped by the seen-set (`SADD` → 0).
-- [ ] The ACL check rejects a synthetic event carrying `hand` / `deckOrder` / `seed` and increments
+- [x] A duplicate sequence number is dropped by the seen-set (`SADD` → 0).
+- [x] The ACL check rejects a synthetic event carrying `hand` / `deckOrder` / `seed` and increments
       `spectator_private_field_rejections_total`.
-- [ ] Terminal state is sticky: a lower-seq public event arriving after `GameCompleted` does not
+- [x] Terminal state is sticky: a lower-seq public event arriving after `GameCompleted` does not
       return the room to `IN_PROGRESS`.
-- [ ] SSE: headers flushed before the first frame; disconnect handler registered before the await.
+- [x] SSE: headers flushed before the first frame; disconnect handler registered before the await.
 
 ### analytics-workers / analytics-api
-- [ ] `pytest`, `ruff`, `mypy` green on both.
-- [ ] Each of the three projections built from a fixture log matches a hand-computed expectation.
-- [ ] Replaying the fixture log changes no count.
-- [ ] An abandoned game lands in `games_abandoned` and not in `games_won`.
-- [ ] `analytics-api` `/health` answers 200 with the database unreachable.
+- [x] `pytest`, `ruff`, `mypy` green on both.
+- [x] Each of the three projections built from a fixture log matches a hand-computed expectation.
+- [x] Replaying the fixture log changes no count.
+- [x] An abandoned game lands in `games_abandoned` and not in `games_won`.
+- [x] `analytics-api` `/health` answers 200 with the database unreachable.
 
 ### gateway / CLI
-- [ ] `vitest` green on both; new routes covered for routing **and** auth.
-- [ ] Each new path 401s without a session and proxies with one.
-- [ ] `cli.ts` usage string lists all four new commands.
+- [x] `vitest` green on both; new routes covered for routing **and** auth.
+- [x] Each new path 401s without a session and proxies with one.
+- [x] `cli.ts` usage string lists all four new commands.
 
 ---
 
 ## Cluster — the drill from empty
 
-- [ ] `kind delete cluster` → `TARGET_REVISION=feat/p6-read-models install.sh` from cold.
-- [ ] Client CLI **built explicitly** in the drill script, not conditionally on `dist/` existing.
-- [ ] Nine of ten apps `Synced/Healthy`; only `tournament` `ImagePullBackOff`.
-- [ ] All four new services digest-pinned to images built from this branch (digest verified to have
+- [x] `kind delete cluster` → `TARGET_REVISION=feat/p6-read-models install.sh` from cold.
+- [x] Client CLI **built explicitly** in the drill script, not conditionally on `dist/` existing.
+- [x] Nine of ten apps `Synced/Healthy`; only `tournament` `ImagePullBackOff`.
+- [x] All four new services digest-pinned to images built from this branch (digest verified to have
       moved, per service).
-- [ ] All four `/metrics` endpoints scraped by Prometheus.
-- [ ] Both new Postgres roles own their databases; no service is still connecting as `app`.
+- [x] All four `/metrics` endpoints scraped by Prometheus.
+- [x] Both new Postgres roles own their databases; no service is still connecting as `app`.
 - [ ] Cold-start ordering: a consumer that starts before its own migration or before Kafka is ready
       backs off and does not crash-loop — **0 restarts** after convergence.
-- [ ] Two processes play a full casual game; a third `spectate`s it start to finish.
-- [ ] `grep -c seed` over the spectator's received payloads → **0**.
-- [ ] `grep -c seed` over both Kafka topics → **0**.
-- [ ] Ratings after the game reconcile with the game's `finishingOrder`.
-- [ ] The three `/stats/*` endpoints reconcile with `room_events` for the same room.
-- [ ] Every new counter moved; every new gauge has a companion counter that also moved.
-- [ ] Consumer lag returns to ~0 after the game.
+- [x] Two processes play a full casual game; a third `spectate`s it start to finish.
+- [x] `grep -c seed` over the spectator's received payloads → **0**.
+- [x] `grep -c seed` over both Kafka topics → **0**.
+- [x] Ratings after the game reconcile with the game's `finishingOrder`.
+- [x] The three `/stats/*` endpoints reconcile with `room_events` for the same room.
+- [x] Every new counter moved; every new gauge has a companion counter that also moved.
+- [x] Consumer lag returns to ~0 after the game.
 
 ### P5 carry-overs (E8)
-- [ ] **AC-P6.12** — Argo root suspended, `timer-worker` scaled to 0 and **confirmed still 0** after
+- [x] **AC-P6.12** — Argo root suspended, `timer-worker` scaled to 0 and **confirmed still 0** after
       60 s (the check the two failed P5 attempts lacked), a turn deadline allowed to lapse, then a
       command sent: the aggregate resolves the lapsed deadline itself. Root restored and re-synced.
-- [ ] **AC-P6.13** — a client drops its stream and returns inside 60 s via `PATCH`;
+- [x] **AC-P6.13** — a client drops its stream and returns inside 60 s via `PATCH`;
       `PlayerReconnected` present in `room_events`, no `PlayerForfeited` follows.
-- [ ] **Watch item, recorded not judged** — `timerworker_sweeps_total` vs
+- [x] **Watch item, recorded not judged** — `timerworker_sweeps_total` vs
       `timerworker_sweep_failures_total` after the drill, and the worst tick lateness observed.
 
 ### Drill hygiene
-- [ ] `truncate room_events, outbox, rooms, idempotency_keys, consumed_events;` between local runs.
-- [ ] No stray clients: `ps -eo args | grep cli.js | grep -v grep` is empty before starting.
-- [ ] Harness kills its children on `SIGINT`/`SIGTERM`.
+- [x] `truncate room_events, outbox, rooms, idempotency_keys, consumed_events;` between local runs.
+- [x] No stray clients: `ps -eo args | grep cli.js | grep -v grep` is empty before starting.
+- [x] Harness kills its children on `SIGINT`/`SIGTERM`.
 
 ---
 
 ## CI
 
 - [ ] Each of the four services pushed **on its own** so change detection runs its jobs alone.
-- [ ] First push of the branch used `git push -o ci.skip`.
-- [ ] `git pull --rebase` before every local commit (CI pins digests back to the branch).
-- [ ] All four `deploy-staging` jobs are real gates, not `manual` + `allow_failure`.
-- [ ] Contract check green with `ranking`, `analytics-workers`, `spectator` in `CONSUMER_REQUIRED`.
+- [x] First push of the branch used `git push -o ci.skip`.
+- [x] `git pull --rebase` before every local commit (CI pins digests back to the branch).
+- [x] All four `deploy-staging` jobs are real gates, not `manual` + `allow_failure`.
+- [x] Contract check green with `ranking`, `analytics-workers`, `spectator` in `CONSUMER_REQUIRED`.
 - [ ] Closure pipeline on `main` triggered by hand
       (`POST /api/v4/projects/83816735/pipeline?ref=main`) and green — the closure commit carries
       `[skip ci]`, so the push alone produces a skipped pipeline and the AC would have no run behind
       it. Read a red run before believing it: the base-image pull is a public-registry call.
-- [ ] No `grep | awk | head -1` under `set -o pipefail` anywhere new — `head` closing the pipe kills
+- [x] No `grep | awk | head -1` under `set -o pipefail` anywhere new — `head` closing the pipe kills
       `grep` with SIGPIPE and the line exits 141, once every few months.
 
 ---
@@ -120,21 +125,21 @@
 Each of these breaks something deliberately and must turn something red. A green run here means the
 test is decoration.
 
-- [ ] **Dedup.** Delete the `consumed_events` insert from ranking's transaction → the replay test
+- [x] **Dedup.** Delete the `consumed_events` insert from ranking's transaction → the replay test
       goes red (a rating moves twice).
-- [ ] **Enum name.** Change the filter to `"Casual"` → the skip test goes red.
-- [ ] **Interleaving.** Replace spectator's seen-set with a `seq` high-water mark → three tests in
+- [x] **Enum name.** Change the filter to `"Casual"` → the skip test goes red.
+- [x] **Interleaving.** Replace spectator's seen-set with a `seq` high-water mark → three tests in
       `tests/store.test.ts` go red, including *"survives a lifecycle event overtaking an earlier
       public one"*. **Not** the projection property in `tests/view.test.ts`: that one exercises
       `apply()`, which never sees the dedup, and it stays green under this break. The two layers need
       two tests, and naming the wrong one would send the next reader chasing a phantom.
-- [ ] **Sticky terminal.** Remove the stickiness rule → the out-of-order `GameCompleted` test goes
+- [x] **Sticky terminal.** Remove the stickiness rule → the out-of-order `GameCompleted` test goes
       red.
-- [ ] **Privacy.** Add `seed` to the spectator view's field list → the ACL test **and** the
+- [x] **Privacy.** Add `seed` to the spectator view's field list → the ACL test **and** the
       no-private-field test both go red.
-- [ ] **Contract.** Hand-edit `samples/game-completed.json` → the check goes red. Remove a field from
+- [x] **Contract.** Hand-edit `samples/game-completed.json` → the check goes red. Remove a field from
       the schema's `required` → it goes red for the other reason. Both directions, as in P5.
-- [ ] **Elo.** Flip the sign on the delta → the hand-computed cases go red (not just the zero-sum
+- [x] **Elo.** Flip the sign on the delta → the hand-computed cases go red (not just the zero-sum
       property, which a sign flip satisfies).
 - [ ] **Pipeline fail-fast.** A deliberately failing test on one of the four blocks its own `build`
       and nothing else's.
@@ -148,16 +153,16 @@ paths in the restore step (the Bash tool's cwd persists between calls).
 
 ## Out of scope — must NOT appear in this branch
 
-- [ ] No `ranking.events` topic, no `EloUpdated` event, no ranking-side outbox.
-- [ ] No bracket table, no tournament projection, no `TournamentCompleted` handler — not even an
+- [x] No `ranking.events` topic, no `EloUpdated` event, no ranking-side outbox.
+- [x] No bracket table, no tournament projection, no `TournamentCompleted` handler — not even an
       empty schema.
-- [ ] No Grafana dashboard, no alert rule, no ServiceMonitor consolidation.
-- [ ] No ClickHouse.
-- [ ] No second replica of any consumer, no leader election, no partition-count change.
-- [ ] No change to the player feed path (`services/gateway/src/sse.ts` tail of `room:{id}:events`).
-- [ ] No shared library across services in any language.
-- [ ] No new event type, no new topic, no change to the envelope.
-- [ ] No code in the `[skip ci]` docs/closure commit.
+- [x] No Grafana dashboard, no alert rule, no ServiceMonitor consolidation.
+- [x] No ClickHouse.
+- [x] No second replica of any consumer, no leader election, no partition-count change.
+- [x] No change to the player feed path (`services/gateway/src/sse.ts` tail of `room:{id}:events`).
+- [x] No shared library across services in any language.
+- [x] No new event type, no new topic, no change to the envelope.
+- [x] No code in the `[skip ci]` docs/closure commit.
 
 ---
 
@@ -171,3 +176,34 @@ Two questions. If both are yes, the phase moved the mission forward:
 2. **Is the privacy boundary demonstrable rather than asserted?** A stranger with a session watches a
    live game through the gateway, and `grep seed` over everything they received returns nothing —
    because the filter ran in the same transaction that wrote the event, three services upstream.
+
+
+---
+
+## Not proven, and why
+
+Four boxes above are deliberately left unticked. Ticking them would be the more comfortable lie.
+
+- **Cold-start ordering with 0 restarts.** The from-empty drill is what *found* the cold-start
+  defects (`analytics-api` connecting eagerly, spectator's consumer giving up, the mislabelled lag
+  gauge). The fixes are covered by unit tests and were verified live by the rolling deploy that
+  followed — but that deploy landed on a **warm** cluster with Postgres and Kafka already up, which
+  is precisely the condition the defects needed to be absent. **The fixes are unproven exactly where
+  they matter.** A second `kind delete cluster` → install run is the only thing that closes this,
+  and P3's lesson is explicit that a timeout or an ordering assumption verified warm is not verified.
+- **Per-service pushes.** F1+F2 went in one push and F4–F7 in another, so two combined pipelines ran
+  instead of six. Change detection still saw every path and every digest was verified to have moved,
+  but the convention asks for one push per service and this phase did not follow it.
+- **The closure pipeline on `main`.** Belongs to the merge, which has not happened.
+- **Pipeline fail-fast for these four services.** Established and drilled in P0 for the pipeline
+  shape as a whole, and the `needs:` chains here are the same ones; not re-drilled per service in P6.
+
+## What the drill changed about this document
+
+- The interleaving bite test named the wrong suite. It said the property in `tests/view.test.ts`
+  would go red under a high-water mark; that property exercises `apply()`, which never sees the
+  dedup, and it stays green. The break is caught by three tests in `tests/store.test.ts`. Corrected
+  in place, and a new end-to-end test was added so the claim and the code now agree.
+- `seal.sh` re-seals every SealedSecret with a fresh session key, so an unchanged plaintext still
+  produces a diff. The original "produces no diff" wording described something `kubeseal` does not
+  do. Corrected in `plan.md`.

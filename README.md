@@ -224,16 +224,27 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`services/gateway/`](./services/gateway/) | The only way in: the route table, HS256 validation, the header whitelist that makes the trust boundary real, and `GET /rooms/{id}/stream` — Server-Sent Events whose frame ids *are* the events' sequence numbers, so a client resumes with `Last-Event-ID` and can prove it missed nothing. |
 | [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
 
-**What is real so far.** `gateway` (the single entry point: token validation, routing and the SSE
-tier), `identity` (accounts, single-active-session, JWTs), `room-gameplay` (the event-sourced Uno
-core: rooms, moves, the immutable game log and its transactional outbox), `outbox-relay` (that
-outbox drained to Kafka as CloudEvents, at-least-once and in per-room order) and `timer-worker` (the
-clock behind the durable deadlines). Two players can register through the CLI and play a casual game
-to the end against a cluster deployed from empty — over **one** URL, with each move pushed to the
-other player rather than polled for, and a `bot --casual` able to take either seat headless. A game
-now also *finishes* without them: a player who stops answering loses the seat after three lapsed
-turns, and a room nobody joined closes on the clock. Tournaments, Elo and the spectator view are
-still placeholders — their phases are P6–P7 in the roadmap.
+**What is real so far — nine of the ten deployables.** `gateway` (the single entry point: token
+validation, routing and the SSE tier), `identity` (accounts, single-active-session, JWTs),
+`room-gameplay` (the event-sourced Uno core: rooms, moves, the immutable game log and its
+transactional outbox), `outbox-relay` (that outbox drained to Kafka as CloudEvents, at-least-once
+and in per-room order), `timer-worker` (the clock behind the durable deadlines), `ranking` (Elo over
+finished casual games, with the per-game history that makes a rating auditable), `spectator` (a
+privacy-filtered projection of a live room, fanned out as its own SSE), and `analytics-workers` +
+`analytics-api` (three CQRS read models and the read-only API over them). Two players can register
+through the CLI and play a casual game to the end against a cluster deployed from empty — over
+**one** URL, with each move pushed to the other player rather than polled for, and a `bot --casual`
+able to take either seat headless. A game now also *finishes* without them: a player who stops
+answering loses the seat after three lapsed turns, and a room nobody joined closes on the clock.
+When it ends, two ratings move and three projections update. Only `tournament` is still a
+placeholder — that is P7.
+
+**A stranger can watch, and sees no hand.** `spectate <roomId>` streams a room's public state to any
+logged-in player who is not sitting at the table. The boundary is not a filter added at the edge:
+`publicPayload` strips the RNG seed inside room-gameplay, in the same transaction that writes the
+event, so by the time anything reaches Kafka the deck is already gone — and the spectator's view
+type has no field that could hold a hand. `grep -c seed` over both topics, over the spectator's SSE
+frames and over the CLI's output returns **0**.
 
 **One door.** Everything from outside enters through the gateway on `30080`; identity and
 room-gameplay are `ClusterIP` and unreachable from off-cluster. room-gameplay holds no signing key

@@ -193,13 +193,59 @@ What P5 inherits, and must not break:
    pull is a public-registry call and can fail for reasons the repo did not cause (P4's first
    attempt; the detail is in that phase's `validation.md`).
 
-## P6 — Ranking, spectator, analytics — **next**
+## P6 — Ranking, spectator, analytics — **SHIPPED 2026-08-13**
 
-- Ships: ranking Elo consumer (casual-only, non-abandoned filter); spectator projection with the
-  privacy boundary (public info only — no hands, ever) behind `spectate <roomId>`;
-  analytics-workers CQRS projections + analytics-api reads (stats, brackets store).
-- CLI: `spectate`.
+Triad + closure: [`../2026-08-12-p6-read-models/`](../2026-08-12-p6-read-models/) — decisions E1–E8,
+evidence in [`validation.md`](../2026-08-12-p6-read-models/validation.md) and
+[`ESTADO-FINAL.md`](../2026-08-12-p6-read-models/ESTADO-FINAL.md); design deltas in
+`CHANGELOG-design.md` §11.
+
+**The events are read.** Four consumers across three contexts: a finished casual game moves two
+ratings, a stranger with a session watches a live game and sees no hand, and three projections
+answer "how many, by whom, how did it end". **Nine of ten deployables are real** — only `tournament`
+is still canned. P5's two open acceptance criteria were closed live in the same drill.
+
+- Ships: ranking Elo consumer (casual-only, non-abandoned filter) with rating, history and
+  leaderboard; spectator projection with the privacy boundary (public info only — no hands, ever)
+  behind `spectate <roomId>`; analytics-workers CQRS projections + analytics-api reads.
+- CLI: `spectate`, `rating`, `leaderboard`, `stats`.
 - Depends on: P5 (events flowing).
+
+### Handoff from P6 (2026-08-13)
+
+What P7 inherits, and must not break:
+
+- **`ce-type` is a reverse-DNS URI, not the event name.** The relay writes
+  `com.unoarena.room.GameCompleted.v1`; the catalog's bare name lives in the body's `type`, and that
+  is what the contract schema pins. **Classify on the body.** Comparing the header against a bare
+  name skips every event while the service looks perfectly healthy — it cost P6 a drill.
+- **A room's log is split across two topics with no ordering between them.** Per-room ordering is a
+  per-*topic* guarantee, so a lifecycle event can overtake an earlier public one from the same room.
+  Any consumer reading both needs a dedup **set** (never a high-water mark) and a sticky terminal
+  state. Deltas §11.2 and §11.3; there are property tests for both.
+- **The three consumer groups are `ranking-elo`, `spectator-view` and `analytics-projections`**, each
+  reading `earliest`, each committing by hand after its transaction. A tournament saga adds a fourth
+  — it must not join an existing one, per architecture §7.2.
+- **`consumed_events` is the pattern, keyed `(source, event_key)` with `event_key` = `ce-id`.** Live
+  proof: a full replay of the topic history — **216 events redelivered, 216 deduped, every
+  projection count byte-identical**.
+- **The bracket store does NOT exist, deliberately** (D4). A table nobody writes is the dead-code
+  shape the drill lessons name. P7 adds it with its writer, into a schema `analytics-workers`
+  already owns and `analytics-api` already knows how to read.
+- **A background consumer must retry its own startup for ever.** kafkajs and confluent-kafka both
+  exhaust their internal retries during a cold start, and a `.catch` that only logs leaves a
+  `Healthy` pod with no consumer. Pair every projection counter with a `*_consumer_starts_total`, and
+  keep the lag read in its own `try` — a mislabelled gauge stopped P6's projections for 326
+  consecutive loops from *inside* the poll loop. Delta §11.11.
+- **Two database postures, on purpose.** A service that owns its schema exits when it cannot migrate
+  (identity's posture; `ranking` and `analytics-workers` follow it, so 5–6 restarts on a cold start
+  are expected and not a defect). A service that only reads someone else's connects lazily and
+  answers 503. Delta §11.12.
+- **Nine of ten deployables are real.** `tournament` alone carries `digest: ""` and sits
+  `ImagePullBackOff` — that is its normal state, not a drill regression.
+- **`deploy-staging` must `needs:` the BUILD, not just `deliver`.** `$IMAGE`/`$IMAGE_DIGEST` come
+  from the build's dotenv and do not chain through `deliver`. Copy the stub's `needs` and the pin
+  writes `repository: ""` into the overlay **and the job goes green**.
 
 ### Handoff from P5 (2026-08-12)
 
@@ -233,7 +279,7 @@ What P6 inherits, and must not break:
   loop rather than a crash. Do not add a shared Go module without solving the build context first —
   kaniko builds each service from its own directory.
 
-## P7 — Tournaments
+## P7 — Tournaments — **next**
 
 - Ships: tournament orchestrator — registration with a **low configurable test threshold**,
   bracket state machine, round saga on `room.completed`, room provisioning through the same
