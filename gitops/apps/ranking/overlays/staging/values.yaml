@@ -2,7 +2,7 @@
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/ranking
-  digest: "sha256:780dddd96cac07014c95b5f503c4ff6fb125ddfcaf7454d58e9dda0ef9cdf4da" # pinned by CI (deploy-gitops)
+  digest: "sha256:74403b16f00bf37467cafce2f29527b4a84ffd7f3a1784b21fd38ec39970da60" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
