@@ -13,7 +13,6 @@ import threading
 from http.server import HTTPServer
 from types import FrameType
 
-import psycopg
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import make_handler
@@ -39,10 +38,10 @@ def metrics_body() -> tuple[bytes, str]:
 
 def main() -> None:
     port = int(os.environ.get("PORT", DEFAULT_PORT))
-    # autocommit: every statement here is a SELECT, so a transaction would only hold a snapshot
-    # open across requests and keep the reader looking at a database that has moved on.
-    connection = psycopg.connect(dsn(), autocommit=True)
-    server = HTTPServer(("0.0.0.0", port), make_handler(Reader(connection), metrics_body, log_line))  # noqa: S104
+    # The Reader connects on the first read and reconnects after a failure — never here. Connecting
+    # at startup would crash-loop this pod for as long as Postgres takes to come up, which on an
+    # empty cluster is exactly as long as the service that owns the schema takes to migrate it.
+    server = HTTPServer(("0.0.0.0", port), make_handler(Reader(dsn), metrics_body, log_line))  # noqa: S104
 
     def stop(_signum: int, _frame: FrameType | None) -> None:
         threading.Thread(target=server.shutdown, daemon=True).start()

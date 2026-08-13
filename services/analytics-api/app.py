@@ -16,10 +16,24 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import urlsplit
 
+import metrics
+
 SERVICE = "analytics-api"
 
 PLAYER = re.compile(r"^/stats/players/([^/]+)$")
 ROOM = re.compile(r"^/stats/rooms/([^/]+)$")
+
+
+def surface(path: str) -> str:
+    """A bounded metric label. A raw URL would let anyone grow cardinality by inventing ids."""
+    pathname = urlsplit(path).path
+    if PLAYER.match(pathname):
+        return "/stats/players/:id"
+    if ROOM.match(pathname):
+        return "/stats/rooms/:id"
+    if pathname in ("/stats/overview", "/health", "/metrics"):
+        return pathname
+    return "unknown"
 
 
 def route(method: str, path: str, reader: Any) -> tuple[int, dict[str, Any]]:
@@ -61,11 +75,14 @@ def make_handler(reader: Any, metrics_body: Any, log_line: Any) -> type[BaseHTTP
                 body, content_type = metrics_body()
                 self._send(200, body, content_type)
                 return
+            label = surface(self.path)
             try:
                 status, body = route("GET", self.path, reader)
             except Exception as error:  # noqa: BLE001 — a failed read is a 503, not a dead process
+                metrics.read_failures.inc()
                 log_line("error", "read-failed", path=self.path, error=str(error))
                 status, body = 503, {"error": "unavailable", "service": SERVICE}
+            metrics.reads.labels(surface=label, status=str(status)).inc()
             self._send(status, json.dumps(body).encode("utf-8"), "application/json")
             log_line("info", f"GET {self.path}", status=status, correlationId=correlation_id)
 

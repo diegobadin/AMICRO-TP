@@ -54,3 +54,13 @@ def test_unknown_path_returns_404() -> None:
     status, body = route("GET", "/nope", StubReader())
     assert status == 404
     assert body["error"] == "not_found"
+
+
+def test_the_metric_label_is_bounded() -> None:
+    # An id in a metric label lets anyone grow the cardinality by inventing paths.
+    from app import surface
+
+    assert surface("/stats/players/alice") == "/stats/players/:id"
+    assert surface("/stats/rooms/1c1b0b7e-0000-4000-8000-000000000000") == "/stats/rooms/:id"
+    assert surface("/stats/overview") == "/stats/overview"
+    assert surface("/whatever") == "unknown"
