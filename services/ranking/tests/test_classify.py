@@ -74,3 +74,11 @@ def test_a_live_game_completed_is_scored() -> None:
         "finishingOrder": ["alice", "bob"],
     }
     assert classify(event_name(LIVE_HEADERS, body), body) == (True, "casual")
+
+
+def test_the_lag_gauge_matches_how_the_consumer_sets_it() -> None:
+    # ranking's gauge carries no labels and `refresh_lag` sets it bare. The mismatch of these two
+    # facts is what stopped analytics-workers consuming in the P6 drill.
+    import metrics
+
+    metrics.consumer_lag.set(0)

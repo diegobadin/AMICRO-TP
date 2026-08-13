@@ -114,7 +114,14 @@ def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) 
     while should_run():
         try:
             if time.monotonic() >= next_lag:
-                refresh_lag(consumer)
+                # Isolated on purpose. Reading the lag is observability, and observability must not
+                # be able to stop the thing it observes: in the P6 drill a mislabelled gauge threw
+                # here on every iteration, before `poll` was ever reached, and the projections
+                # stopped for 326 consecutive loops while the pod stayed Healthy.
+                try:
+                    refresh_lag(consumer)
+                except Exception as error:  # noqa: BLE001
+                    metrics.log_line("warn", "lag-read-failed", error=str(error))
                 next_lag = time.monotonic() + lag_interval
             message = consumer.poll(1.0)
             if message is None:

@@ -82,3 +82,13 @@ def test_the_event_name_comes_from_the_body_not_the_cloudevents_uri() -> None:
     assert event_name(headers, {"type": "GameCompleted"}) == "GameCompleted"
     assert event_name(headers, {}) == "GameCompleted"
     assert plan(event_name(headers, game()), game()).game is not None
+
+
+def test_the_lag_gauge_accepts_the_label_the_consumer_gives_it() -> None:
+    # It was copied from ranking's unlabelled gauge, and `refresh_lag` calls `.labels(topic=...)`.
+    # That threw on every loop iteration BEFORE poll() was reached, so the projections stopped dead
+    # while the pod stayed Healthy — 326 errors before the drill noticed.
+    import metrics
+
+    metrics.consumer_lag.labels(topic="room.public.events").set(0)
+    metrics.consumer_lag.labels(topic="room.lifecycle.events").set(3)

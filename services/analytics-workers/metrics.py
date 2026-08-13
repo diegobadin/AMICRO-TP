@@ -45,7 +45,8 @@ consumer_errors = Counter(
 
 consumer_lag = Gauge(
     "analytics_consumer_lag",
-    "Messages between this consumer group and the broker's high watermark",
+    "Messages between this consumer group and the broker's high watermark, by topic",
+    ["topic"],
 )
 
 lag_reads = Counter(
