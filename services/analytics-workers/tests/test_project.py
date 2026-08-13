@@ -71,3 +71,14 @@ def test_an_unknown_event_changes_nothing_but_the_window() -> None:
     # Not "empty": the room was active, and that is true whether or not this service understands
     # what happened.
     assert effects.activity_counters["events_seen"] == 1
+
+
+def test_the_event_name_comes_from_the_body_not_the_cloudevents_uri() -> None:
+    # The relay writes `ce-type: com.unoarena.room.GameCompleted.v1` — a reverse-DNS URI, not the
+    # catalog's bare name. Classifying on the header skipped every event in the P6 drill.
+    from consumer import event_name
+
+    headers = [("ce-type", b"com.unoarena.room.GameCompleted.v1")]
+    assert event_name(headers, {"type": "GameCompleted"}) == "GameCompleted"
+    assert event_name(headers, {}) == "GameCompleted"
+    assert plan(event_name(headers, game()), game()).game is not None

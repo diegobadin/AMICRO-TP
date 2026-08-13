@@ -1,6 +1,6 @@
 from typing import Any
 
-from consumer import classify, header_value
+from consumer import classify, event_name, header_value
 
 
 def game(**overrides: Any) -> dict[str, Any]:
@@ -47,3 +47,30 @@ def test_header_value_reads_the_cloudevents_id() -> None:
     assert header_value(headers, "ce-id") == "room-1:42"
     assert header_value(headers, "ce-absent") is None
     assert header_value(None, "ce-id") is None
+
+
+# The header the relay actually writes, copied from a live topic dump — a reverse-DNS URI, not the
+# bare event name. Comparing this against "GameCompleted" skipped every event in the P6 drill.
+LIVE_HEADERS = [
+    ("ce-specversion", b"1.0"),
+    ("ce-id", b"12b1cf7d-f318-4123-a66e-f874278b1acb:62"),
+    ("ce-type", b"com.unoarena.room.GameCompleted.v1"),
+]
+
+
+def test_the_event_name_comes_from_the_body_not_the_cloudevents_uri() -> None:
+    assert event_name(LIVE_HEADERS, {"type": "GameCompleted"}) == "GameCompleted"
+
+
+def test_the_qualified_header_is_unwrapped_when_the_body_has_no_type() -> None:
+    assert event_name(LIVE_HEADERS, {}) == "GameCompleted"
+
+
+def test_a_live_game_completed_is_scored() -> None:
+    body = {
+        "type": "GameCompleted",
+        "roomType": "CASUAL",
+        "isAbandoned": False,
+        "finishingOrder": ["alice", "bob"],
+    }
+    assert classify(event_name(LIVE_HEADERS, body), body) == (True, "casual")

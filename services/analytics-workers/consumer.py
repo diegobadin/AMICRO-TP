@@ -27,11 +27,28 @@ def header_value(headers: list[tuple[str, bytes]] | None, name: str) -> str | No
     return None
 
 
+# The CloudEvents `ce-type` header is a reverse-DNS URI the relay builds as
+# `com.unoarena.room.<EventName>.v1` (outbox-relay/envelope.go). The BODY's `type` is the catalog's
+# bare event name — the one `docs/design/04-commands-events.md` uses and the one the contract schema
+# pins with `"const": "GameCompleted"`. Classify on the body and treat the header as metadata:
+# comparing the URI against a bare name silently skips every event, which is what the P6 drill found
+# after ranking read four lifecycle events and scored none of them.
+def event_name(headers: list[tuple[str, bytes]] | None, body: dict[str, Any]) -> str:
+    name = body.get("type")
+    if isinstance(name, str) and name:
+        return name
+    qualified = header_value(headers, "ce-type") or ""
+    parts = qualified.split(".")
+    if len(parts) >= 2 and parts[-1].startswith("v"):
+        return parts[-2]
+    return qualified
+
+
 def handle(message: Any, store: Any) -> str:
     body = json.loads(message.value())
     headers = message.headers()
     topic = message.topic()
-    event_type = header_value(headers, "ce-type") or body.get("type", "")
+    event_type = event_name(headers, body)
     fallback_key = f"{body.get('roomId')}:{body.get('sequenceNumber')}"
     event_key = header_value(headers, "ce-id") or fallback_key
 
