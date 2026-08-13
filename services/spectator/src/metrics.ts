@@ -41,6 +41,21 @@ export const streamsOpened = new Counter({
   registers: [registry],
 });
 
+// Whether the consume loop is actually running. A projection counter alone cannot tell "no games
+// have been played" from "no consumer has ever started" — the P6 drill spent its diagnosis on
+// exactly that ambiguity.
+export const consumerStarts = new Counter({
+  name: "spectator_consumer_starts_total",
+  help: "Times the consume loop reached a running state",
+  registers: [registry],
+});
+
+export const eventsMalformed = new Counter({
+  name: "spectator_events_malformed_total",
+  help: "Messages without the roomId/sequenceNumber a projection needs",
+  registers: [registry],
+});
+
 export const consumerErrors = new Counter({
   name: "spectator_consumer_errors_total",
   help: "Consume attempts that failed and will be retried",

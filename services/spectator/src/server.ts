@@ -110,7 +110,10 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   }
 
   if (action.kind === "reply") {
-    log("info", `${req.method} ${(req.url ?? "/").split("?")[0]}`, { status: action.reply.status });
+    // Not the kubelet's probes. They arrive every few seconds and drowned the one line that
+    // mattered during the P6 drill — the consumer reporting that it had given up.
+    const path = (req.url ?? "/").split("?")[0];
+    if (path !== "/health") log("info", `${req.method} ${path}`, { status: action.reply.status });
     res.writeHead(action.reply.status, { "content-type": "application/json" });
     res.end(JSON.stringify(action.reply.json));
     return;
@@ -122,12 +125,27 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 async function main(): Promise<void> {
   server.listen(PORT, () => log("info", "listen", { port: PORT }));
 
-  // The consumer retries forever and never takes the process down with it: a broker outage is a
-  // stale projection, which is a spectator problem and never a gameplay one.
-  consumerModule.start(consumer, store, broker).catch((error: Error) => {
-    metrics.consumerErrors.inc();
-    log("error", "consumer-stopped", { error: error.message });
-  });
+  // The consumer retries FOREVER. A broker outage is a stale projection — a spectator problem,
+  // never a gameplay one — so the process must not die; but it must also not give up, which is the
+  // half the P6 drill caught missing. kafkajs exhausts its own retries during a cold start (Kafka
+  // is still electing when this pod is already up), the promise rejected, and a `.catch` that only
+  // logged left the service running perfectly healthy with no consumer at all for thirteen minutes.
+  // `/health` said 200 the whole time, because the process really was alive.
+  void (async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await consumerModule.start(consumer, store, broker);
+        metrics.consumerStarts.inc();
+        log("info", "consumer-running", { attempt });
+        return;
+      } catch (error) {
+        metrics.consumerErrors.inc();
+        const wait = Math.min(30_000, 2 ** Math.min(attempt, 5) * 1000);
+        log("error", "consumer-retrying", { attempt, wait, error: (error as Error).message });
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+  })();
 
   await admin.connect().catch(() => undefined);
   setInterval(() => {

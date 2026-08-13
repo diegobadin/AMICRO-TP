@@ -36,6 +36,7 @@ export async function project(
     return "rejected";
   }
   if (typeof body.roomId !== "string" || typeof body.sequenceNumber !== "number") {
+    metrics.eventsMalformed.inc();
     return "malformed";
   }
 

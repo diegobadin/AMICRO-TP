@@ -45,7 +45,10 @@ def make_handler(metrics_body: Any) -> type[BaseHTTPRequestHandler]:
                 return
             status, payload = route("GET", self.path)
             self._send(status, json.dumps(payload).encode("utf-8"), "application/json")
-            log_line("info", f"GET {self.path}", status=status, correlationId=correlation_id)
+            # Not the kubelet's probes: they arrive every few seconds and would drown the lines
+            # that matter. A health probe is not an event worth a log record.
+            if urlsplit(self.path).path != "/health":
+                log_line("info", f"GET {self.path}", status=status, correlationId=correlation_id)
 
         def _send(self, status: int, payload: bytes, content_type: str) -> None:
             self.send_response(status)
