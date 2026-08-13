@@ -38,6 +38,14 @@ events_deduped = Counter(
     "Redeliveries recognised by ce-id and dropped",
 )
 
+# Whether the consume loop ever reached a running state. A projection counter alone cannot tell
+# "nobody has played a game yet" from "no consumer has ever started" — the ambiguity the P6 drill
+# spent its diagnosis on.
+consumer_starts = Counter(
+    "analytics_consumer_starts_total",
+    "Times the consume loop successfully subscribed",
+)
+
 consumer_errors = Counter(
     "analytics_consumer_errors_total",
     "Poll or apply attempts that failed and will be retried",

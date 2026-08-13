@@ -1,6 +1,6 @@
-"""Entrypoint: connect, then serve the reads.
+"""Entrypoint: serve the reads. It opens no connection here — see `reader.py`.
 
-No migration here. `analytics-workers` owns the schema and is the only writer; this service reading
+No migration either. `analytics-workers` owns the schema and is the only writer; this service reading
 a table that does not exist yet is a 503 until the writer has migrated, which is the honest answer
 and not a reason to crash — the P5 drill found both Go workers doing exactly this correctly.
 """

@@ -109,9 +109,25 @@ def refresh_lag(consumer: Any) -> None:
 
 def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) -> None:
     """Poll, decide, commit. Backs off on failure and never exits on one (delta §10.11)."""
-    consumer.subscribe([TOPIC])
+    # Subscribing is inside the loop, and retried, for the same reason spectator's start is: a
+    # consumer that gives up is worse than one that crashes. This thread is a daemon, so an
+    # exception escaping here would end it silently while the HTTP server kept answering /health
+    # with 200 — the thirteen-minute failure the P6 drill found in the Node sibling, which would
+    # look identical here.
+    subscribed = False
     next_lag = 0.0
     while should_run():
+        if not subscribed:
+            try:
+                consumer.subscribe([TOPIC])
+                subscribed = True
+                metrics.consumer_starts.inc()
+                metrics.log_line("info", "consumer-running")
+            except Exception as error:  # noqa: BLE001
+                metrics.consumer_errors.inc()
+                metrics.log_line("error", "subscribe-retrying", error=str(error))
+                time.sleep(2.0)
+                continue
         try:
             if time.monotonic() >= next_lag:
                 # Isolated on purpose. Reading the lag is observability, and observability must not

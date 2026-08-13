@@ -365,3 +365,39 @@ here, after the phase looked done. Look hardest at:
 - No change to the player's own feed. P4's gateway tail stays exactly as it is.
 - No shared library across services, in any language.
 - No new topic, no new event type, no change to the envelope.
+
+---
+
+## 10. Self-review pass — findings (2026-08-13)
+
+Run after the drill was green, which is where the standing convention says the value is. Both P4 and
+P5 found their worst defect here; P6 found its worst *during* the drill instead, and this pass found
+the same class of bug hiding in the two services the drill had not exercised the same way.
+
+| # | Finding | Change |
+|---|---|---|
+| R1 | **`consumer.subscribe()` sat outside the retry loop in both Python consumers.** The spectator fix (delta §11.11) was applied where the drill found the bug and nowhere else — and these run in a `daemon` thread, so an exception escaping `run` ends it *silently* while the HTTP server keeps answering `/health` with 200. Identical to the thirteen-minute failure, one language over. Textbook "code whose purpose changed after an earlier fix". | Subscribe moved inside the loop and retried with backoff; `ranking_consumer_starts_total` and `analytics_consumer_starts_total` added beside the projection counters. Bite-checked with a fake broker that refuses twice: the loop retries and survives, and the test is now permanent (`tests/test_consumer_loop.py` in both services). |
+| R2 | **`Broker.countFor` was written, exported and never called** — the `sweepIdempotencyKeys` shape the drill lessons name. The spectator count that reaches the view comes from Redis (`store.spectatorCount`), which is the correct source, so this was a second answer to a question already answered. | Deleted. |
+| R3 | **`analytics-api/server.py` still opened with "Entrypoint: connect, then serve the reads"** after the cold-start fix moved the connection into `Reader`. A docstring that describes the previous design is worse than none. | Corrected. |
+| R4 | **The interleaving bite test named the wrong suite** (see `validation.md`). | Corrected, and an end-to-end test added so the claim and the code agree. |
+| R5 | **`plan.md` claimed `seal.sh` would produce no diff on unchanged secrets.** `kubeseal` draws a fresh session key per run, so it always rewrites the ciphertext. | Corrected in group 1, with the "restore the unchanged ones" instruction that follows from it. |
+
+### Checked and NOT changed, and why
+
+- **The two SSE implementations have not converged** — 277 lines in the gateway's player tail versus
+  58 in the spectator's. They answer different questions (gap detection and resync against a log
+  versus whole-view frames that need no reconstruction), and the review's own instruction was to
+  look hardest at exactly this. They are still different, so they stay separate.
+- **`ranking` and `analytics-workers` still exit when they cannot migrate**, and still show 5–6
+  restarts on a cold start. That is identity's posture for a service that owns its schema, it is
+  deliberate (D1), and it is now written down in delta §11.12 so the restart count is not read as a
+  defect next time.
+- **The Elo formula was not made configurable.** `K=32` and an initial 1000 are constants, not env
+  vars. Nothing in the phase needs to turn them, and a lever nobody pulls is a lever to keep
+  correct for free.
+- **`analytics-api` still holds its own copy of `queries.py`** rather than importing the writer's.
+  kaniko builds each service from its own directory; the coupling is proved by a test instead, which
+  is the same trade the P5 handoff made for the Go workers.
+- **The spectator's fan-out is still in-process.** A Redis pub/sub hop would make a second replica
+  work, but nothing asks for a second replica and the note in `broker.ts` is what a future reader
+  needs.

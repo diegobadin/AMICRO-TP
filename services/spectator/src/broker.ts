@@ -39,8 +39,4 @@ export class Broker {
       }
     }
   }
-
-  countFor(roomId: string): number {
-    return this.rooms.get(roomId)?.size ?? 0;
-  }
 }
