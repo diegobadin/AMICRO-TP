@@ -2,7 +2,7 @@
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/outbox-relay
-  digest: "sha256:53be6d73d6d2554828e6cc929dbc4ffbbaf8b2b00e97695bd64653feb9144988" # pinned by CI (deploy-gitops)
+  digest: "sha256:0b409be51b31648f71c2a9bd43179a89d9e020bca4d200e924bfc431b44b60d6" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
