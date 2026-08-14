@@ -131,6 +131,28 @@ is the result it was run to obtain, and the first drill in this phase that neede
   at-least-once behaviour, and worth knowing before the exam.
 - **`tournament` remains canned** — `digest: ""`, `ImagePullBackOff`, its normal state.
 
+## After closure — the post-closure review pass (2026-08-14)
+
+Re-read as a reviewer once P6 was merged and closed, which is where the standing convention says the
+value is. It held: five drills and a pre-merge pass had all missed the phase's **only user-facing
+bug**. `unoarena rating` with no flags defaulted to the session's display *name* where ranking keys
+on the player *id*, so the default invocation of a new command answered `rating 1000 after 0 game(s)`
+about a player that does not exist — confidently wrong, which is worse than an error. Proven live
+after the fix: `rating` → **984 after 1 game**, `rating --player <username>` → the old 1000/0.
+
+**The test for it did not bite**, and that is the more useful finding: `pathFor` was unit-tested as a
+pure function and stayed green through the bug, because the mistake was in the *caller*. The
+composition is now extracted as `readPath()` and tested through a seeded session, bite-checked by
+restoring the mistake.
+
+It also found `render()` dispatching by sniffing the response shape, two more dead symbols (third and
+fourth after `countFor`), and — most consequential for P7 — **two comments that overstated what
+scaling would take**: ranking's chart claimed a second replica merely "buys nothing" when it would
+in fact lose Elo updates, and spectator's claimed a pub/sub hop "would fix it" when the projection
+race would remain. Full table in `plan.md` §11, including the "checked and not changed" list.
+
+Landed on `main` as `a60d6d1`, pipeline `2759342045` green (42 jobs, 41 success + 1 manual).
+
 ## Next
 
 **P7 — tournaments.** The roadmap carries a full "Handoff from P6" block: the `ce-type` trap, the

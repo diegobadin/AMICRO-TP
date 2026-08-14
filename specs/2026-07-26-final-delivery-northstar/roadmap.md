@@ -243,6 +243,13 @@ What P7 inherits, and must not break:
   answers 503. Delta §11.12.
 - **Nine of ten deployables are real.** `tournament` alone carries `digest: ""` and sits
   `ImagePullBackOff` — that is its normal state, not a drill regression.
+- **Ranking cannot be scaled past one replica, and P7 will be editing it.** Architecture §4 has it
+  consuming `TournamentCompleted` for the placement rating, so this matters directly: applying a
+  rating is a read-modify-write (read the current value, compute a delta, write it back) inside one
+  transaction, which at READ COMMITTED does not stop a second consumer reading the same value first.
+  Two replicas lose updates. `analytics-workers` is the contrast — every write there is an atomic
+  upsert, so it *would* scale. Add placement rating the same way Elo is written, or make both safe;
+  do not assume the replica count is a knob.
 - **`deploy-staging` must `needs:` the BUILD, not just `deliver`.** `$IMAGE`/`$IMAGE_DIGEST` come
   from the build's dotenv and do not chain through `deliver`. Copy the stub's `needs` and the pin
   writes `repository: ""` into the overlay **and the job goes green**.
