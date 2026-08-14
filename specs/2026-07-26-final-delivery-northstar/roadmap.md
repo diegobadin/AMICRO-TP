@@ -170,6 +170,22 @@ What P5 inherits, and must not break:
   room-gameplay image built from `main`; the pin is per-service and change detection is path-based,
   so push once per service and check the digest actually moved.
 
+### Remotes — which one is the delivery
+
+`gitlab` is the delivery: project `83816735`, the only remote CI and Argo read from, and the one
+"push the branch" below means. It authenticates over HTTPS through a local credential helper
+(`credential.https://gitlab.com.helper` in `.git/config`) that reads the PAT from
+`~/.amicro_gitlab_token` at call time, so no token is ever written into a remote URL, the config or
+the reflog. Rotating or revoking it is one file, and nothing in the repo changes.
+
+`origin` is a **mirror** of the teammate's GitHub repo over SSH, kept in sync only when asked. It
+runs no CI for this program, and its `main` is unprotected — never treat a green GitHub state as
+evidence.
+
+`git fetch gitlab` now gives real tracking refs (`gitlab/main`). Before the remote existed,
+`refs/remotes/origin/*` held stale GitLab state while `origin` already pointed at GitHub, so
+"is this branch pushed?" had to be answered from the API. Fetch first, then trust the refs.
+
 ### Closing a phase — the four steps, and the two that surprise people
 
 1. **Push the branch before anything else.** First push with `git push -o ci.skip` (a new branch
