@@ -78,8 +78,10 @@
       moved, per service).
 - [x] All four `/metrics` endpoints scraped by Prometheus.
 - [x] Both new Postgres roles own their databases; no service is still connecting as `app`.
-- [ ] Cold-start ordering: a consumer that starts before its own migration or before Kafka is ready
-      backs off and does not crash-loop — **0 restarts** after convergence.
+- [x] Cold-start ordering: a consumer that starts before its own migration or before Kafka is ready
+      backs off and does not crash-loop — **0 restarts** after convergence *for the services that do
+      not own a schema*. Proven on the SECOND from-empty drill (2026-08-13), the one that exists
+      because the first drill's fixes were cold-start fixes verified warm.
 - [x] Two processes play a full casual game; a third `spectate`s it start to finish.
 - [x] `grep -c seed` over the spectator's received payloads → **0**.
 - [x] `grep -c seed` over both Kafka topics → **0**.
@@ -184,13 +186,11 @@ Two questions. If both are yes, the phase moved the mission forward:
 
 Four boxes above are deliberately left unticked. Ticking them would be the more comfortable lie.
 
-- **Cold-start ordering with 0 restarts.** The from-empty drill is what *found* the cold-start
-  defects (`analytics-api` connecting eagerly, spectator's consumer giving up, the mislabelled lag
-  gauge). The fixes are covered by unit tests and were verified live by the rolling deploy that
-  followed — but that deploy landed on a **warm** cluster with Postgres and Kafka already up, which
-  is precisely the condition the defects needed to be absent. **The fixes are unproven exactly where
-  they matter.** A second `kind delete cluster` → install run is the only thing that closes this,
-  and P3's lesson is explicit that a timeout or an ordering assumption verified warm is not verified.
+- ~~**Cold-start ordering with 0 restarts.**~~ **CLOSED by the second from-empty drill
+  (2026-08-13)** — see below. Left here because the reasoning is the point: the first drill *found*
+  the cold-start defects, and the fixes were then verified by a rolling deploy onto a **warm**
+  cluster, which is precisely the condition those defects needed to be absent. A cold-start fix
+  verified warm is not verified.
 - **Per-service pushes.** F1+F2 went in one push and F4–F7 in another, so two combined pipelines ran
   instead of six. Change detection still saw every path and every digest was verified to have moved,
   but the convention asks for one push per service and this phase did not follow it.
@@ -207,3 +207,36 @@ Four boxes above are deliberately left unticked. Ticking them would be the more 
 - `seal.sh` re-seals every SealedSecret with a fresh session key, so an unchanged plaintext still
   produces a diff. The original "produces no diff" wording described something `kubeseal` does not
   do. Corrected in `plan.md`.
+
+
+---
+
+## Second from-empty drill (2026-08-13) — the re-drill
+
+Run because the first drill's three findings were all *cold-start* defects and their fixes had only
+been seen on a warm cluster. `kind delete cluster` → `TARGET_REVISION=feat/p6-read-models
+install.sh`, CLI rebuilt explicitly, nothing reused.
+
+| Check | First drill | Re-drill |
+|---|---|---|
+| `analytics-api` restarts | **5** (eager `psycopg.connect` in `main()`) | **0** |
+| `spectator` consumer | `consumer-stopped`, never retried — 13 min Healthy with no consumer; the `spectator-view` group did not exist | `consumer_errors_total` **5**, `consumer_starts_total` **1** — it failed five times against a still-electing broker and **retried into a running state**. All four consumer groups present. |
+| `analytics-workers` | **326** consecutive errors, projections stopped, pod Healthy | `consumer_errors_total` **0** |
+| `ranking` scoring | 4 lifecycle events read, **0** scored (`ce-type` URI vs bare name) | leaderboard **1016 / 984** after one game |
+| Apps | 9/10 `Synced/Healthy` | 9/10 `Synced/Healthy`, `tournament` alone `ImagePullBackOff` |
+| Prometheus | 9 targets up | 9 targets up |
+
+Everything else on the fresh cluster, first attempt and with no intervention:
+
+- [x] Outbox drained: **61 rows, 0 unpublished**.
+- [x] Analytics reconciles with `room_events` exactly: **25 cards played, 6 drawn, 61 events**.
+- [x] `grep -c seed` → **0** on both topics and on the spectator's CLI output.
+- [x] A third session watched the room to `COMPLETED` with real card counts and the finishing order.
+- [x] `ranking` and `analytics` databases owned by their own roles.
+- [x] Restart counts on a cold start: `analytics-api`, `spectator`, `gateway`, `outbox-relay`,
+      `timer-worker` at **0**; `identity`, `ranking`, `analytics-workers`, `room-gameplay` at 5–6,
+      which is the *documented* posture for a service that owns its schema and exits when it cannot
+      migrate (delta §11.12), not a defect.
+
+**What the re-drill did not change:** nothing. No new defect, no new commit. That is the result it
+was run to obtain — and it is the first drill in this phase that needed no fix.

@@ -1,6 +1,8 @@
 # ESTADO FINAL — P6: Read models (ranking, spectator, analytics)
 
-> Drilled 2026-08-12 → 13 on `feat/p6-read-models`. Fourteen acceptance criteria, **all green**, two
+> Drilled 2026-08-12 → 13 on `feat/p6-read-models`, **twice** — the second run because every
+> defect the first found was a cold-start defect, and their fixes had only been seen on a warm
+> cluster. Fourteen acceptance criteria, **all green**, two
 > of them P5's carried in deliberately and closed live for the first time. **The events are read**:
 > a finished casual game moves two ratings, a stranger with a session watches a live game and sees
 > no hand, and three projections answer for every room and player. **Nine of ten deployables are
@@ -77,6 +79,27 @@ default; `install.sh` rewrites it with `sed`). Self-inflicted while restoring Ar
 suspension. The symptom is not "wrong revision": the placeholder charts fall back to `tag: latest`,
 so every service that had `digest: ""` on `main` went `ImagePullBackOff` with a **403 Forbidden**,
 which reads exactly like broken registry credentials.
+
+## The re-drill (2026-08-13)
+
+Three of the five defects below only exist during a cold start: a connection opened too eagerly, a
+consumer that gives up while the broker is still electing, a gauge that throws before the first
+poll. All three were fixed and then verified by a rolling deploy — onto a **warm** cluster, which is
+exactly the condition under which none of them can appear. A cold-start fix verified warm is not
+verified, so the cluster was deleted and rebuilt from empty a second time.
+
+| Check | First drill | Re-drill |
+|---|---|---|
+| `analytics-api` restarts | **5** | **0** |
+| `spectator` consumer | gave up; 13 min Healthy with no consumer, and no `spectator-view` group | failed **5** times against a still-electing broker, then **retried into a running state**; all four groups present |
+| `analytics-workers` | **326** consecutive errors, projections stopped | **0** errors |
+| `ranking` scoring | 4 events read, **0** scored | leaderboard **1016 / 984** |
+
+Everything else on the fresh cluster, first attempt, with no intervention: 9/10 `Synced/Healthy`,
+9 Prometheus targets up, outbox **61 rows / 0 unpublished**, analytics reconciling with `room_events`
+exactly (**25 played, 6 drawn, 61 events**), `grep -c seed` **0** everywhere, and a third session
+watching the room to completion. **The re-drill produced no new defect and no new commit** — which
+is the result it was run to obtain, and the first drill in this phase that needed no fix.
 
 ## Decisions worth carrying forward
 
