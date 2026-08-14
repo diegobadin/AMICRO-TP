@@ -25,11 +25,6 @@ class Effects:
     game: dict[str, Any] | None = None
     players: list[dict[str, Any]] = field(default_factory=list)
 
-    def is_empty(self) -> bool:
-        return not (
-            self.overview or self.activity or self.activity_counters or self.game or self.players
-        )
-
 
 def plan(event_type: str, body: dict[str, Any]) -> Effects:
     effects = Effects()

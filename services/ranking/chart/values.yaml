@@ -7,8 +7,12 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
-# One replica. The consumer group would rebalance correctly across more, but this system plays one
-# game at a time — a second replica buys nothing except a rebalance to reason about.
+# One replica, and NOT merely because a second buys nothing. Applying Elo is a read-modify-write:
+# `consume_game_completed` reads each player's current rating and writes the new one inside one
+# transaction, which at READ COMMITTED does not stop a second consumer reading the same rating
+# before either commits. Two replicas would lose updates on any player who finishes two games at
+# once. Scaling this needs `select ... for update` plus a real row for every player (a new player
+# has none to lock), which is a change, not a knob — do not raise this number expecting it to work.
 replicas: 1
 port: 8084
 healthPath: /health

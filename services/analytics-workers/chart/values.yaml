@@ -7,6 +7,10 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
+# One replica because nothing needs a second, NOT because a second would break. Unlike ranking and
+# spectator, every write here is an atomic upsert — `value = value + excluded.value`, `greatest(...)`,
+# `on conflict do nothing` — so concurrent consumers in this group would stay correct. The asymmetry
+# is deliberate: Elo has to read a rating before it can compute a delta, and this does not.
 replicas: 1
 port: 8090
 healthPath: /health

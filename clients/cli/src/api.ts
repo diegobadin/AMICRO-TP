@@ -37,6 +37,27 @@ export function loadSession(): Session {
   return existsSync(SESSION) ? (JSON.parse(readFileSync(SESSION, "utf8")) as Session) : {};
 }
 
+/**
+ * Who this process is, as the backend knows them: the player **id**, never the display name.
+ * `userId` is what register/login returned; the JWT subject is the fallback, because identity puts
+ * the id there and the CLI never has to ask for it.
+ *
+ * One place, because there is one answer. P6 briefly had a second one in `watch.ts` that returned
+ * the *username* — so `rating` with no flags asked for a player id that does not exist and got a
+ * confident "1000 after 0 games" back, which is the worst kind of wrong.
+ */
+export function playerId(): string {
+  const session = loadSession();
+  if (session.userId) return String(session.userId);
+  const payload = session.token?.split(".")[1];
+  if (!payload) return "";
+  try {
+    return String(JSON.parse(Buffer.from(payload, "base64url").toString()).sub ?? "");
+  } catch {
+    return "";
+  }
+}
+
 export function parseFlags(argv: string[]): Record<string, string | boolean> {
   const out: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {

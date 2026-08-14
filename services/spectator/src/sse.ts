@@ -51,8 +51,3 @@ export function updateFrame(update: Update): Frame {
 export function heartbeatFrame(view: SpectatorView | null): Frame {
   return { event: "heartbeat", data: { seq: view?.lastSequence ?? -1 } };
 }
-
-export interface Connection {
-  write(chunk: string): void;
-  end(): void;
-}

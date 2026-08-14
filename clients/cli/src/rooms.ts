@@ -6,7 +6,7 @@
 
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { API, Reply, emit, line, loadSession, request, resultLine } from "./api.js";
+import { API, Reply, emit, line, loadSession, playerId, request, resultLine } from "./api.js";
 import { GameView, board, describe, mustRefresh } from "./board.js";
 import { StreamEvent, follow } from "./stream.js";
 
@@ -26,16 +26,7 @@ function token(): string | undefined {
 }
 
 function me(): string {
-  const session = loadSession();
-  if (session.userId) return String(session.userId);
-  // The player id is the JWT subject; identity puts it there and the CLI never needs to ask.
-  const payload = session.token?.split(".")[1];
-  if (!payload) return "";
-  try {
-    return String(JSON.parse(Buffer.from(payload, "base64url").toString()).sub ?? "");
-  } catch {
-    return "";
-  }
+  return playerId();
 }
 
 const call = (method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Reply> =>

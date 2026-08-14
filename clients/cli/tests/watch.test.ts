@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { type SpectatorView, isOver, pathFor, watchBoard } from "../src/watch.js";
+import { useSession } from "../src/api.js";
+import {
+  type SpectatorView,
+  isOver,
+  pathFor,
+  readPath,
+  surfaceFor,
+  watchBoard,
+} from "../src/watch.js";
 
 const view = (overrides: Partial<SpectatorView> = {}): SpectatorView => ({
   roomId: "1c1b0b7e-0000-4000-8000-000000000000",
@@ -90,28 +98,67 @@ describe("knowing when to stop", () => {
   });
 });
 
+describe("which surface a command means", () => {
+  it("maps the three commands and their flags onto five surfaces", () => {
+    expect(surfaceFor("rating", {})).toBe("rating");
+    expect(surfaceFor("leaderboard", {})).toBe("leaderboard");
+    expect(surfaceFor("stats", {})).toBe("overview");
+    expect(surfaceFor("stats", { player: "p" })).toBe("player-stats");
+    expect(surfaceFor("stats", { room: "r" })).toBe("room-stats");
+  });
+
+  it("prefers an explicit player over the room when both are given", () => {
+    expect(surfaceFor("stats", { player: "p", room: "r" })).toBe("player-stats");
+  });
+});
+
 describe("where each read goes", () => {
-  it("defaults rating to the logged-in player", () => {
-    expect(pathFor("rating", {}, "alice")).toBe("/players/alice/rating");
-    expect(pathFor("rating", { player: "bob" }, "alice")).toBe("/players/bob/rating");
+  it("defaults rating to this session's player ID, not its display name", () => {
+    // ranking keys on the player id. Passing the username asks about somebody who does not exist
+    // and gets a confident "1000 after 0 games" back — the bug this argument exists to prevent.
+    const id = "84740d1d-9ed0-4799-9464-c42f57fec30c";
+    expect(pathFor("rating", {}, id)).toBe(`/players/${id}/rating`);
+    expect(pathFor("rating", { player: "bob" }, id)).toBe("/players/bob/rating");
   });
 
   it("has nothing to ask for when there is no player at all", () => {
-    expect(pathFor("rating", {}, undefined)).toBeUndefined();
+    expect(pathFor("rating", {}, "")).toBeUndefined();
   });
 
   it("passes a limit through to the leaderboard", () => {
-    expect(pathFor("leaderboard", {})).toBe("/leaderboard");
-    expect(pathFor("leaderboard", { limit: "5" })).toBe("/leaderboard?limit=5");
+    expect(pathFor("leaderboard", {}, "me")).toBe("/leaderboard");
+    expect(pathFor("leaderboard", { limit: "5" }, "me")).toBe("/leaderboard?limit=5");
   });
 
   it("picks the stats surface from the flags, defaulting to the overview", () => {
-    expect(pathFor("stats", {})).toBe("/stats/overview");
-    expect(pathFor("stats", { player: "alice" })).toBe("/stats/players/alice");
-    expect(pathFor("stats", { room: "room-1" })).toBe("/stats/rooms/room-1");
+    expect(pathFor("stats", {}, "me")).toBe("/stats/overview");
+    expect(pathFor("stats", { player: "alice" }, "me")).toBe("/stats/players/alice");
+    expect(pathFor("stats", { room: "room-1" }, "me")).toBe("/stats/rooms/room-1");
   });
 
   it("encodes an id that would otherwise change the path", () => {
-    expect(pathFor("stats", { player: "a/b" })).toBe("/stats/players/a%2Fb");
+    expect(pathFor("stats", { player: "a/b" }, "me")).toBe("/stats/players/a%2Fb");
+  });
+});
+
+describe("the wiring, not just the mapping", () => {
+  // The P6 bug lived here and nowhere else: `pathFor` was correct, and the caller handed it
+  // `session.user` — the display name — instead of the player id. Restoring that mistake has to
+  // turn something red, or the fix is not defended.
+  it("asks about the session's player id, never its display name", () => {
+    useSession({ token: "t", user: "p6alice", userId: "84740d1d-9ed0-4799-9464-c42f57fec30c" });
+    expect(readPath("rating", {})).toBe("/players/84740d1d-9ed0-4799-9464-c42f57fec30c/rating");
+    expect(readPath("rating", {})).not.toContain("p6alice");
+  });
+
+  it("falls back to the JWT subject when the session has no userId", () => {
+    const claims = Buffer.from(JSON.stringify({ sub: "from-the-token", sid: "s" })).toString("base64url");
+    useSession({ token: `h.${claims}.sig`, user: "p6alice" });
+    expect(readPath("rating", {})).toBe("/players/from-the-token/rating");
+  });
+
+  it("still lets an explicit --player win", () => {
+    useSession({ token: "t", user: "p6alice", userId: "uuid-1" });
+    expect(readPath("rating", { player: "someone-else" })).toBe("/players/someone-else/rating");
   });
 });

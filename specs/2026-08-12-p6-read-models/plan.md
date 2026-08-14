@@ -401,3 +401,39 @@ the same class of bug hiding in the two services the drill had not exercised the
 - **The spectator's fan-out is still in-process.** A Redis pub/sub hop would make a second replica
   work, but nothing asks for a second replica and the note in `broker.ts` is what a future reader
   needs.
+
+---
+
+## 11. Post-closure review pass — findings (2026-08-14)
+
+Run after P6 was merged and closed, on request, as a PR reviewer would read someone else's diff.
+This is where the convention says the real defects are, and it held: the pre-merge pass (§10) found
+structural problems, and this one found the phase's only **user-facing** bug.
+
+| # | Finding | Change |
+|---|---|---|
+| S1 | **`rating` with no flags asked about the wrong player.** It defaulted to `session.user` — the *display name* — while ranking keys on the player **id**. So the default invocation of a new command returned a confident `rating 1000 after 0 game(s)` for a player that does not exist. Worse than an error, because it looks like an answer. The CLI already had the correct logic in `rooms.ts` as a private `me()`; `watch.ts` grew a second, wrong answer beside it. | `playerId()` moved into `api.ts`, which owns the session; `rooms.ts` delegates to it and `watch.ts` uses it. One place, one answer. |
+| S2 | **The test for S1 did not bite.** `pathFor` was unit-tested as a pure function and stayed green through the bug, because the defect was in the *caller* choosing what to pass. A test that cannot fail on the actual mistake is decoration. | `readPath()` extracted so the wiring itself is testable, with three tests seeded through `useSession` — including the JWT-subject fallback. Bite-checked: restoring the bug turns two of them red. |
+| S3 | **`render()` dispatched by sniffing the response shape** (`if (payload.overview)`, `if (payload.activity !== undefined)`, else assume player stats). The caller already knew which of the five surfaces it asked for; re-deriving it from the reply means a shape change silently picks a different branch, and the final case had no guard at all. | `surfaceFor()` decides once; `pathFor` and `render` both take it. `render` is now an exhaustive `switch` over a union, so a new surface is a compile error rather than a wrong branch. |
+| S4 | **Two more dead symbols** the pre-merge pass missed: `Effects.is_empty()` (analytics-workers) and the `Connection` interface (spectator's `sse.ts`) — both defined, exported, never called. Third and fourth instances of the shape after `countFor`. | Deleted. |
+| S5 | **Two comments overstated what scaling would take**, which is the "documented flag that did not bound what it said" failure. ranking's chart said a second replica "buys nothing except a rebalance to reason about" — in fact applying Elo is a read-modify-write and two replicas would **lose updates**. spectator's said a Redis pub/sub hop "would fix it" — pub/sub fixes the fan-out and says nothing about the projection race, and because a room's log spans two topics whose partitions are assigned independently, nothing guarantees one consumer owns both. | Both rewritten to state the real constraint and what a fix would actually require. `analytics-workers` gained the contrasting note: every write there IS an atomic upsert, so it would scale — the asymmetry is deliberate, because Elo must read before it writes and analytics need not. |
+
+### Checked and NOT changed, and why
+
+- **~75 lines are duplicated between `ranking/consumer.py` and `analytics-workers/consumer.py`**
+  (`header_value`, `event_name`, `refresh_lag`, the poll loop). Real, and it already cost something:
+  both needed the same two fixes this phase. But kaniko builds each service from its own directory,
+  and the P5 handoff decided this exact trade for the Go workers — a shared package means solving
+  the build context for every service. Keeping the established trade beats inventing a second one
+  for four services. Flagged here so the next phase can revisit it deliberately rather than inherit
+  it silently.
+- **`_rating_of` does one SELECT per player** rather than a single `= ANY(...)`. Two to ten round
+  trips inside a transaction, and the loop reads more plainly than a fetch-then-reorder. Not worth
+  the trade.
+- **Elo's `K` and initial rating are constants, not env vars.** A lever nobody pulls is a lever to
+  keep correct for free.
+- **The spectator's heartbeat reads Redis per connection every 15 s.** With the connection counts
+  this system has, one read per spectator per 15 s is not worth caching.
+- **`ranking`'s lag gauge is unlabelled while `analytics`' carries `topic`.** They read different
+  numbers of topics; a constant label would be noise. The mismatch that mattered — a gauge set with
+  labels it was not declared with — is now pinned by a test in both services.

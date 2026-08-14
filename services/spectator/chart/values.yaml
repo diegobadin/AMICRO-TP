@@ -7,9 +7,10 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
-# One replica. The consumer projects into Redis and fans out to the streams it holds itself, so a
-# second replica would serve spectators the partitions it does not consume — see src/broker.ts for
-# the Redis pub/sub hop that would fix it. Written down rather than built.
+# One replica, for two independent reasons — see src/broker.ts. The fan-out is in-process, so a
+# second replica would serve spectators the partitions it does not consume; and projecting is a
+# read-modify-write on one Redis key while a room's log arrives on two topics, whose partitions
+# are assigned independently. Both would have to be solved, not just the first.
 replicas: 1
 port: 8086
 healthPath: /health

@@ -6,7 +6,7 @@
 // board of its own and briefly believed something the server never said. A spectator has even less
 // business guessing than a player does.
 
-import { API, emit, line, loadSession, request } from "./api.js";
+import { API, emit, line, loadSession, playerId, request } from "./api.js";
 import { follow, type StreamEvent } from "./stream.js";
 
 const short = (id: string) => (id.length > 8 ? `${id.slice(0, 8)}…` : id);
@@ -148,14 +148,15 @@ export async function read(
   json: boolean,
 ): Promise<number> {
   const session = loadSession();
-  const path = pathFor(action, flags, session.user);
+  const surface = surfaceFor(action, flags);
+  const path = readPath(action, flags);
   if (!path) {
     process.stderr.write(`${action}: nothing to read — check the flags\n`);
     return 2;
   }
   const reply = await request(API, "GET", path, { token: session.token });
   const ok = reply.status === 200;
-  if (ok && !json) process.stdout.write(`${render(action, reply.payload)}\n`);
+  if (ok && !json) process.stdout.write(`${render(surface, reply.payload)}\n`);
   emit(
     line({
       action,
@@ -170,55 +171,105 @@ export async function read(
   return ok ? 0 : 1;
 }
 
+/** Which of the five read surfaces a command and its flags mean. Decided once, used twice. */
+export type Surface = "rating" | "leaderboard" | "player-stats" | "room-stats" | "overview";
+
+export function surfaceFor(
+  action: "rating" | "leaderboard" | "stats",
+  flags: Record<string, string | boolean>,
+): Surface {
+  if (action === "rating") return "rating";
+  if (action === "leaderboard") return "leaderboard";
+  if (flags.player) return "player-stats";
+  if (flags.room) return "room-stats";
+  return "overview";
+}
+
+/**
+ * The path this session would ask for. Separate from `pathFor` so the *wiring* is testable, not just
+ * the mapping: the P6 bug was not that `pathFor` mishandled its argument, it was that the caller
+ * handed it the display name instead of the player id — and a test of `pathFor` alone stays green
+ * through exactly that mistake.
+ */
+export function readPath(
+  action: "rating" | "leaderboard" | "stats",
+  flags: Record<string, string | boolean>,
+): string | undefined {
+  return pathFor(action, flags, playerId());
+}
+
 export function pathFor(
   action: "rating" | "leaderboard" | "stats",
   flags: Record<string, string | boolean>,
-  sessionUser?: string,
+  me: string,
 ): string | undefined {
+  const surface = surfaceFor(action, flags);
   const limit = flags.limit ? `?limit=${Number(flags.limit)}` : "";
-  if (action === "rating") {
-    // Defaults to the logged-in player: "what is my rating" is the question people actually ask.
-    const player = String(flags.player ?? sessionUser ?? "");
-    return player ? `/players/${encodeURIComponent(player)}/rating` : undefined;
+  switch (surface) {
+    case "rating": {
+      // Defaults to this session's own player *id* — "what is my rating" is the question people
+      // actually ask, and the id is what ranking keys on. A username here asks about somebody who
+      // does not exist and gets a confident default back.
+      const player = String(flags.player ?? me);
+      return player ? `/players/${encodeURIComponent(player)}/rating` : undefined;
+    }
+    case "leaderboard":
+      return `/leaderboard${limit}`;
+    case "player-stats":
+      return `/stats/players/${encodeURIComponent(String(flags.player))}`;
+    case "room-stats":
+      return `/stats/rooms/${encodeURIComponent(String(flags.room))}`;
+    case "overview":
+      return "/stats/overview";
   }
-  if (action === "leaderboard") return `/leaderboard${limit}`;
-  if (flags.player) return `/stats/players/${encodeURIComponent(String(flags.player))}`;
-  if (flags.room) return `/stats/rooms/${encodeURIComponent(String(flags.room))}`;
-  return "/stats/overview";
 }
 
-function render(action: string, payload: Record<string, unknown>): string {
-  if (action === "rating") {
-    return `-- ${payload.playerId} rating ${payload.rating} after ${payload.games} game(s)`;
+/**
+ * Render by the surface that was ASKED for, not by guessing from the shape that came back. The
+ * caller already decided which of the five reads it wanted; sniffing `payload.overview` to find out
+ * again means a response that changes shape silently picks a different branch.
+ */
+function render(surface: Surface, payload: Record<string, unknown>): string {
+  switch (surface) {
+    case "rating":
+      return `-- ${payload.playerId} rating ${payload.rating} after ${payload.games} game(s)`;
+
+    case "leaderboard": {
+      const rows = (payload.leaderboard as Record<string, unknown>[]) ?? [];
+      if (rows.length === 0) return "-- leaderboard is empty";
+      return [
+        "-- leaderboard",
+        ...rows.map(
+          (r) =>
+            `   ${String(r.rank).padStart(2)}. ${String(r.playerId).padEnd(16)} ${r.rating}  (${r.games} games)`,
+        ),
+      ].join("\n");
+    }
+
+    case "overview": {
+      const counts = (payload.overview as Record<string, number>) ?? {};
+      return [
+        "-- overview",
+        ...Object.entries(counts).map(([metric, value]) => `   ${metric.padEnd(20)} ${value}`),
+      ].join("\n");
+    }
+
+    case "room-stats": {
+      const activity = payload.activity as Record<string, unknown> | null;
+      const games = (payload.games as Record<string, unknown>[]) ?? [];
+      if (!activity) return `-- room ${short(String(payload.roomId))} has no recorded activity`;
+      return [
+        `-- room ${short(String(payload.roomId))} ${activity.status} - ${activity.playersSeen} players, ${activity.eventsSeen} events`,
+        `   ${activity.cardsPlayed} cards played, ${activity.cardsDrawn} drawn`,
+        ...games.map(
+          (g) =>
+            `   game ${g.gameNumber}: ${(g.finishingOrder as string[]).map(short).join(" > ")}` +
+            (g.isAbandoned ? " (abandoned)" : ""),
+        ),
+      ].join("\n");
+    }
+
+    case "player-stats":
+      return `-- ${payload.playerId} played ${payload.gamesPlayed}, won ${payload.gamesWon}, abandoned ${payload.gamesAbandoned}`;
   }
-  if (action === "leaderboard") {
-    const rows = (payload.leaderboard as Record<string, unknown>[]) ?? [];
-    if (rows.length === 0) return "-- leaderboard is empty";
-    return [
-      "-- leaderboard",
-      ...rows.map((r) => `   ${String(r.rank).padStart(2)}. ${String(r.playerId).padEnd(16)} ${r.rating}  (${r.games} games)`),
-    ].join("\n");
-  }
-  if (payload.overview) {
-    const counts = payload.overview as Record<string, number>;
-    return [
-      "-- overview",
-      ...Object.entries(counts).map(([metric, value]) => `   ${metric.padEnd(20)} ${value}`),
-    ].join("\n");
-  }
-  if (payload.activity !== undefined) {
-    const activity = payload.activity as Record<string, unknown> | null;
-    const games = (payload.games as Record<string, unknown>[]) ?? [];
-    if (!activity) return `-- room ${short(String(payload.roomId))} has no recorded activity`;
-    return [
-      `-- room ${short(String(payload.roomId))} ${activity.status} - ${activity.playersSeen} players, ${activity.eventsSeen} events`,
-      `   ${activity.cardsPlayed} cards played, ${activity.cardsDrawn} drawn`,
-      ...games.map(
-        (g) =>
-          `   game ${g.gameNumber}: ${(g.finishingOrder as string[]).map(short).join(" > ")}` +
-          (g.isAbandoned ? " (abandoned)" : ""),
-      ),
-    ].join("\n");
-  }
-  return `-- ${payload.playerId} played ${payload.gamesPlayed}, won ${payload.gamesWon}, abandoned ${payload.gamesAbandoned}`;
 }
