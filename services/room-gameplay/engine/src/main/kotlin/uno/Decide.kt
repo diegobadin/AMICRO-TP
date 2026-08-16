@@ -96,7 +96,7 @@ private class Log(initial: RoomState) {
 
 private fun Log.createRoom(command: CreateRoom, now: Instant): Decision {
     if (state.exists) return reject(Rejection.ROOM_ALREADY_EXISTS)
-    emit(RoomCreated(command.roomType, command.creatorId, command.maxPlayers, now))
+    emit(RoomCreated(command.roomType, command.creatorId, command.maxPlayers, now, command.tournament))
     emit(PlayerJoined(command.creatorId, playerCount = 1, at = now))
     return accept()
 }
@@ -110,8 +110,12 @@ private fun Log.joinRoom(command: JoinRoom, now: Instant, config: EngineConfig, 
 
     emit(PlayerJoined(command.playerId, playerCount = state.players.size + 1, at = now))
     // E3: the backend starts the game itself once the room is playable, so `play --casual` is a
-    // single call for the player instead of a create-then-host-starts dance.
-    if (state.players.size >= config.minPlayers) startGameNow(now, config, seed)
+    // single call for the player instead of a create-then-host-starts dance. A tournament room is
+    // filled and started in one transaction by whoever provisions it, so starting at `minPlayers`
+    // here would deal the cards before the last assigned player had a seat.
+    if (state.roomType == RoomType.CASUAL && state.players.size >= config.minPlayers) {
+        startGameNow(now, config, seed)
+    }
     return accept()
 }
 

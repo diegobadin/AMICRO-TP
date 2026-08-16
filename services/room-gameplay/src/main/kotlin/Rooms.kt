@@ -10,9 +10,12 @@ import uno.CreateRoom
 import uno.Decision
 import uno.EngineConfig
 import uno.Event
+import uno.JoinRoom
 import uno.Rejection
 import uno.RoomState
 import uno.RoomType
+import uno.StartGame
+import uno.TournamentLink
 import uno.decide
 import uno.nextDeadline
 
@@ -133,22 +136,74 @@ class Rooms(
         val events = decide(empty, command, now(), seed(), engine).events
         val state = empty.after(events)
         val record = idempotencyKey?.let { IdempotentCreate(it, playerId, render(state)) }
+        return commitCreate(roomId, events, state, correlationId, record, idempotencyKey, playerId)
+    }
 
-        return when (store.append(roomId, 0, events, state, correlationId, record, nextDeadline(state, engine))) {
+    /**
+     * P7 E1: a tournament room arrives complete — every assigned player seated and game 1 dealt, in
+     * the single transaction that creates it. Three commands are folded rather than three requests
+     * made, because a half-filled tournament room is a state the tournament would have to reconcile
+     * and nothing else would ever repair.
+     *
+     * The caller is a service, so the idempotency key is not a header a client chose: it is
+     * `tournamentId:roundNumber:roomIndex`, which is the same room by definition however many times
+     * the round is retried.
+     */
+    fun provision(
+        link: TournamentLink,
+        players: List<String>,
+        idempotencyKey: String,
+        correlationId: String?,
+        render: (RoomState) -> String,
+    ): CreateOutcome {
+        val owner = players.first()
+        store.findIdempotent(idempotencyKey, owner)?.let { return CreateOutcome.Replayed(it) }
+
+        val roomId = UUID.randomUUID()
+        var state = RoomState(roomId = roomId.toString())
+        val events = mutableListOf<Event>()
+        // Seat everyone, then start. `startGame` is explicit here for the same reason `joinRoom` no
+        // longer auto-starts a tournament room: the last player must be holding cards too.
+        val commands = listOf(
+            CreateRoom(roomId.toString(), owner, RoomType.TOURNAMENT, players.size, link),
+        ) + players.drop(1).map { JoinRoom(it) } + StartGame(null)
+
+        for (command in commands) {
+            val decision = decide(state, command, now(), seed(), engine)
+            if (decision is Decision.Rejected) return CreateOutcome.Refused(decision.reason)
+            events += decision.events
+            state = state.after(decision.events)
+        }
+
+        val record = IdempotentCreate(idempotencyKey, owner, render(state))
+        return commitCreate(roomId, events, state, correlationId, record, idempotencyKey, owner)
+    }
+
+    private fun commitCreate(
+        roomId: UUID,
+        events: List<Event>,
+        state: RoomState,
+        correlationId: String?,
+        record: IdempotentCreate?,
+        idempotencyKey: String?,
+        owner: String,
+    ): CreateOutcome =
+        when (store.append(roomId, 0, events, state, correlationId, record, nextDeadline(state, engine))) {
             is AppendResult.Committed -> {
                 stream.published(roomId, 0, events, correlationId)
                 CreateOutcome.Created(roomId, state, events)
             }
             AppendResult.Conflict -> idempotencyKey
-                ?.let { store.findIdempotent(it, playerId) }
+                ?.let { store.findIdempotent(it, owner) }
                 ?.let { CreateOutcome.Replayed(it) }
                 ?: error("room $roomId conflicted on a fresh id with no idempotency key")
         }
-    }
 }
 
 sealed interface CreateOutcome {
     data class Created(val roomId: UUID, val state: RoomState, val events: List<Event>) : CreateOutcome
     /** This player already used this key; the response they got the first time is returned verbatim. */
     data class Replayed(val response: String) : CreateOutcome
+    /** Only provisioning can get here: the assigned players do not make a playable room. */
+    data class Refused(val reason: Rejection) : CreateOutcome
 }

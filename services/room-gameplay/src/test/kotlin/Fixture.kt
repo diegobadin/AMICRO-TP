@@ -19,11 +19,19 @@ import java.util.UUID
  * cannot prove a rollback left no rows, or that two writers cannot take one sequence number — so
  * the fixture is a real pool and the guard against running them blind lives in one place.
  */
-val config: Config = Config.fromEnv(emptyMap())
+/**
+ * The internal token is part of the fixture rather than absent from it: an unset one closes the
+ * `/internal` routes completely (P7 D1), so a suite that left it out would prove the gate exists by
+ * never getting past it, and would say nothing about the routes behind it.
+ */
+const val TEST_INTERNAL_TOKEN = "test-internal-token"
+
+val config: Config = Config.fromEnv(mapOf("INTERNAL_TOKEN" to TEST_INTERNAL_TOKEN))
 
 val ALICE = "11111111-1111-1111-1111-111111111111"
 val BOB = "22222222-2222-2222-2222-222222222222"
 val CAROL = "33333333-3333-3333-3333-333333333333"
+val DAVE = "44444444-4444-4444-4444-444444444444"
 
 val testJson = Json { ignoreUnknownKeys = true }
 
@@ -37,10 +45,21 @@ fun HttpRequestBuilder.asPlayer(playerId: String = ALICE, sessionId: String = "s
     header(SESSION_HEADER, sessionId)
 }
 
-/** The timer worker's own identity: both headers, and a prefix the gateway can never mint (P5). */
-fun HttpRequestBuilder.asTimerWorker(sessionId: String = "worker-1") {
+/**
+ * The timer worker's own identity: both headers, a prefix the gateway can never mint (P5), and the
+ * shared token the internal routes have wanted since P7.
+ */
+fun HttpRequestBuilder.asTimerWorker(sessionId: String = "worker-1", token: String? = TEST_INTERNAL_TOKEN) {
     header(PLAYER_HEADER, "${SYSTEM_PREFIX}timer-worker")
     header(SESSION_HEADER, sessionId)
+    token?.let { header(INTERNAL_TOKEN_HEADER, it) }
+}
+
+/** The tournament's identity on the same door: a different system id, the same token. */
+fun HttpRequestBuilder.asTournament(token: String? = TEST_INTERNAL_TOKEN) {
+    header(PLAYER_HEADER, "${SYSTEM_PREFIX}tournament")
+    header(SESSION_HEADER, "tournament-1")
+    token?.let { header(INTERNAL_TOKEN_HEADER, it) }
 }
 
 fun testPool(): HikariDataSource {
@@ -85,6 +104,14 @@ fun HikariDataSource.countIn(table: String, roomId: UUID): Int =
         connection.prepareStatement("select count(*) from $table where room_id = ?").use { statement ->
             statement.setObject(1, roomId)
             statement.executeQuery().use { rows -> rows.next(); rows.getInt(1) }
+        }
+    }
+
+/** How many rooms exist at all — the question "did that refusal still write something?" needs it. */
+fun HikariDataSource.roomCount(): Int =
+    connection.use { connection ->
+        connection.createStatement().use { statement ->
+            statement.executeQuery("select count(*) from rooms").use { rows -> rows.next(); rows.getInt(1) }
         }
     }
 

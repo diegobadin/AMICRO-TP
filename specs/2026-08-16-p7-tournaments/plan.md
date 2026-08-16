@@ -44,10 +44,12 @@ rule), reusing the existing `idempotency_keys` table. A retry returns the same r
 second room.
 2.5 Authentication (D1): a `X-Internal-Token` compared against a sealed shared secret, in constant
 time. Absent or wrong ⇒ `401`. The route is registered outside `PLAYER_AUTH` — it must not be
-reachable with a player session either.
-2.6 Ship `gitops/platform/network-policies/room-gameplay-internal.yaml` restricting `/internal`'s
-port-level reachability to the tournament pod, with a comment stating plainly that **kindnet does
-not enforce NetworkPolicy**, so this is the production-shaped half and the token is the enforcing one.
+reachable with a player session either. The token guards the **whole** `/internal` prefix (D1b), so
+`timer-worker` sends it too; an unset token closes the routes rather than opening them.
+2.6 ~~Ship a NetworkPolicy~~ — **not done, deliberately (D1)**. Neither kindnet nor the EKS VPC CNI
+enforces NetworkPolicy without extra setup, so the manifest would apply in no environment this
+project runs and would become load-bearing, untested, the first time one did. The reasoning goes in
+the threat model and the §12 delta instead.
 2.7 A gateway test asserts `route("POST", "/internal/rooms")` is `undefined`, so the endpoint cannot
 be published by a later table edit without a red test.
 

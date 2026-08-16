@@ -15,6 +15,8 @@ data class Config(
     val databasePassword: String?,
     val kafkaBrokers: String,
     val redisUrl: String,
+    /** Shared with the callers of `/internal` (timer worker, tournament). Unset closes those routes. */
+    val internalToken: String?,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): Config = Config(
@@ -33,6 +35,7 @@ data class Config(
             // Where committed events go for the gateway to fan out (E1). Not a store: losing it
             // costs the live feed, never the game.
             redisUrl = env["REDIS_URL"] ?: "redis://localhost:6379",
+            internalToken = env["INTERNAL_TOKEN"],
         )
     }
 }

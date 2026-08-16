@@ -7,6 +7,7 @@ data class CreateRoom(
     val creatorId: String,
     val roomType: RoomType = RoomType.CASUAL,
     val maxPlayers: Int = 10,
+    val tournament: TournamentLink? = null,
 ) : Command
 
 data class JoinRoom(val playerId: String) : Command

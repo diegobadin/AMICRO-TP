@@ -23,6 +23,7 @@ import uno.ChallengeUno
 import uno.Color
 import uno.Command
 import uno.DrawCard
+import uno.MIN_PLAYERS_TO_PLAY
 import uno.Event
 import uno.GameCompleted
 import uno.GameStarted
@@ -36,11 +37,30 @@ import uno.Rejection
 import uno.RoomCreated
 import uno.RoomExpired
 import uno.RoomState
+import uno.RoomType
 import uno.StartGame
 import uno.Tick
+import uno.TournamentLink
 
 @Serializable
 data class CreateRoomBody(val roomType: String? = null, val maxPlayers: Int? = null)
+
+/**
+ * What a tournament sends to provision one room of one round (P7 E1). `roomIndex` is not stored —
+ * it exists to make the idempotency key unique within the round, so a retried round asks for the
+ * same rooms rather than a second set of them.
+ */
+@Serializable
+data class ProvisionRoomBody(
+    val tournamentId: String,
+    val roundNumber: Int,
+    val roomIndex: Int,
+    val players: List<String>,
+    val advanceCount: Int,
+)
+
+@Serializable
+data class ProvisionedRoom(val roomId: String, val gameNumber: Int, val players: List<String>)
 
 /**
  * One move shape for the whole log (§2.3.1). `type` is the wire name; `card` is the §5.F notation,
@@ -153,6 +173,12 @@ fun Route.roomRoutes(rooms: Rooms) {
         post("/rooms") {
             val player = call.player()
             val body = call.receiveNullable<CreateRoomBody>() ?: CreateRoomBody()
+            // The field has been accepted and ignored since P3. It is honoured now, and honouring it
+            // means refusing the one value a player may not choose: a tournament room belongs to a
+            // tournament, which seats it and starts it (P7 E1).
+            if (body.roomType != null && !body.roomType.equals(RoomType.CASUAL.name, ignoreCase = true)) {
+                return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("room_type_not_available"))
+            }
             val outcome = rooms.create(
                 playerId = player.playerId,
                 maxPlayers = body.maxPlayers?.coerceIn(2, 10) ?: 10,
@@ -171,6 +197,8 @@ fun Route.roomRoutes(rooms: Rooms) {
                 // creation already happened, this request did not perform one.
                 is CreateOutcome.Replayed ->
                     call.respond(HttpStatusCode.OK, Json.parseToJsonElement(outcome.response))
+                // Unreachable: only provisioning hands the engine a roomful of players to refuse.
+                is CreateOutcome.Refused -> call.refuse(outcome.reason)
             }
         }
 
@@ -342,6 +370,52 @@ data class TickResult(val sequenceNumber: Int, val events: Int)
  */
 fun Route.internalRoutes(rooms: Rooms) {
     authenticate(SYSTEM_AUTH) {
+        /**
+         * Tournament round kickoff (P7 E1). The room comes back already playing, so the tournament
+         * never holds a half-built room: either the whole transaction committed or none of it did.
+         *
+         * A single-player room is refused rather than created and left waiting — an odd number of
+         * survivors is a bye, and a bye is the tournament's decision to make, not a room to park it in.
+         */
+        post("/internal/rooms") {
+            val body = call.receiveNullable<ProvisionRoomBody>()
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("malformed_request"))
+            val players = body.players.distinct()
+            if (players.size != body.players.size) {
+                return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("duplicate_players"))
+            }
+            if (players.size < MIN_PLAYERS_TO_PLAY || body.advanceCount < 1 || body.advanceCount >= players.size) {
+                return@post call.respond(HttpStatusCode.BadRequest, ErrorBody("unplayable_room"))
+            }
+
+            val outcome = rooms.provision(
+                link = TournamentLink(body.tournamentId, body.roundNumber, body.advanceCount),
+                players = players,
+                idempotencyKey = "${body.tournamentId}:${body.roundNumber}:${body.roomIndex}",
+                correlationId = call.correlationId(),
+                render = { state ->
+                    Json.encodeToString(
+                        ProvisionedRoom(state.roomId, state.game?.gameNumber ?: 1, players),
+                    )
+                },
+            )
+            when (outcome) {
+                is CreateOutcome.Created -> {
+                    countBusiness(outcome.events)
+                    Metrics.provisionedRooms.increment()
+                    call.response.header("Location", "/rooms/${outcome.roomId}")
+                    call.respond(
+                        HttpStatusCode.Created,
+                        ProvisionedRoom(outcome.roomId.toString(), outcome.state.game?.gameNumber ?: 1, players),
+                    )
+                }
+                // The round is being retried; this room already exists and this is the id it got.
+                is CreateOutcome.Replayed ->
+                    call.respond(HttpStatusCode.OK, Json.parseToJsonElement(outcome.response))
+                is CreateOutcome.Refused -> call.refuse(outcome.reason)
+            }
+        }
+
         post("/internal/rooms/{roomId}/tick") {
             val roomId = call.roomId()
                 ?: return@post call.respond(HttpStatusCode.NotFound, ErrorBody("room_not_found"))

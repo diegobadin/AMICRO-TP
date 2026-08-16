@@ -48,6 +48,7 @@ type config struct {
 	port            string
 	databaseURL     string
 	roomGameplayURL string
+	internalToken   string
 	tickInterval    time.Duration
 	batchSize       int
 	httpTimeout     time.Duration
@@ -67,6 +68,7 @@ func configFromEnv() config {
 			env("DATABASE_NAME", "room_gameplay"),
 		),
 		roomGameplayURL: env("ROOM_GAMEPLAY_URL", "http://localhost:8081"),
+		internalToken:   os.Getenv("INTERNAL_TOKEN"),
 		tickInterval:    envDuration("TICK_INTERVAL_MS", time.Second),
 		batchSize:       envInt("TICK_BATCH_SIZE", 50),
 		httpTimeout:     envDuration("HTTP_TIMEOUT_MS", 5*time.Second),
@@ -91,9 +93,10 @@ func main() {
 	w := &worker{
 		rooms: &pgRooms{pool: pool},
 		ticks: &tickClient{
-			baseURL:   cfg.roomGameplayURL,
-			sessionID: sessionID,
-			client:    &http.Client{Timeout: cfg.httpTimeout},
+			baseURL:       cfg.roomGameplayURL,
+			sessionID:     sessionID,
+			internalToken: cfg.internalToken,
+			client:        &http.Client{Timeout: cfg.httpTimeout},
 		},
 		interval:  cfg.tickInterval,
 		batchSize: cfg.batchSize,

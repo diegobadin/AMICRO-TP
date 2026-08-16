@@ -30,6 +30,11 @@ object Metrics {
     val gamesStarted: Counter = Counter.builder("roomgameplay.games.started")
         .description("Games started").register(registry)
 
+    // P7: rooms a tournament asked for, as opposed to rooms a player opened. Both increment
+    // `rooms.opened`; this one says which door they came through.
+    val provisionedRooms: Counter = Counter.builder("roomgameplay.rooms.provisioned")
+        .description("Tournament rooms created through the internal route").register(registry)
+
     val gamesCompleted: Counter = Counter.builder("roomgameplay.games.completed")
         .description("Games played to a winner").register(registry)
 

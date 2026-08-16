@@ -19,6 +19,7 @@ fun replay(events: List<Event>, roomId: String = ""): RoomState =
 private fun apply(state: RoomState, event: Event): RoomState = when (event) {
     is RoomCreated -> state.copy(
         roomType = event.roomType,
+        tournament = event.tournament,
         creatorId = event.creatorId,
         maxPlayers = event.maxPlayers,
         status = RoomStatus.WAITING,

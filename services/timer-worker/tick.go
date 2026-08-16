@@ -14,12 +14,17 @@ import (
 // the only way in from outside, and this worker is inside. Both headers are required — one alone is
 // a 401, and the `system:` prefix is refused on every player-facing route, so this identity can only
 // ever do the one thing it exists for.
+//
+// Since P7 the internal routes also want a shared token: being inside the cluster stopped being
+// enough when `/internal` gained the power to create rooms. Without INTERNAL_TOKEN every tick is a
+// 401 — which is a loud failure, and deliberately not a silent one.
 const systemPlayerID = "system:timer-worker"
 
 type tickClient struct {
-	baseURL   string
-	sessionID string
-	client    *http.Client
+	baseURL       string
+	sessionID     string
+	internalToken string
+	client        *http.Client
 }
 
 func (t *tickClient) tick(ctx context.Context, roomID string) error {
@@ -30,6 +35,7 @@ func (t *tickClient) tick(ctx context.Context, roomID string) error {
 	}
 	req.Header.Set("X-Player-Id", systemPlayerID)
 	req.Header.Set("X-Session-Id", t.sessionID)
+	req.Header.Set("X-Internal-Token", t.internalToken)
 	req.Header.Set("X-Correlation-Id", correlationID())
 
 	res, err := t.client.Do(req)

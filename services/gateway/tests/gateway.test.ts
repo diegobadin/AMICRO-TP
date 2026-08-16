@@ -54,10 +54,13 @@ describe("route table", () => {
   });
 
   // The timer worker reaches room-gameplay from inside the cluster, and nothing here may open a
-  // path to it: a client that could tick a room could resolve its own turn timer early.
+  // path to it: a client that could tick a room could resolve its own turn timer early. Since P7
+  // the same prefix also provisions tournament rooms seating other people, so the path is named
+  // explicitly — publishing it would let a client deal a game to players who never asked to play.
   it("has no route to anything internal", () => {
     for (const method of ["GET", "POST", "PATCH", "DELETE"]) {
       expect(route(method, "/internal/rooms/r1/tick")).toBeUndefined();
+      expect(route(method, "/internal/rooms")).toBeUndefined();
       expect(route(method, "/internal/anything")).toBeUndefined();
     }
   });

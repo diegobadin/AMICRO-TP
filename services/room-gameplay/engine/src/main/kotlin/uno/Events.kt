@@ -31,6 +31,7 @@ data class RoomCreated(
     val creatorId: String,
     val maxPlayers: Int,
     override val at: Instant,
+    val tournament: TournamentLink? = null,
 ) : Event
 
 @Serializable

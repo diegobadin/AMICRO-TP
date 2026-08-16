@@ -32,6 +32,10 @@ generate ROOM_GAMEPLAY_DB_PASSWORD 24
 generate RANKING_DB_PASSWORD 24
 generate ANALYTICS_DB_PASSWORD 24
 generate TOURNAMENT_DB_PASSWORD 24
+# Shared by room-gameplay and everything allowed through its /internal routes (P7 D1). The threat
+# model's answer there is a NetworkPolicy, which kindnet does not enforce — so this is the half that
+# works on the cluster the demo actually runs on.
+generate INTERNAL_TOKEN 32
 set -a; . "$PLAINTEXT"; set +a
 
 # The registry credential is issued by GitLab, not by us, so it cannot be regenerated here.
@@ -58,7 +62,8 @@ seal "$HERE/staging/identity-secrets.yaml" \
 # §8.9, closed).
 seal "$HERE/staging/room-gameplay-secrets.yaml" \
   generic room-gameplay-secrets -n unoarena-staging \
-  --from-literal=ROOM_GAMEPLAY_DB_PASSWORD="$ROOM_GAMEPLAY_DB_PASSWORD"
+  --from-literal=ROOM_GAMEPLAY_DB_PASSWORD="$ROOM_GAMEPLAY_DB_PASSWORD" \
+  --from-literal=INTERNAL_TOKEN="$INTERNAL_TOKEN"
 
 # The two P6 consumers. Each owns its own database and holds nothing else: they read Kafka, which
 # carries no auth on this platform, and write only their own projections. spectator gets no secret
@@ -75,7 +80,8 @@ seal "$HERE/staging/analytics-secrets.yaml" \
 # tournament service, which owns the schema, and the second outbox-relay that drains its outbox.
 seal "$HERE/staging/tournament-secrets.yaml" \
   generic tournament-secrets -n unoarena-staging \
-  --from-literal=TOURNAMENT_DB_PASSWORD="$TOURNAMENT_DB_PASSWORD"
+  --from-literal=TOURNAMENT_DB_PASSWORD="$TOURNAMENT_DB_PASSWORD" \
+  --from-literal=INTERNAL_TOKEN="$INTERNAL_TOKEN"
 
 # The gateway is the verifier: it validates the token and passes the identity downstream as headers.
 # One signer, one verifier — which is as small as a symmetric key's blast radius gets.

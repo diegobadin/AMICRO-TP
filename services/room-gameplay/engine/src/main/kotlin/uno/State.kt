@@ -4,6 +4,14 @@ import java.time.Instant
 
 @kotlinx.serialization.Serializable
 enum class RoomType { CASUAL, TOURNAMENT }
+
+/**
+ * §3.2's `Tournament { tournamentId, roundNumber }`. `advanceCount` rides along because the number
+ * of seats that advance is a per-room property the tournament sets when it provisions the room —
+ * the room decides who advances, and it cannot do that without knowing how many.
+ */
+@kotlinx.serialization.Serializable
+data class TournamentLink(val tournamentId: String, val roundNumber: Int, val advanceCount: Int)
 enum class RoomStatus { WAITING, IN_PROGRESS, COMPLETED }
 enum class GameStatus { IN_PROGRESS, COMPLETED }
 
@@ -68,6 +76,8 @@ data class Game(
 data class RoomState(
     val roomId: String = "",
     val roomType: RoomType = RoomType.CASUAL,
+    /** Set only for a room a tournament provisioned; null is what makes a room casual in practice. */
+    val tournament: TournamentLink? = null,
     val status: RoomStatus = RoomStatus.WAITING,
     val maxPlayers: Int = 10,
     val creatorId: String? = null,

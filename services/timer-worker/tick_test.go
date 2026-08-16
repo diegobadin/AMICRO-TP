@@ -11,19 +11,26 @@ import (
 
 // The P4 lesson, made permanent: room-gameplay requires BOTH headers and a probe that sets one sees
 // a 401 that is correct rather than a bug. A worker that sends half an identity would look like a
-// broken engine from every other angle.
+// broken engine from every other angle. Since P7 the shared token is a third required part — and it
+// fails the same silent way, so it is asserted here rather than discovered on a cluster.
 func TestTickSendsBothTrustHeaders(t *testing.T) {
-	var player, session, correlation, path, method string
+	var player, session, token, correlation, path, method string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		player = r.Header.Get("X-Player-Id")
 		session = r.Header.Get("X-Session-Id")
+		token = r.Header.Get("X-Internal-Token")
 		correlation = r.Header.Get("X-Correlation-Id")
 		path, method = r.URL.Path, r.Method
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	c := &tickClient{baseURL: server.URL, sessionID: "worker-abc", client: server.Client()}
+	c := &tickClient{
+		baseURL:       server.URL,
+		sessionID:     "worker-abc",
+		internalToken: "shared-token",
+		client:        server.Client(),
+	}
 	if err := c.tick(context.Background(), "room-1"); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -33,6 +40,9 @@ func TestTickSendsBothTrustHeaders(t *testing.T) {
 	}
 	if session != "worker-abc" {
 		t.Errorf("X-Session-Id = %q, want the pod's session", session)
+	}
+	if token != "shared-token" {
+		t.Errorf("X-Internal-Token = %q, want the shared token", token)
 	}
 	if correlation == "" {
 		t.Error("every tick carries a correlation id")
