@@ -1,8 +1,8 @@
 # One database per Postgres-backed bounded context (docs/architecture/03-persistence-layer.md
 # §1-§6; Spectator is Redis-only, and stays that way — its whole context is a Redis read model).
 # A context's database is owned by its own login role once the real service exists (identity P2,
-# room-gameplay P3, ranking + analytics P6, tournament P7). No database is left on the bootstrap
-# `app` role.
+# room-gameplay P3, ranking + analytics P6, tournament P7) — since P7 every database declared here
+# has one. CNPG's own bootstrap `app` database is not one of them and stays where it is.
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
