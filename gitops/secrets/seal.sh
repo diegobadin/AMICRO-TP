@@ -31,6 +31,7 @@ generate IDENTITY_DB_PASSWORD 24
 generate ROOM_GAMEPLAY_DB_PASSWORD 24
 generate RANKING_DB_PASSWORD 24
 generate ANALYTICS_DB_PASSWORD 24
+generate TOURNAMENT_DB_PASSWORD 24
 set -a; . "$PLAINTEXT"; set +a
 
 # The registry credential is issued by GitLab, not by us, so it cannot be regenerated here.
@@ -69,6 +70,12 @@ seal "$HERE/staging/ranking-secrets.yaml" \
 seal "$HERE/staging/analytics-secrets.yaml" \
   generic analytics-secrets -n unoarena-staging \
   --from-literal=ANALYTICS_DB_PASSWORD="$ANALYTICS_DB_PASSWORD"
+
+# P7. Named after the database rather than after a deployment because two of them read it: the
+# tournament service, which owns the schema, and the second outbox-relay that drains its outbox.
+seal "$HERE/staging/tournament-secrets.yaml" \
+  generic tournament-secrets -n unoarena-staging \
+  --from-literal=TOURNAMENT_DB_PASSWORD="$TOURNAMENT_DB_PASSWORD"
 
 # The gateway is the verifier: it validates the token and passes the identity downstream as headers.
 # One signer, one verifier — which is as small as a symmetric key's blast radius gets.
@@ -109,3 +116,9 @@ seal "$HERE/../platform/postgres/analytics-db-role.yaml" \
   --type=kubernetes.io/basic-auth \
   --from-literal=username=analytics \
   --from-literal=password="$ANALYTICS_DB_PASSWORD"
+
+seal "$HERE/../platform/postgres/tournament-db-role.yaml" \
+  generic tournament-db-role -n postgres \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=tournament \
+  --from-literal=password="$TOURNAMENT_DB_PASSWORD"

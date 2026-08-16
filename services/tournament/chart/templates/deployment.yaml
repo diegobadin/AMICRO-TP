@@ -30,6 +30,11 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.healthPath }}

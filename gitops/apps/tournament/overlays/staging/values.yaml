@@ -5,3 +5,4 @@ image:
   digest: "" # pinned by CI (deploy-gitops)
 replicas: 1
 logLevel: debug
+secretName: tournament-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
