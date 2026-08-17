@@ -184,6 +184,23 @@ class MovesHttpTest {
         assertEquals(HttpStatusCode.NotFound, res.status)
     }
 
+    /**
+     * The same defect P7 found on the internal route, checked on the route that has had it since
+     * P3: `?: malformed_move` only ever caught an *absent* body, because a move missing its `type`
+     * throws in deserialization instead of arriving as null. It answered 500.
+     */
+    @Test
+    fun `a move body that will not parse is a 400, not a 500`() = testApplication {
+        wire()
+        val roomId = client.startedRoom()
+        val seq = client.gameView(roomId, alice).sequenceNumber
+
+        for (body in listOf("{}", "not json", """{"type":42}""")) {
+            val res = client.submitMove(roomId, alice, body, seq)
+            assertEquals(HttpStatusCode.BadRequest, res.status, "body: $body")
+        }
+    }
+
     /** A whole game over HTTP — AC-P3.7's shape, without the cluster or the CLI. */
     @Test
     fun `two players can play a game to a winner through the API`() = testApplication {

@@ -8,6 +8,7 @@ import io.ktor.server.application.hooks.ResponseSent
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.httpMethod
@@ -65,6 +66,14 @@ fun Application.module(config: Config, rooms: Rooms) {
     install(ContentNegotiation) { json() }
     install(Observability)
     install(StatusPages) {
+        // A body we cannot read is the caller's problem. `receiveNullable` answers null for an
+        // absent body but throws when a field the type requires is missing, and without this that
+        // throw became a 500 — which tells a service caller to retry a request that can never
+        // succeed. Found by probing the running cluster, where `{}` answered `internal_error`.
+        exception<BadRequestException> { call, cause ->
+            logError("action" to "malformed", "correlationId" to call.correlationId(), "error" to cause.toString())
+            call.respond(HttpStatusCode.BadRequest, ErrorBody("malformed_request"))
+        }
         exception<Throwable> { call, cause ->
             logError("action" to "unhandled", "correlationId" to call.correlationId(), "error" to cause.toString())
             call.respond(HttpStatusCode.InternalServerError, ErrorBody("internal_error"))

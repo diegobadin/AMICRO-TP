@@ -114,6 +114,27 @@ class ProvisionHttpTest {
         assertEquals(0, dataSource.roomCount(), "nothing refused should have reached the log")
     }
 
+    /**
+     * Found by probing the live cluster, not by a test: `{}` answered **500**. `receiveNullable`
+     * returns null for an absent body but *throws* when a required field is missing, and the throw
+     * lands in the generic handler. A 5xx tells the tournament "my fault, try again", so a request
+     * that can never succeed would be retried for ever.
+     */
+    @Test
+    fun `a body this endpoint cannot read is the caller's problem, not a 500`() = testApplication {
+        wire(dataSource)
+
+        for (body in listOf("{}", """{"tournamentId":"t-1"}""", "not json", """{"players":"alice"}""")) {
+            val res = client.post("/internal/rooms") {
+                asTournament()
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }
+            assertEquals(HttpStatusCode.BadRequest, res.status, "body: $body")
+        }
+        assertEquals(0, dataSource.roomCount())
+    }
+
     @Test
     fun `the internal door needs the token, not just the prefix`() = testApplication {
         wire(dataSource)
