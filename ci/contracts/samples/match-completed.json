@@ -1,0 +1,21 @@
+{
+    "type": "MatchCompleted",
+    "matchResults": {
+        "alice": {
+            "wins": 2,
+            "losses": 1,
+            "cardPoints": 24
+        },
+        "bob": {
+            "wins": 1,
+            "losses": 2,
+            "cardPoints": 41
+        }
+    },
+    "advancingPlayers": [
+        "alice"
+    ],
+    "at": "2026-08-11T12:00:00Z",
+    "roomId": "1c1b0b7e-0000-4000-8000-000000000000",
+    "sequenceNumber": 42
+}

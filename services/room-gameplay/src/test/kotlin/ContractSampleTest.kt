@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import uno.GameCompleted
 import uno.GameStarted
+import uno.MatchCompleted
+import uno.MatchScore
 import uno.RoomType
 
 /**
@@ -51,6 +53,51 @@ class ContractSampleTest {
                 "roomId" to JsonPrimitive(roomId),
                 "sequenceNumber" to JsonPrimitive(sequenceNumber),
             ),
+        )
+    }
+
+    /**
+     * P7's second contract from this producer. The tournament's saga turns entirely on
+     * `advancingPlayers`: a rename here does not degrade a number, it stalls every bracket in the
+     * system while nothing logs an error — which is exactly the class of failure a contract check
+     * is supposed to catch before it ships.
+     */
+    private val matchSampleFile = File("../../ci/contracts/samples/match-completed.json")
+
+    private fun publishedMatch(): JsonObject {
+        val event = MatchCompleted(
+            matchResults = mapOf(
+                "alice" to MatchScore(wins = 2, losses = 1, cardPoints = 24),
+                "bob" to MatchScore(wins = 1, losses = 2, cardPoints = 41),
+            ),
+            advancingPlayers = listOf("alice"),
+            at = Instant.parse("2026-08-11T12:00:00Z"),
+        )
+        return JsonObject(
+            publicPayload(event) + mapOf(
+                "roomId" to JsonPrimitive(roomId),
+                "sequenceNumber" to JsonPrimitive(sequenceNumber),
+            ),
+        )
+    }
+
+    @Test
+    fun `the committed MatchCompleted sample is the one the producer would publish`() {
+        val rendered = pretty.encodeToString(JsonObject.serializer(), publishedMatch())
+
+        if (System.getenv("CONTRACT_SAMPLE_REGENERATE") == "1") {
+            matchSampleFile.parentFile.mkdirs()
+            matchSampleFile.writeText(rendered + "\n")
+        }
+
+        assertTrue(matchSampleFile.exists(), "the CI contract check validates ${matchSampleFile.path}; it is missing")
+        assertEquals(
+            rendered.trim(),
+            matchSampleFile.readText().trim(),
+            "the producer's MatchCompleted no longer matches the committed contract sample. The " +
+                "tournament reads `advancingPlayers` off this event and advances rounds with it, so " +
+                "regenerate with CONTRACT_SAMPLE_REGENERATE=1 and update " +
+                "ci/contracts/match-completed.schema.json in the same commit.",
         )
     }
 

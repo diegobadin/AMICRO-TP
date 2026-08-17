@@ -27,16 +27,22 @@
     - gradle --no-daemon check
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+    - changes: ["services/tournament/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "build:tournament":
   extends: .build-image
-  needs: ["test:tournament"]
+  # optional: the contract check only enters the pipeline when a schema or one of the paired
+  # services changes. Editing a shared CI template pulls this build in without it, and a `needs` on
+  # an absent job is a pipeline config error. When the check IS present it still gates.
+  needs:
+    - "test:tournament"
+    - job: "test:contract:game-completed"
+      optional: true
   variables:
     SVC: tournament
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+    - changes: ["services/tournament/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 "deliver:tournament":
   stage: deliver
@@ -51,7 +57,7 @@
     # helm push /tmp/tournament-*.tgz oci://$CI_REGISTRY/<group>/unoarena/charts  (when registry ready)
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+    - changes: ["services/tournament/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
 
 # A real gate since P7, no longer a manual stub. `needs` includes build:tournament for its dotenv
 # ($IMAGE, $IMAGE_DIGEST) — deliver alone does not carry them, and without it the pin writes empty
@@ -66,4 +72,4 @@
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
+    - changes: ["services/tournament/**/*", "ci/templates/**/*", "ci/contracts/**/*"]
