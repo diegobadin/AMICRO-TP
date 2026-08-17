@@ -3,6 +3,35 @@
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/tournament
   digest: "sha256:1750b63b45f1abf7f7b8662f20ba26cd25f16be16bdb67dd870644b47e754c56" # pinned by CI (deploy-gitops)
+imagePullSecrets:
+  - name: gitlab-registry
+# One replica, and not merely because a second buys nothing. Advancing a round is a
+# read-modify-write over the tournament's own log, serialised by the primary key on
+# (tournament_id, sequence_number): a second replica would not corrupt anything, it would lose the
+# race and retry. But the reconciler sweeps on a timer, and two sweepers provisioning the same round
+# would double the room-creation traffic for no gain. The idempotency keys make that safe, not free.
 replicas: 1
 logLevel: debug
+serviceMonitor:
+  enabled: true
 secretName: tournament-secrets # SealedSecret delivered by the secrets-staging app (gitops/secrets/)
+# Its own database and its own role since P7. The connection parts are plain config; the password
+# and the shared internal token arrive through secretName above. TOURNAMENT_MIN_PLAYERS is the low
+# configurable threshold the exam asks for — the lever a demo turns without a rebuild.
+env:
+  - name: DATABASE_HOST
+    value: unoarena-pg-rw.postgres.svc.cluster.local
+  - name: DATABASE_NAME
+    value: tournament
+  - name: DATABASE_USER
+    value: tournament
+  - name: KAFKA_BROKERS
+    value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+  - name: ROOM_GAMEPLAY_URL
+    value: http://room-gameplay.unoarena-staging.svc.cluster.local
+  - name: TOURNAMENT_MIN_PLAYERS
+    value: "4"
+  - name: TOURNAMENT_ROOM_SIZE
+    value: "2"
+  - name: TOURNAMENT_ADVANCE_COUNT
+    value: "1"

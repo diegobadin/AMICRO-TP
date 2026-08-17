@@ -12,6 +12,11 @@ port: 8083
 healthPath: /health
 logLevel: info
 
-secretName: "" # tournament-secrets: its own database password, and nothing else
+imagePullSecrets: []
+secretName: "" # tournament-secrets: its database password and the internal token
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
 
 env: []
