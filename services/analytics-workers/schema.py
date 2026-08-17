@@ -80,6 +80,54 @@ STATEMENTS = (
          consumed_at timestamptz not null default now(),
          primary key (source, event_key)
        )""",
+    # P7: the bracket. P6 deliberately created no table for it (D4) — a table nobody writes is the
+    # dead-code shape the drill lessons name — so it arrives here with its writer, in the schema
+    # analytics already owns and analytics-api already knows how to read.
+    #
+    # Every column is a fact an event states, never a count this service keeps: `registeredCount`
+    # and `advancingPlayersTotal` come from the events themselves, so a replay writes the same
+    # value instead of adding to it. That is what keeps every write an atomic upsert — the property
+    # that makes this service the scalable contrast to ranking.
+    """create table if not exists tournaments (
+         tournament_id uuid primary key,
+         status        text not null default 'REGISTRATION',
+         -- Forward only, exactly like `room_activity.status_rank`: a tournament's events arrive on
+         -- one topic, but a replay can still present them in any order relative to what is stored.
+         status_rank   int  not null default 0,
+         player_count  int  not null default 0,
+         min_players   int,
+         room_size     int,
+         round_count   int  not null default 0,
+         champion      text,
+         created_at    timestamptz,
+         completed_at  timestamptz,
+         last_event_at timestamptz
+       )""",
+    "create index if not exists tournaments_status_idx on tournaments (status)",
+    """create table if not exists tournament_rounds (
+         tournament_id   uuid not null,
+         round_number    int  not null,
+         room_count      int  not null default 0,
+         advancing_total int,
+         complete        boolean not null default false,
+         primary key (tournament_id, round_number)
+       )""",
+    """create table if not exists tournament_rooms (
+         room_id       uuid primary key,
+         tournament_id uuid not null,
+         round_number  int  not null,
+         players       jsonb not null default '[]'::jsonb,
+         advancing     jsonb,
+         is_final      boolean not null default false
+       )""",
+    "create index if not exists tournament_rooms_bracket_idx"
+    " on tournament_rooms (tournament_id, round_number)",
+    """create table if not exists tournament_placements (
+         tournament_id uuid not null,
+         player_id     text not null,
+         placement     int  not null,
+         primary key (tournament_id, player_id)
+       )""",
 )
 
 

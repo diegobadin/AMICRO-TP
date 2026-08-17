@@ -14,7 +14,7 @@ import json
 import re
 from http.server import BaseHTTPRequestHandler
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import metrics
 
@@ -22,6 +22,23 @@ SERVICE = "analytics-api"
 
 PLAYER = re.compile(r"^/stats/players/([^/]+)$")
 ROOM = re.compile(r"^/stats/rooms/([^/]+)$")
+# P7's bracket. Served here rather than by the tournament service because a bracket is a read model
+# and this is the read side — the tournament owns the decisions, analytics owns the retrospective.
+BRACKET = re.compile(r"^/tournaments/([^/]+)/bracket$")
+
+DEFAULT_LIMIT = 20
+MAX_LIMIT = 100
+
+
+def _limit(query: dict[str, list[str]]) -> int:
+    raw = query.get("limit", [])
+    if not raw:
+        return DEFAULT_LIMIT
+    try:
+        value = int(raw[0])
+    except ValueError:
+        return DEFAULT_LIMIT
+    return max(1, min(MAX_LIMIT, value))
 
 
 def surface(path: str) -> str:
@@ -31,6 +48,10 @@ def surface(path: str) -> str:
         return "/stats/players/:id"
     if ROOM.match(pathname):
         return "/stats/rooms/:id"
+    if BRACKET.match(pathname):
+        return "/tournaments/:id/bracket"
+    if pathname == "/tournaments":
+        return "/tournaments"
     if pathname in ("/stats/overview", "/health", "/metrics"):
         return pathname
     return "unknown"
@@ -57,6 +78,13 @@ def route(method: str, path: str, reader: Any) -> tuple[int, dict[str, Any]]:
 
     if pathname == "/stats/overview":
         return 200, {"overview": reader.overview()}
+
+    match = BRACKET.match(pathname)
+    if match:
+        return 200, reader.bracket(match.group(1))
+
+    if pathname == "/tournaments":
+        return 200, reader.tournaments(_limit(parse_qs(urlsplit(path).query)))
 
     return 404, {"error": "not_found", "service": SERVICE}
 

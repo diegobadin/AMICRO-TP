@@ -37,7 +37,10 @@ def cursor() -> Any:
     connection = psycopg.connect(url, autocommit=True)
     migrate(connection)
     with connection.cursor() as cur:
-        cur.execute("truncate player_stats, room_games, room_activity, overview")
+        cur.execute(
+            "truncate player_stats, room_games, room_activity, overview,"
+            " tournaments, tournament_rounds, tournament_rooms, tournament_placements"
+        )
     migrate(connection)  # re-seed the overview rows the truncate removed
     with connection.cursor() as cur:
         yield cur
@@ -117,3 +120,63 @@ def test_overview_answers_with_zeroes_from_an_empty_cluster(cursor: Any) -> None
 def test_overview_reflects_the_writer(cursor: Any) -> None:
     seed(cursor)
     assert queries.overview(cursor)["games_completed"] == 7
+
+
+# ---------------------------------------------------------------- P7: the bracket
+
+TOURNEY = "3c3c0b7e-0000-4000-8000-000000000000"
+ROOM_A = "4a4a0b7e-0000-4000-8000-000000000001"
+ROOM_F = "4a4a0b7e-0000-4000-8000-000000000003"
+
+
+def seed_bracket(cursor: Any) -> None:
+    """Written the way the writer writes it, into the writer's own tables. If a column is renamed
+    on that side this fails to insert, which is the whole point of building the schema from
+    `analytics-workers/schema.py` rather than from a copy kept here."""
+    cursor.execute(
+        "insert into tournaments (tournament_id, status, status_rank, player_count, round_count,"
+        " champion, created_at, completed_at)"
+        " values (%s, 'COMPLETED', 2, 4, 2, 'carol', now(), now())",
+        (TOURNEY,),
+    )
+    cursor.execute(
+        "insert into tournament_rounds (tournament_id, round_number, room_count, advancing_total,"
+        " complete) values (%s, 1, 2, 2, true), (%s, 2, 1, 1, true)",
+        (TOURNEY, TOURNEY),
+    )
+    cursor.execute(
+        "insert into tournament_rooms (room_id, tournament_id, round_number, players, advancing,"
+        " is_final) values (%s, %s, 1, '[\"alice\",\"bob\"]'::jsonb, '[\"alice\"]'::jsonb, false),"
+        " (%s, %s, 2, '[\"alice\",\"carol\"]'::jsonb, '[\"carol\"]'::jsonb, true)",
+        (ROOM_A, TOURNEY, ROOM_F, TOURNEY),
+    )
+    cursor.execute(
+        "insert into tournament_placements (tournament_id, player_id, placement)"
+        " values (%s, 'carol', 1), (%s, 'alice', 2)",
+        (TOURNEY, TOURNEY),
+    )
+
+
+def test_a_bracket_reads_round_by_round(cursor: Any) -> None:
+    seed_bracket(cursor)
+    bracket = queries.bracket(cursor, TOURNEY)
+
+    assert bracket["champion"] == "carol"
+    assert [entry["roundNumber"] for entry in bracket["rounds"]] == [1, 2]
+    assert bracket["rounds"][0]["rooms"][0]["players"] == ["alice", "bob"]
+    assert bracket["rounds"][1]["rooms"][0]["isFinal"] is True
+    assert [p["playerId"] for p in bracket["placements"]] == ["carol", "alice"]
+
+
+def test_a_tournament_analytics_has_never_seen_is_an_empty_bracket(cursor: Any) -> None:
+    bracket = queries.bracket(cursor, "9c9c0b7e-0000-4000-8000-000000000000")
+    assert bracket["status"] is None
+    assert bracket["rounds"] == []
+    assert bracket["placements"] == []
+
+
+def test_the_tournament_list_is_newest_first(cursor: Any) -> None:
+    seed_bracket(cursor)
+    listed = queries.tournaments(cursor, 10)
+    assert [entry["tournamentId"] for entry in listed] == [TOURNEY]
+    assert listed[0]["status"] == "COMPLETED"

@@ -56,3 +56,9 @@ class Reader:
 
     def overview(self) -> dict[str, Any]:
         return self._read(queries.overview)
+
+    def bracket(self, tournament_id: str) -> dict[str, Any]:
+        return self._read(lambda cursor: queries.bracket(cursor, tournament_id))
+
+    def tournaments(self, limit: int) -> dict[str, Any]:
+        return self._read(lambda cursor: {"tournaments": queries.tournaments(cursor, limit)})

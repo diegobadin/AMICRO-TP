@@ -87,3 +87,105 @@ def room_stats(cursor: Any, room_id: str) -> dict[str, Any]:
 def overview(cursor: Any) -> dict[str, Any]:
     cursor.execute("select metric, value from overview order by metric")
     return {row[0]: row[1] for row in cursor.fetchall()}
+
+
+def tournaments(cursor: Any, limit: int) -> list[dict[str, Any]]:
+    """Every bracket this system has seen, newest first."""
+    cursor.execute(
+        "select tournament_id, status, player_count, round_count, champion, created_at,"
+        " completed_at from tournaments order by created_at desc nulls last limit %s",
+        (limit,),
+    )
+    return [
+        {
+            "tournamentId": str(row[0]),
+            "status": row[1],
+            "playerCount": row[2],
+            "roundCount": row[3],
+            "champion": row[4],
+            "createdAt": row[5].isoformat() if row[5] else None,
+            "completedAt": row[6].isoformat() if row[6] else None,
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def bracket(cursor: Any, tournament_id: str) -> dict[str, Any]:
+    """The bracket P6 deliberately left unbuilt (D4), now that something writes it.
+
+    Rounds carry their rooms rather than a flat list carrying a round number: a bracket is read
+    round by round, and assembling it here means the CLI does not have to group anything.
+    """
+    cursor.execute(
+        "select status, player_count, round_count, champion, created_at, completed_at"
+        " from tournaments where tournament_id = %s",
+        (tournament_id,),
+    )
+    header = cursor.fetchone()
+    if header is None:
+        # Same posture as an unknown player: analytics does not own the tournament registry, so an
+        # id it has not projected yet is an empty bracket rather than an error.
+        return {"tournamentId": tournament_id, "status": None, "rounds": [], "placements": []}
+
+    cursor.execute(
+        "select round_number, room_count, advancing_total, complete from tournament_rounds"
+        " where tournament_id = %s order by round_number",
+        (tournament_id,),
+    )
+    rounds = [
+        {
+            "roundNumber": row[0],
+            "roomCount": row[1],
+            "advancingTotal": row[2],
+            "complete": row[3],
+            "rooms": [],
+        }
+        for row in cursor.fetchall()
+    ]
+    by_number = {entry["roundNumber"]: entry for entry in rounds}
+
+    cursor.execute(
+        "select round_number, room_id, players, advancing, is_final from tournament_rooms"
+        " where tournament_id = %s order by round_number, room_id",
+        (tournament_id,),
+    )
+    for row in cursor.fetchall():
+        room = {
+            "roomId": str(row[1]),
+            "players": row[2],
+            "advancing": row[3],
+            "isFinal": row[4],
+        }
+        # A room whose round has not been projected yet still belongs to the bracket: the events
+        # arrive on one topic but nothing promises `RoundStarted` was applied first.
+        entry = by_number.get(row[0])
+        if entry is None:
+            entry = {
+                "roundNumber": row[0],
+                "roomCount": 0,
+                "advancingTotal": None,
+                "complete": False,
+                "rooms": [],
+            }
+            by_number[row[0]] = entry
+            rounds.append(entry)
+        entry["rooms"].append(room)
+
+    cursor.execute(
+        "select player_id, placement from tournament_placements where tournament_id = %s"
+        " order by placement",
+        (tournament_id,),
+    )
+    placements = [{"playerId": row[0], "placement": row[1]} for row in cursor.fetchall()]
+
+    return {
+        "tournamentId": tournament_id,
+        "status": header[0],
+        "playerCount": header[1],
+        "roundCount": header[2],
+        "champion": header[3],
+        "createdAt": header[4].isoformat() if header[4] else None,
+        "completedAt": header[5].isoformat() if header[5] else None,
+        "rounds": sorted(rounds, key=lambda entry: entry["roundNumber"]),
+        "placements": placements,
+    }

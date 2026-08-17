@@ -16,7 +16,11 @@ import metrics
 
 PUBLIC_TOPIC = "room.public.events"
 LIFECYCLE_TOPIC = "room.lifecycle.events"
-TOPICS = [PUBLIC_TOPIC, LIFECYCLE_TOPIC]
+# P7's bracket read model. The same consumer gains a topic rather than a new group: §7.2 forbids a
+# *new consumer* joining an existing group, and this is the same consumer projecting more of the
+# same system — one offset story, one transaction shape, one place a redelivery is recognised.
+TOURNAMENT_TOPIC = "tournament.lifecycle.events"
+TOPICS = [PUBLIC_TOPIC, LIFECYCLE_TOPIC, TOURNAMENT_TOPIC]
 GROUP_ID = "analytics-projections"
 
 

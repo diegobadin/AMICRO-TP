@@ -14,6 +14,9 @@ from typing import Any
 # Terminal states share a rank: a room is finished either way, and nothing follows.
 STATUS_RANK = {"WAITING": 0, "IN_PROGRESS": 1, "COMPLETED": 2, "EXPIRED": 2}
 
+# The same idea for a tournament (P7). Registration → in progress → completed, and never back.
+TOURNAMENT_STATUS_RANK = {"REGISTRATION": 0, "IN_PROGRESS": 1, "COMPLETED": 2}
+
 
 @dataclass
 class Effects:
@@ -24,6 +27,106 @@ class Effects:
     activity_counters: dict[str, int] = field(default_factory=dict)
     game: dict[str, Any] | None = None
     players: list[dict[str, Any]] = field(default_factory=list)
+    # P7's bracket. All statements of fact, never increments — see the note in `schema.py`.
+    tournament: dict[str, Any] | None = None
+    rounds: list[dict[str, Any]] = field(default_factory=list)
+    rooms: list[dict[str, Any]] = field(default_factory=list)
+    placements: list[dict[str, Any]] = field(default_factory=list)
+
+
+def plan_tournament(event_type: str, body: dict[str, Any]) -> Effects:
+    """The bracket projection: `tournament.lifecycle.events` → the four bracket tables.
+
+    Separate from `plan` because a tournament event shares no fields with a room event — no
+    `roomId`, no per-room activity — and folding them into one function would mean a growing chain
+    of "which kind of event is this" before either branch could start.
+    """
+    effects = Effects()
+    tournament_id = body.get("tournamentId")
+    if not tournament_id:
+        return effects
+    at = body.get("at")
+    facts: dict[str, Any] = {"tournament_id": tournament_id, "last_event_at": at}
+
+    if event_type == "TournamentCreated":
+        config = body.get("config") or {}
+        facts.update(
+            status="REGISTRATION",
+            status_rank=TOURNAMENT_STATUS_RANK["REGISTRATION"],
+            min_players=config.get("minPlayers"),
+            room_size=config.get("roomSize"),
+            created_at=at,
+        )
+        effects.overview["tournaments_created"] = 1
+    elif event_type == "PlayerRegistered":
+        # The count the event states, not one this service keeps: a replay then writes the same
+        # number instead of adding to it.
+        facts["player_count"] = body.get("registeredCount")
+    elif event_type == "TournamentStarted":
+        facts.update(
+            status="IN_PROGRESS",
+            status_rank=TOURNAMENT_STATUS_RANK["IN_PROGRESS"],
+            player_count=body.get("totalPlayers"),
+            round_count=body.get("roundCount"),
+        )
+        effects.overview["tournaments_started"] = 1
+    elif event_type == "RoundStarted":
+        effects.rounds.append(
+            {
+                "tournament_id": tournament_id,
+                "round_number": body.get("roundNumber"),
+                "room_count": body.get("roomCount") or 0,
+            }
+        )
+        for room_id, players in (body.get("assignments") or {}).items():
+            effects.rooms.append(
+                {
+                    "room_id": room_id,
+                    "tournament_id": tournament_id,
+                    "round_number": body.get("roundNumber"),
+                    "players": players,
+                }
+            )
+    # Both of these name a room the round already created — but "already" is a delivery order, not
+    # a guarantee, so each carries the tournament it belongs to. Without it the row cannot be
+    # inserted at all when it arrives first, which is what a reversed replay does.
+    elif event_type == "FinalRoomCreated":
+        effects.rooms.append(
+            {"room_id": body.get("roomId"), "tournament_id": tournament_id, "is_final": True}
+        )
+    elif event_type == "RoomResultRecorded":
+        effects.rooms.append(
+            {
+                "room_id": body.get("roomId"),
+                "tournament_id": tournament_id,
+                "round_number": body.get("roundNumber"),
+                "advancing": body.get("advancingPlayers") or [],
+            }
+        )
+    elif event_type == "RoundCompleted":
+        effects.rounds.append(
+            {
+                "tournament_id": tournament_id,
+                "round_number": body.get("roundNumber"),
+                "advancing_total": body.get("advancingPlayersTotal"),
+                "complete": True,
+            }
+        )
+    elif event_type == "TournamentCompleted":
+        facts.update(
+            status="COMPLETED",
+            status_rank=TOURNAMENT_STATUS_RANK["COMPLETED"],
+            champion=body.get("champion"),
+            completed_at=at,
+        )
+        effects.overview["tournaments_completed"] = 1
+        for position, player in enumerate(body.get("finalPlacements") or []):
+            effects.placements.append(
+                {"tournament_id": tournament_id, "player_id": player, "placement": position + 1}
+            )
+
+    effects.tournament = facts
+    return effects
 
 
 def plan(event_type: str, body: dict[str, Any]) -> Effects:
