@@ -2,7 +2,7 @@
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/room-gameplay
-  digest: "sha256:08299611968a745d89c46aeb8ab2c0b6cc2f16b7c9d31a8bd1348216b79e260c" # pinned by CI (deploy-gitops)
+  digest: "sha256:5cc46ac68d932a3ca510e9d19df7183a37e7e94db725b47002a511530641dd54" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
