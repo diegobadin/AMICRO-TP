@@ -17,9 +17,12 @@ RUN GRADLE_OPTS="-XX:-UsePerfData" gradle --no-daemon \
 
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+# Numeric uid, and USER given numerically: with a named user the kubelet cannot verify
+# runAsNonRoot and refuses to start the container. room-gameplay fixed this when it became real;
+# this placeholder never ran anywhere, so it kept the version that would not have started.
+RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app
 COPY --from=build /app/build/install/tournament ./
 ENV PORT=8083
 EXPOSE 8083
-USER app
+USER 65532
 CMD ["./bin/tournament"]

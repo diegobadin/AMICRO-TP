@@ -1,11 +1,26 @@
-# tournament — placeholder service fragment (test → build → deliver → deploy-staging stub).
-# NOT fully-wired: no integration-staging job, deploy-staging is manual/allow_failure.
+# tournament — the orchestrator (P7). Fully wired since this phase; the tenth and last placeholder
+# to become real.
 # Change detection: every job is guarded by `rules: changes:` on this service's path so editing
 # another service never runs these jobs (independent deployability).
+#
+# The store suite proves that events, outbox rows and projections commit together, and that a
+# redelivered room result is refused by a primary key. Both are properties of a real database, so
+# the job brings up an ephemeral Postgres. Without TEST_DATABASE_URL those tests fail rather than
+# skip: a silently-skipped proof is worse than no proof.
 
 "test:tournament":
   stage: test
   image: gradle:8.8-jdk21
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: tournament
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: tournament
+    TEST_DATABASE_URL: "jdbc:postgresql://postgres:5432/tournament"
+    TEST_DATABASE_USER: tournament
+    TEST_DATABASE_PASSWORD: test
   script:
     - cd services/tournament
     - gradle --no-daemon test
@@ -38,16 +53,17 @@
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - changes: ["services/tournament/**/*", "ci/templates/**/*"]
 
-# Stub deploy — manual/allow_failure until the Argo target cluster is confirmed (Phase 2).
+# A real gate since P7, no longer a manual stub. `needs` includes build:tournament for its dotenv
+# ($IMAGE, $IMAGE_DIGEST) — deliver alone does not carry them, and without it the pin writes empty
+# strings into the overlay and the job still goes GREEN. That is the trap ranking walked into in P6,
+# and the stub this fragment replaces had exactly the `needs` that causes it.
 "deploy-staging:tournament":
   extends: .deploy-gitops
   stage: deploy-staging
-  needs: ["deliver:tournament"]
+  needs: ["deliver:tournament", "build:tournament"]
   variables:
     SVC: tournament
     ENV: staging
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      changes: ["services/tournament/**/*"]
-      when: manual # Phase 2: flip to automatic
-      allow_failure: true
+    - changes: ["services/tournament/**/*", "ci/templates/**/*"]
