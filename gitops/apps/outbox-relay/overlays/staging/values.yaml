@@ -24,3 +24,35 @@ env:
     value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
   - name: POLL_INTERVAL_MS
     value: "1000"
+
+# P7's second producer, drained by the same binary from a second Deployment. Everything that differs
+# between the two outboxes is here: whose database, whose column, whose `ce-source`. The defaults in
+# the image are still room-gameplay's, so the Deployment above needs none of this.
+instances:
+  - name: tournament
+    secretName: tournament-secrets # holds TOURNAMENT_DB_PASSWORD, sealed for this namespace
+    env:
+      - name: DATABASE_HOST
+        value: unoarena-pg-rw.postgres.svc.cluster.local
+      - name: DATABASE_NAME
+        value: tournament
+      - name: DATABASE_USER
+        value: tournament
+      # The generic name the relay reads first; the secret delivers it under its own.
+      - name: DATABASE_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: tournament-secrets
+            key: TOURNAMENT_DB_PASSWORD
+      - name: KAFKA_BROKERS
+        value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
+      - name: POLL_INTERVAL_MS
+        value: "1000"
+      - name: EVENT_SOURCE
+        value: /tournament
+      - name: CE_TYPE_PREFIX
+        value: com.unoarena.tournament.
+      - name: OUTBOX_KEY_COLUMN
+        value: tournament_id
+      - name: BODY_ID_FIELD
+        value: tournamentId

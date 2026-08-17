@@ -12,7 +12,7 @@ import (
 // event, and never a client told about something the log does not have.
 type outboxRow struct {
 	id             int64
-	roomID         string
+	aggregateID         string
 	sequenceNumber int
 	topic          string
 	eventType      string

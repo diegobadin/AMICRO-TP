@@ -52,9 +52,9 @@ func (f *fakePublisher) publish(_ context.Context, rows []outboxRow) error {
 	return nil
 }
 
-func row(id int64, roomID string, seq int, topic string) outboxRow {
+func row(id int64, aggregateID string, seq int, topic string) outboxRow {
 	return outboxRow{
-		id: id, roomID: roomID, sequenceNumber: seq, topic: topic, eventType: "CardPlayed",
+		id: id, aggregateID: aggregateID, sequenceNumber: seq, topic: topic, eventType: "CardPlayed",
 		payload:   []byte(`{"type":"CardPlayed","playerId":"a","at":"2026-08-11T12:00:00Z"}`),
 		createdAt: time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC),
 	}

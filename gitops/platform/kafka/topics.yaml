@@ -45,3 +45,23 @@ spec:
   replicas: 1
   config:
     retention.ms: 604800000 # 7 days: Ranking and Tournament replay these, Spectator does not
+---
+# P7's second producer. Partitioned by tournamentId (§3.3.2), and kept as long as the room lifecycle
+# it mirrors: ranking replays it for the placement rating and analytics for the bracket, so a topic
+# that expired sooner than its consumers' recovery window would be a gap nothing could fill.
+#
+# Declared rather than auto-created: the relay sets AllowAutoTopicCreation false, so a topic missing
+# here is a publish that fails loudly instead of a topic appearing with defaults nobody chose.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: tournament.lifecycle.events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: unoarena
+spec:
+  topicName: tournament.lifecycle.events
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000 # 7 days, matching room.lifecycle.events

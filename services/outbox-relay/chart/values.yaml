@@ -25,3 +25,7 @@ serviceMonitor:
   interval: 30s
 
 env: []
+
+# Extra relays, one per additional producer (P7): the same image with a different EVENT_SOURCE,
+# CE_TYPE_PREFIX, OUTBOX_KEY_COLUMN, BODY_ID_FIELD and database. Empty here; the overlay adds them.
+instances: []

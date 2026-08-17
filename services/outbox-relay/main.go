@@ -49,17 +49,22 @@ type config struct {
 	kafkaBrokers string
 	pollInterval time.Duration
 	batchSize    int
+	source       sourceConfig
 }
 
 func configFromEnv() config {
+	defaults := roomGameplayDefaults()
 	return config{
 		port: env("PORT", defaultPort),
-		// room-gameplay's own database and login role: the outbox belongs to that bounded context
-		// and architecture §1 names this service as its only direct reader.
+		// The producer's own database and login role: an outbox belongs to the bounded context that
+		// writes it, and architecture §1 names this service as its only direct reader. Since P7 a
+		// second copy of this binary drains the tournament's outbox, so the connection is
+		// configuration — with room-gameplay's values as the defaults, so the running Deployment
+		// needs no edit to keep working.
 		databaseURL: fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s",
 			env("DATABASE_USER", "room_gameplay"),
-			os.Getenv("ROOM_GAMEPLAY_DB_PASSWORD"),
+			databasePassword(),
 			env("DATABASE_HOST", "localhost"),
 			env("DATABASE_PORT", "5432"),
 			env("DATABASE_NAME", "room_gameplay"),
@@ -67,7 +72,22 @@ func configFromEnv() config {
 		kafkaBrokers: env("KAFKA_BROKERS", "localhost:9092"),
 		pollInterval: envDuration("POLL_INTERVAL_MS", time.Second),
 		batchSize:    envInt("BATCH_SIZE", 200),
+		source: sourceConfig{
+			source:     env("EVENT_SOURCE", defaults.source),
+			typePrefix: env("CE_TYPE_PREFIX", defaults.typePrefix),
+			keyColumn:  env("OUTBOX_KEY_COLUMN", defaults.keyColumn),
+			bodyField:  env("BODY_ID_FIELD", defaults.bodyField),
+		},
 	}
+}
+
+// A generic name first, so a second instance does not have to pretend to be room-gameplay to read
+// its own password; the original name still works, which is what keeps the shipped overlay valid.
+func databasePassword() string {
+	if v := os.Getenv("DATABASE_PASSWORD"); v != "" {
+		return v
+	}
+	return os.Getenv("ROOM_GAMEPLAY_DB_PASSWORD")
 }
 
 func main() {
@@ -82,11 +102,19 @@ func main() {
 	}
 	defer pool.Close()
 
-	writer := newKafkaPublisher(cfg.kafkaBrokers)
+	// Refuse to start on a key column that is not a plain identifier, rather than build a query out
+	// of it and find out later.
+	store, err := newOutbox(pool, cfg.source.keyColumn)
+	if err != nil {
+		logLine("error", "startup-failed", map[string]any{"error": err.Error()})
+		os.Exit(1)
+	}
+
+	writer := newKafkaPublisher(cfg.kafkaBrokers, cfg.source)
 	defer func() { _ = writer.Close() }()
 
 	r := &relay{
-		store:     &pgOutbox{pool: pool},
+		store:     store,
 		publisher: writer,
 		interval:  cfg.pollInterval,
 		batchSize: cfg.batchSize,
@@ -98,8 +126,11 @@ func main() {
 	server := &http.Server{Addr: ":" + cfg.port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
+		// The source is logged because two copies of this binary now run side by side, and "which
+		// outbox is this one draining" is the first question when one of them looks idle.
 		logLine("info", "listening", map[string]any{
 			"port": cfg.port, "brokers": cfg.kafkaBrokers, "batchSize": cfg.batchSize,
+			"source": cfg.source.source, "keyColumn": cfg.source.keyColumn,
 		})
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logLine("error", "listen-failed", map[string]any{"error": err.Error()})

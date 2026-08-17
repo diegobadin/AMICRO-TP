@@ -1,0 +1,104 @@
+{{/*
+Additional relays, one per extra producer. Since P7 the binary is source-agnostic (EVENT_SOURCE,
+CE_TYPE_PREFIX, OUTBOX_KEY_COLUMN, BODY_ID_FIELD), so draining the tournament's outbox is the same
+image with different environment — which is why this is a second Deployment in one chart rather
+than a second service: same artifact, same digest pin, one Argo Application.
+
+Each instance is otherwise the primary's twin, including the one-replica rule: draining in `id`
+order is what preserves per-aggregate ordering, whichever aggregate it is.
+*/}}
+{{- range .Values.instances }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "svc.name" $ }}-{{ .name }}
+  labels:
+    app: {{ include "svc.name" $ }}-{{ .name }}
+    # Both relays answer to the same scrape config, and this is how a dashboard tells them apart
+    # when one of them stops draining.
+    relay: {{ .name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "svc.name" $ }}-{{ .name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "svc.name" $ }}-{{ .name }}
+        relay: {{ .name }}
+    spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532 # matches the Dockerfile's numeric USER — kubelet cannot verify a named one
+      containers:
+        - name: {{ include "svc.name" $ }}-{{ .name }}
+          image: {{ include "svc.image" $ | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $.Values.port }}
+          env:
+            - name: PORT
+              value: {{ $.Values.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ $.Values.logLevel | quote }}
+            {{- with .env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .secretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .secretName }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ $.Values.healthPath }}
+              port: {{ $.Values.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: {{ $.Values.healthPath }}
+              port: {{ $.Values.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "svc.name" $ }}-{{ .name }}
+  labels:
+    app: {{ include "svc.name" $ }}-{{ .name }}
+spec:
+  selector:
+    app: {{ include "svc.name" $ }}-{{ .name }}
+  ports:
+    - port: 80
+      name: http
+      targetPort: {{ $.Values.port }}
+{{- if $.Values.serviceMonitor.enabled }}
+---
+# Its own ServiceMonitor: the primary's selects `app: outbox-relay`, so without this the second
+# relay would drain its outbox with nobody watching — and "did the other relay publish anything"
+# is exactly the question two relays make worth asking.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "svc.name" $ }}-{{ .name }}
+  labels:
+    app: {{ include "svc.name" $ }}-{{ .name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "svc.name" $ }}-{{ .name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $.Values.serviceMonitor.interval }}
+{{- end }}
+{{- end }}

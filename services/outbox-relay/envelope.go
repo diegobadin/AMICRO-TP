@@ -11,56 +11,79 @@ import (
 // The wire shape of docs/architecture/10-api-event-catalog.md §3: CloudEvents in binary mode, so
 // the metadata lives in headers and the body stays the domain event a consumer actually wants.
 //
-// The payload is taken from the outbox row verbatim. It has already been through
+// The payload is taken from the outbox row verbatim. For room-gameplay it has already been through
 // `publicPayload(event)` on the way in — the same filter the SSE stream uses — which is why the RNG
 // seed in GameStarted and DeckRecycled cannot reach a topic. Nothing here re-derives it.
-const (
-	ceSpecVersion = "1.0"
-	ceSource      = "/room-gameplay"
-	ceTypePrefix  = "com.unoarena.room."
-	ceTypeSuffix  = ".v1"
-)
+//
+// P7 made the four producer-specific values configuration rather than constants, because a second
+// producer (tournament) drains its own outbox through a second copy of this binary. The defaults
+// are room-gameplay's, byte for byte: three consumers read that format and the additive-growth rule
+// says it must not move.
+const ceSpecVersion = "1.0"
 
-func message(row outboxRow) (kafka.Message, error) {
-	value, occurredAt, err := renderBody(row)
+type sourceConfig struct {
+	// `ce-source`: which service produced the event. "/room-gameplay", "/tournament".
+	source string
+	// `ce-type` is a reverse-DNS URI, and this is everything before the event name:
+	// "com.unoarena.room." + "GameCompleted" + ".v1". Consumers classify on the BODY's `type`;
+	// this header is routing metadata and always has been.
+	typePrefix string
+	// The outbox column holding the id the topic is partitioned by. Interpolated into SQL, so it is
+	// validated at startup — it is configuration, not input, and it is treated as neither.
+	keyColumn string
+	// The field that id is merged into the body as: "roomId", "tournamentId".
+	bodyField string
+}
+
+func roomGameplayDefaults() sourceConfig {
+	return sourceConfig{
+		source:     "/room-gameplay",
+		typePrefix: "com.unoarena.room.",
+		keyColumn:  "room_id",
+		bodyField:  "roomId",
+	}
+}
+
+func message(row outboxRow, cfg sourceConfig) (kafka.Message, error) {
+	value, occurredAt, err := renderBody(row, cfg.bodyField)
 	if err != nil {
 		return kafka.Message{}, err
 	}
 
 	headers := []kafka.Header{
 		{Key: "ce-specversion", Value: []byte(ceSpecVersion)},
-		// Deterministic, so a redelivery after a crash is recognisably the same event: the room and
-		// its sequence number already identify one event for all time (that pair is the primary key
-		// of the log), which is what makes at-least-once safe to consume.
-		{Key: "ce-id", Value: []byte(row.roomID + ":" + strconv.Itoa(row.sequenceNumber))},
-		{Key: "ce-source", Value: []byte(ceSource)},
-		{Key: "ce-type", Value: []byte(ceTypePrefix + row.eventType + ceTypeSuffix)},
+		// Deterministic, so a redelivery after a crash is recognisably the same event: the aggregate
+		// and its sequence number already identify one event for all time (that pair is the primary
+		// key of the log), which is what makes at-least-once safe to consume.
+		{Key: "ce-id", Value: []byte(row.aggregateID + ":" + strconv.Itoa(row.sequenceNumber))},
+		{Key: "ce-source", Value: []byte(cfg.source)},
+		{Key: "ce-type", Value: []byte(cfg.typePrefix + row.eventType + ".v1")},
 		{Key: "ce-time", Value: []byte(occurredAt)},
-		{Key: "ce-subject", Value: []byte(row.roomID)},
+		{Key: "ce-subject", Value: []byte(row.aggregateID)},
 	}
 	if row.correlationID != "" {
 		headers = append(headers, kafka.Header{Key: "ce-correlationid", Value: []byte(row.correlationID)})
 	}
 
 	return kafka.Message{
-		// The row names its own topic (room-gameplay's `topicFor`), so the relay carries no table of
-		// event types and P6's consumers need nothing added here.
+		// The row names its own topic (the producer's `topicFor`), so the relay carries no table of
+		// event types and no consumer needs anything added here.
 		Topic: row.topic,
-		// Partition key: per-room ordering is what every consumer in §2.3.2 relies on.
-		Key:     []byte(row.roomID),
+		// Partition key: per-aggregate ordering is what every consumer in §2.3.2 relies on.
+		Key:     []byte(row.aggregateID),
 		Value:   value,
 		Headers: headers,
 	}, nil
 }
 
-// roomId and sequenceNumber are merged in rather than wrapped around: the catalog's payloads carry
+// The id and sequenceNumber are merged in rather than wrapped around: the catalog's payloads carry
 // them as fields, and an envelope-around-payload would make every consumer unwrap a level.
-func renderBody(row outboxRow) ([]byte, string, error) {
+func renderBody(row outboxRow, bodyField string) ([]byte, string, error) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(row.payload, &payload); err != nil {
 		return nil, "", err
 	}
-	payload["roomId"] = json.RawMessage(strconv.Quote(row.roomID))
+	payload[bodyField] = json.RawMessage(strconv.Quote(row.aggregateID))
 	payload["sequenceNumber"] = json.RawMessage(strconv.Itoa(row.sequenceNumber))
 
 	out, err := json.Marshal(payload)
