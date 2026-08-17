@@ -162,6 +162,7 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
 
     is GameCompleted -> state.copy(
         gamesPlayed = state.gamesPlayed + 1,
+        matchScores = state.scoredWith(event),
         game = state.game?.copy(
             status = GameStatus.COMPLETED,
             finishingOrder = event.finishingOrder,
@@ -173,6 +174,10 @@ private fun apply(state: RoomState, event: Event): RoomState = when (event) {
 
     is RoomExpired -> state.copy(status = RoomStatus.COMPLETED)
 
+    // The verdict, not a state change: the scores it reports were folded in by the games themselves,
+    // and `RoomCompleted` closes the room a moment later.
+    is MatchCompleted -> state
+
     is RoomCompleted -> state.copy(status = RoomStatus.COMPLETED)
 }
 
@@ -182,6 +187,28 @@ private fun RoomState.mapGame(f: (Game) -> Game): RoomState =
 /** Acting clears the player's timeout streak — unless it is the timeout acting on their behalf. */
 private fun Game.acted(playerId: String): Game =
     if (timingOut == playerId) this else copy(consecutiveTimeouts = consecutiveTimeouts - playerId)
+
+/**
+ * The match record after one game. Casual rooms keep none — there is no series. An abandoned game
+ * gives nobody a win: the room ended because people left, and §6.8.5 does not hand the last one
+ * standing a victory they did not play for. It still counts as a loss for everyone, so the standings
+ * stay a total order.
+ */
+private fun RoomState.scoredWith(event: GameCompleted): Map<String, MatchScore>? {
+    if (roomType != RoomType.TOURNAMENT) return null
+    val winner = event.finishingOrder.firstOrNull().takeIf { !event.isAbandoned }
+    val played = event.finishingOrder + event.cardPointTotals.keys
+    val before = matchScores ?: emptyMap()
+    return (before.keys + played).associateWith { player ->
+        val score = before[player] ?: MatchScore()
+        val won = player == winner
+        score.copy(
+            wins = score.wins + if (won) 1 else 0,
+            losses = score.losses + if (!won && player in played) 1 else 0,
+            cardPoints = score.cardPoints + (event.cardPointTotals[player] ?: 0),
+        )
+    }
+}
 
 private fun RoomState.mapPlayer(playerId: String, f: (RoomPlayer) -> RoomPlayer): RoomState =
     copy(players = players.map { if (it.playerId == playerId) f(it) else it })

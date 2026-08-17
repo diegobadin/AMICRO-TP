@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import uno.DeckRecycled
 import uno.Event
 import uno.GameCompleted
+import uno.MatchCompleted
 import uno.PrivateEvent
 import uno.RoomCompleted
 import uno.RoomCreated
@@ -19,7 +20,7 @@ const val LIFECYCLE_TOPIC = "room.lifecycle.events"
 
 /** §2.3.2: lifecycle events are what Tournament and Ranking consume; the rest feed Spectator. */
 fun topicFor(event: Event): String = when (event) {
-    is RoomCreated, is GameCompleted, is RoomCompleted, is RoomExpired -> LIFECYCLE_TOPIC
+    is RoomCreated, is GameCompleted, is MatchCompleted, is RoomCompleted, is RoomExpired -> LIFECYCLE_TOPIC
     else -> PUBLIC_TOPIC
 }
 

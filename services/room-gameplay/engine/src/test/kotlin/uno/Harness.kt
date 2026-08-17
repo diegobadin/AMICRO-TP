@@ -38,6 +38,33 @@ class Table(
         players.drop(1).forEach { tick(); send(JoinRoom(it)) }
     }
 
+    /** The provisioning sequence of P7 F2: seat everyone, then start, because nothing auto-starts here. */
+    fun seatTournament(advanceCount: Int = 1, tournamentId: String = "t-1", roundNumber: Int = 1) {
+        send(
+            CreateRoom(
+                roomId = "room-1",
+                creatorId = players.first(),
+                roomType = RoomType.TOURNAMENT,
+                maxPlayers = players.size,
+                tournament = TournamentLink(tournamentId, roundNumber, advanceCount),
+            ),
+        )
+        players.drop(1).forEach { tick(); send(JoinRoom(it)) }
+        send(StartGame(null))
+    }
+
+    /**
+     * Plays an already-seated room until the room itself closes — through every game of a match,
+     * where `playOut` below stops at the end of the first game and seats its own casual table.
+     */
+    fun playMatchOut(maxSteps: Int = 5000) {
+        var steps = 0
+        while (steps++ < maxSteps && state.status != RoomStatus.COMPLETED) {
+            tick()
+            if (step() == null) break
+        }
+    }
+
     private fun game(): Game? = state.game?.takeIf { it.status == GameStatus.IN_PROGRESS }
 
     /**

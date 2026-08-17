@@ -34,7 +34,9 @@ def test_the_catalog_spelling_is_not_the_wire_spelling() -> None:
 
 
 def test_other_lifecycle_events_are_ignored() -> None:
-    for event_type in ("RoomCreated", "RoomCompleted", "RoomExpired"):
+    # MatchCompleted joined the topic in P7 and is a tournament verdict, not a game: Elo is
+    # casual-only, so ranking counts it as skipped rather than reading it for a finishing order.
+    for event_type in ("RoomCreated", "RoomCompleted", "RoomExpired", "MatchCompleted"):
         assert classify(event_type, {}) == (False, "not_game_completed")
 
 

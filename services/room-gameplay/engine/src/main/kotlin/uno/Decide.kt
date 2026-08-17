@@ -220,7 +220,7 @@ private fun Log.playCard(command: PlayCard, now: Instant, seed: Long, config: En
     if (command.callingUno && remaining <= 1) emit(UnoCallMade(command.playerId, now))
 
     if (remaining == 0) {
-        completeGame(winner = command.playerId, abandoned = false, now = now, config = config)
+        completeGame(winner = command.playerId, abandoned = false, now = now, config = config, nextSeed = seed)
         return accept()
     }
     // Invariant 4: one card left opens the window whether or not they called.
@@ -517,7 +517,18 @@ private fun Log.endGameIfTooFewPlayers(now: Instant, config: EngineConfig) {
     completeGame(winner = remaining.firstOrNull()?.playerId, abandoned = true, now = now, config = config)
 }
 
-private fun Log.completeGame(winner: String?, abandoned: Boolean, now: Instant, config: EngineConfig) {
+/**
+ * `nextSeed` is the shuffle for the game that may follow, and null on the paths where none can:
+ * an abandoned game ends the match on the spot, so the callers that end a game because people left
+ * have nothing to deal.
+ */
+private fun Log.completeGame(
+    winner: String?,
+    abandoned: Boolean,
+    now: Instant,
+    config: EngineConfig,
+    nextSeed: Long? = null,
+) {
     val game = state.game ?: return
     val points = game.hands.mapValues { (_, hand) -> hand.points }
     // Winner first, then fewest points first; the playerId breaks ties so the order is the same on
@@ -536,7 +547,34 @@ private fun Log.completeGame(winner: String?, abandoned: Boolean, now: Instant, 
             at = now,
         ),
     )
+    if (state.roomType == RoomType.TOURNAMENT) return closeMatchOrDealAgain(abandoned, now, config, nextSeed)
     if (state.gamesPlayed >= state.maxGames) {
         emit(RoomCompleted(state.roomType, state.game!!.finishingOrder, now))
     }
 }
+
+/**
+ * A tournament room either has its verdict or plays on. The room decides who advances because it is
+ * the only thing that knows how the match went (§3.2.2); `advanceCount` came with the room when the
+ * tournament provisioned it.
+ */
+private fun Log.closeMatchOrDealAgain(abandoned: Boolean, now: Instant, config: EngineConfig, nextSeed: Long?) {
+    val scores = state.matchScores ?: emptyMap()
+    val ranked = standings(scores, state.game?.finishingOrder ?: emptyList())
+
+    if (!abandoned && !matchDecided(state) && nextSeed != null) {
+        return startGameNow(now, config, nextSeed)
+    }
+
+    // Whoever walked out cannot advance out of a room they left, however the earlier games went.
+    val eligible = if (abandoned) ranked.filter { state.player(it)?.isActive == true } else ranked
+    emit(
+        MatchCompleted(
+            matchResults = scores,
+            advancingPlayers = eligible.take(state.tournament?.advanceCount ?: 0),
+            at = now,
+        ),
+    )
+    emit(RoomCompleted(state.roomType, ranked, now))
+}
+

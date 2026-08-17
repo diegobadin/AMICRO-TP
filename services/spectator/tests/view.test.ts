@@ -159,4 +159,19 @@ describe("cross-topic interleaving", () => {
     const view = [log[8], log[3]].reduce(apply, emptyView(ROOM));
     expect(view.status).toBe("COMPLETED");
   });
+
+  // P7 put a new event type on a topic this projection already reads. The `default` branch is what
+  // makes that safe, and "safe" has to mean "changes nothing a spectator can see", not "does not
+  // throw". It does still move `lastSequence` — staying in step with the log is the point of it.
+  it("ignores an event type it has no opinion about, but stays in step with the log", () => {
+    const log = gameLog();
+    const before = log.slice(0, 5).reduce(apply, emptyView(ROOM));
+    const after = apply(
+      before,
+      event("MatchCompleted", { advancingPlayers: ["alice"], matchResults: {}, sequenceNumber: 99 }),
+    );
+
+    expect(after.lastSequence).toBe(99);
+    expect({ ...after, lastSequence: before.lastSequence }).toEqual(before);
+  });
 });

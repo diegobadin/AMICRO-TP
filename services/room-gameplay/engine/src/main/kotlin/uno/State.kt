@@ -12,6 +12,46 @@ enum class RoomType { CASUAL, TOURNAMENT }
  */
 @kotlinx.serialization.Serializable
 data class TournamentLink(val tournamentId: String, val roundNumber: Int, val advanceCount: Int)
+
+/** §3.2's per-player match record, cumulative across the games of one tournament room. */
+@kotlinx.serialization.Serializable
+data class MatchScore(val wins: Int = 0, val losses: Int = 0, val cardPoints: Int = 0)
+
+/**
+ * §6.8.3's tiebreakers in order: match wins, then cumulative card points, then who went out first in
+ * the last game. The design's third key is "earliest final-game completion time" — one game
+ * completes at a single instant for everyone here, so the finishing order is that same fact at
+ * better resolution. `playerId` last, which is §8's assumption and makes the order total: two
+ * players with identical records still rank, deterministically, on every replay.
+ */
+/**
+ * True once the games left cannot change who is holding the advancing seats — a best-of-three at
+ * 2-0 does not play a third game (§3.2's game-count boundary).
+ *
+ * Strictly less, not less-or-equal: a player who can still draw **level** with the last advancing
+ * seat would then be separated by card points, and a match decided by a tiebreak that has not
+ * happened yet is not decided. The difference only shows in a room bigger than two, which is
+ * exactly why it is a function with its own test rather than a condition inside the flow.
+ */
+fun matchDecided(state: RoomState): Boolean {
+    val scores = state.matchScores ?: return true
+    val advance = state.tournament?.advanceCount ?: return true
+    val remaining = state.maxGames - state.gamesPlayed
+    val ranked = standings(scores, state.game?.finishingOrder ?: emptyList())
+    if (remaining <= 0 || ranked.size <= advance) return true
+    val boundary = scores.getValue(ranked[advance - 1]).wins
+    return ranked.drop(advance).all { scores.getValue(it).wins + remaining < boundary }
+}
+
+fun standings(scores: Map<String, MatchScore>, lastGameOrder: List<String>): List<String> {
+    val finishedAt = { player: String -> lastGameOrder.indexOf(player).takeIf { it >= 0 } ?: Int.MAX_VALUE }
+    return scores.keys.sortedWith(
+        compareByDescending<String> { scores.getValue(it).wins }
+            .thenBy { scores.getValue(it).cardPoints }
+            .thenBy(finishedAt)
+            .thenBy { it },
+    )
+}
 enum class RoomStatus { WAITING, IN_PROGRESS, COMPLETED }
 enum class GameStatus { IN_PROGRESS, COMPLETED }
 
@@ -83,6 +123,8 @@ data class RoomState(
     val creatorId: String? = null,
     val players: List<RoomPlayer> = emptyList(),
     val game: Game? = null,
+    /** Null for a casual room, which plays one game and has no series to keep score of. */
+    val matchScores: Map<String, MatchScore>? = null,
     val gamesPlayed: Int = 0,
     val sequenceNumber: Int = 0,
     val createdAt: Instant? = null,

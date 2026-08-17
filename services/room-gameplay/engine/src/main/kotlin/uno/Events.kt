@@ -193,6 +193,20 @@ data class GameCompleted(
 @SerialName("RoomExpired")
 data class RoomExpired(val reason: String, override val at: Instant) : Event
 
+/**
+ * The best-of-three verdict for one tournament room (§3.2.2). The Room owns this, not Tournament:
+ * every game of the match is played by the same people in the same room, so the scores are the
+ * room's own state and the tournament only needs the result. `advancingPlayers` is empty when
+ * nobody is left to advance — an all-forfeit room still reports, which is what lets its round close.
+ */
+@Serializable
+@SerialName("MatchCompleted")
+data class MatchCompleted(
+    val matchResults: Map<String, MatchScore>,
+    val advancingPlayers: List<String>,
+    override val at: Instant,
+) : Event
+
 @Serializable
 @SerialName("RoomCompleted")
 data class RoomCompleted(

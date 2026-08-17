@@ -64,13 +64,16 @@ def test_status_only_ever_moves_forward() -> None:
 
 
 def test_an_unknown_event_changes_nothing_but_the_window() -> None:
-    effects = plan("SomethingP7Adds", {"roomId": "r", "at": "2026-08-12T12:00:00Z"})
-    assert not effects.overview
-    assert effects.game is None
-    assert not effects.players
-    # Not "empty": the room was active, and that is true whether or not this service understands
-    # what happened.
-    assert effects.activity_counters["events_seen"] == 1
+    # `MatchCompleted` is the one P7 actually added to this topic; the invented name keeps the
+    # property honest for whatever P8 adds next.
+    for event_type in ("MatchCompleted", "SomethingP8Adds"):
+        effects = plan(event_type, {"roomId": "r", "at": "2026-08-12T12:00:00Z"})
+        assert not effects.overview
+        assert effects.game is None
+        assert not effects.players
+        # Not "empty": the room was active, and that is true whether or not this service understands
+        # what happened.
+        assert effects.activity_counters["events_seen"] == 1
 
 
 def test_the_event_name_comes_from_the_body_not_the_cloudevents_uri() -> None:
