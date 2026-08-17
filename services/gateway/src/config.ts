@@ -11,6 +11,7 @@ export interface Config {
   spectatorUrl: string;
   rankingUrl: string;
   analyticsUrl: string;
+  tournamentUrl: string;
   redisUrl: string;
   jwtSecret: string;
   sessionTtlSeconds: number;
@@ -25,6 +26,8 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     spectatorUrl: (env.SPECTATOR_URL ?? "http://localhost:8086").replace(/\/$/, ""),
     rankingUrl: (env.RANKING_URL ?? "http://localhost:8084").replace(/\/$/, ""),
     analyticsUrl: (env.ANALYTICS_API_URL ?? "http://localhost:8091").replace(/\/$/, ""),
+    // P7's orchestrator. The tenth and last backend to come through this door.
+    tournamentUrl: (env.TOURNAMENT_URL ?? "http://localhost:8083").replace(/\/$/, ""),
     redisUrl: env.REDIS_URL ?? "redis://localhost:6379",
     // The key identity signs with. Symmetric, so the gateway is the one verifier and identity is
     // unchanged; RS256 + JWKS is the upgrade when there is a second one (CHANGELOG-design.md).

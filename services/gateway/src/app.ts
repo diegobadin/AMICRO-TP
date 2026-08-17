@@ -8,7 +8,14 @@
 import { Principal, Tokens } from "./auth.js";
 import { SERVICE } from "./config.js";
 
-export type Target = "identity" | "room-gameplay" | "spectator" | "ranking" | "analytics" | "gateway";
+export type Target =
+  | "identity"
+  | "room-gameplay"
+  | "spectator"
+  | "ranking"
+  | "analytics"
+  | "tournament"
+  | "gateway";
 
 export interface Route {
   target: Target;
@@ -71,6 +78,16 @@ const TABLE: Entry[] = [
   { methods: ["GET"], pattern: /^\/stats\/overview$/, route: read("analytics", "/stats/overview") },
   { methods: ["GET"], pattern: /^\/stats\/players\/[^/]+$/, route: read("analytics", "/stats/players/:id") },
   { methods: ["GET"], pattern: /^\/stats\/rooms\/[^/]+$/, route: read("analytics", "/stats/rooms/:id") },
+  // P7. A tournament is something you join, so every one of these needs a session — the same rule
+  // P6's read models follow, and for the same reason: `register` has to know who is registering.
+  { methods: ["GET", "POST"], pattern: /^\/tournaments$/, route: read("tournament", "/tournaments") },
+  { methods: ["GET"], pattern: /^\/tournaments\/[^/]+$/, route: read("tournament", "/tournaments/:id") },
+  { methods: ["POST", "DELETE"], pattern: /^\/tournaments\/[^/]+\/register$/, route: read("tournament", "/tournaments/:id/register") },
+  { methods: ["GET"], pattern: /^\/tournaments\/[^/]+\/players\/[^/]+$/, route: read("tournament", "/tournaments/:id/players/:playerId") },
+  { methods: ["GET"], pattern: /^\/tournaments\/[^/]+\/rounds\/[^/]+$/, route: read("tournament", "/tournaments/:id/rounds/:n") },
+  // The bracket is a read model, so it comes from the read side — the tournament service owns the
+  // decisions, analytics owns the retrospective.
+  { methods: ["GET"], pattern: /^\/tournaments\/[^/]+\/bracket$/, route: read("analytics", "/tournaments/:id/bracket") },
 ];
 
 // A path that matches but a verb that does not is a 404 here, where the backend would have said

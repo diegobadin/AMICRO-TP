@@ -180,6 +180,38 @@ export async function play(flags: Record<string, string | boolean>, json: boolea
   return interactive(started.roomId, started.player, started.view, json);
 }
 
+/**
+ * Play one room that already exists and is already dealing — which is how a tournament room arrives
+ * (P7): the orchestrator seated everybody and started game 1 before anyone was told about it.
+ *
+ * The game number is read from the room rather than assumed to be 1: a tournament room plays a
+ * best-of-three, so games 2 and 3 are the same room under a different number, and a client that
+ * asked for `/games/1` would 404 the moment the second game began.
+ */
+export async function playAssignedRoom(roomId: string, json: boolean): Promise<number> {
+  const player = me();
+  const view = await currentGame(roomId, player);
+  if (!view) return 1;
+  if (!json) process.stdout.write(board(view, player) + "\n");
+  return interactive(roomId, player, view, json);
+}
+
+/** The room's current game, waited for: between games of a match there is a moment with none. */
+export async function currentGame(roomId: string, player: string, attempts = 60): Promise<GameView | null> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const room = await call("GET", `/rooms/${roomId}`);
+    if (room.status === 404) return null;
+    const gameNumber = room.payload?.gameNumber;
+    if (String(room.payload?.status) === "COMPLETED") return null;
+    if (gameNumber) {
+      const game = await call("GET", `/rooms/${roomId}/games/${gameNumber}`);
+      if (game.status === 200) return game.payload as unknown as GameView;
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  return null;
+}
+
 function interactive(roomId: string, player: string, initial: GameView, json: boolean): Promise<number> {
   return new Promise((resolve) => {
     // `view` is only ever a state the server sent. `lastSeen` is how far the stream has come, which

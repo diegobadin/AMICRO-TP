@@ -7,9 +7,22 @@
 // memory, so N parallel bots are N containers with different args. Output is §6 and only §6 — one
 // JSON line per action on stdout, a closing summary line, an exit code. Notices go to stderr.
 
-import { API, Line, Reply, emit, emitted, line, loadSession, request, resultLine, useSession } from "./api.js";
+import {
+  API,
+  Line,
+  Reply,
+  emit,
+  emitted,
+  line,
+  loadSession,
+  playerId,
+  request,
+  resultLine,
+  useSession,
+} from "./api.js";
 import { GameView, mustRefresh } from "./board.js";
-import { enterGame } from "./rooms.js";
+import { currentGame, enterGame } from "./rooms.js";
+import { followTournament, registerForTournament } from "./tournament.js";
 import { StreamEvent, follow } from "./stream.js";
 
 const COLOURS = ["RED", "GREEN", "BLUE", "YELLOW"];
@@ -291,6 +304,34 @@ export async function bot(flags: Record<string, string | boolean>): Promise<numb
     if (!(await signIn(flags))) return summarise({ result: "error", error_code: "unauthorized" });
 
     const deadline = startedAt + timeoutMs;
+
+    // `--tournament` plays a whole event rather than one game: register, then play whatever room
+    // each round assigns, until eliminated or champion. The rooms arrive already dealing, so there
+    // is no table to wait for — the bracket is what decides when this bot plays next.
+    if (flags.tournament === true) {
+      const player = playerId();
+      const tournamentId = await registerForTournament(flags, true);
+      if (!tournamentId) return summarise({ result: "error", error_code: "no_tournament", player });
+
+      const code = await followTournament(
+        tournamentId,
+        true,
+        async (roomId) => {
+          const view = await currentGame(roomId, player);
+          if (!view) return 1;
+          const ending = await autoplay(roomId, player, view, brain(player, seed, forgetUno), deadline);
+          return ending.reason ? 1 : 0;
+        },
+        deadline,
+      );
+      return summarise({
+        result: code === 0 ? "ok" : "error",
+        error_code: code === 0 ? null : "unfinished",
+        player,
+        tournament: tournamentId,
+      });
+    }
+
     const started = await enterGame(flags, true, deadline);
     // A table that never fills is the commonest way a headless run ends, and it is a timeout —
     // not the same thing as a session that died or a room that refused.

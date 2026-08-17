@@ -66,7 +66,9 @@ const baseUrlFor = (target: string): string =>
         ? config.rankingUrl
         : target === "analytics"
           ? config.analyticsUrl
-          : config.roomsUrl;
+          : target === "tournament"
+            ? config.tournamentUrl
+            : config.roomsUrl;
 
 const playerOf = (outcome: Outcome) => (outcome.kind === "reply" ? undefined : outcome.principal?.playerId);
 

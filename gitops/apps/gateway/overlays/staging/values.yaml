@@ -23,6 +23,8 @@ env:
     value: http://spectator.unoarena-staging.svc.cluster.local
   - name: RANKING_URL
     value: http://ranking.unoarena-staging.svc.cluster.local
+  - name: TOURNAMENT_URL
+    value: http://tournament.unoarena-staging.svc.cluster.local
   - name: ANALYTICS_API_URL
     value: http://analytics-api.unoarena-staging.svc.cluster.local
   # The session-kill channel identity has been publishing to since P2 (Architecture §5.5), and from

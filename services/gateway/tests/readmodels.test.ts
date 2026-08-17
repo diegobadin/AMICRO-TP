@@ -150,3 +150,38 @@ describe("headers crossing to the read models", () => {
     expect(headers["authorization"]).toBeUndefined();
   });
 });
+
+describe("tournament routes (P7)", () => {
+  it("routes the orchestrator's surfaces to the tournament service", () => {
+    expect(route("POST", "/tournaments")?.target).toBe("tournament");
+    expect(route("GET", "/tournaments")?.target).toBe("tournament");
+    expect(route("GET", "/tournaments/t1")?.target).toBe("tournament");
+    expect(route("POST", "/tournaments/t1/register")?.target).toBe("tournament");
+    expect(route("DELETE", "/tournaments/t1/register")?.target).toBe("tournament");
+    expect(route("GET", "/tournaments/t1/players/p1")?.target).toBe("tournament");
+    expect(route("GET", "/tournaments/t1/rounds/2")?.target).toBe("tournament");
+  });
+
+  // The bracket is a read model. Sending it to the orchestrator would work today and would be the
+  // wrong seam tomorrow: the tournament decides, analytics remembers.
+  it("routes the bracket to the read side", () => {
+    expect(route("GET", "/tournaments/t1/bracket")?.target).toBe("analytics");
+  });
+
+  it("requires a session for every tournament surface", () => {
+    for (const path of [
+      "/tournaments",
+      "/tournaments/t1",
+      "/tournaments/t1/register",
+      "/tournaments/t1/bracket",
+    ]) {
+      expect(route("GET", path)?.auth ?? route("POST", path)?.auth).toBe(true);
+    }
+  });
+
+  it("does not invent verbs the orchestrator has no route for", () => {
+    expect(route("DELETE", "/tournaments/t1")).toBeUndefined();
+    expect(route("PATCH", "/tournaments/t1/register")).toBeUndefined();
+    expect(route("POST", "/tournaments/t1/bracket")).toBeUndefined();
+  });
+});
