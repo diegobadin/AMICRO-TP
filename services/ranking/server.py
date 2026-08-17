@@ -40,11 +40,11 @@ def dsn() -> str:
     )
 
 
-def build_consumer() -> Any:
+def build_consumer(group_id: str = consumer_module.GROUP_ID) -> Any:
     return Consumer(
         {
             "bootstrap.servers": os.environ.get("KAFKA_BROKERS", "localhost:9092"),
-            "group.id": consumer_module.GROUP_ID,
+            "group.id": group_id,
             # Offsets are committed by hand after the transaction lands, so a crash re-delivers
             # instead of skipping. The dedup insert is what makes that safe.
             "enable.auto.commit": False,
@@ -81,6 +81,23 @@ def main() -> None:
     )
     thread.start()
 
+    # P7: the placement rating, from its own topic in its own group. Its own database connection
+    # too, for the reason the read side has one — a transaction on one stream must not make the
+    # other wait, and these two write different columns of the same rows.
+    tournament_connection = psycopg.connect(dsn())
+    tournament_kafka = build_consumer(consumer_module.TOURNAMENT_GROUP_ID)
+    tournament_thread = threading.Thread(
+        target=consumer_module.run,
+        args=(tournament_kafka, Store(tournament_connection), lambda: _running),
+        kwargs={
+            "topic": consumer_module.TOURNAMENT_TOPIC,
+            "handler": consumer_module.handle_tournament,
+        },
+        daemon=True,
+        name="ranking-placement-consumer",
+    )
+    tournament_thread.start()
+
     server = HTTPServer(("0.0.0.0", port), make_handler(Store(read_connection), metrics_body))  # noqa: S104
 
     def stop(_signum: int, _frame: FrameType | None) -> None:
@@ -94,7 +111,9 @@ def main() -> None:
     log_line("info", "listen", port=port)
     server.serve_forever()
     thread.join(timeout=10)
+    tournament_thread.join(timeout=10)
     kafka.close()
+    tournament_kafka.close()
 
 
 if __name__ == "__main__":

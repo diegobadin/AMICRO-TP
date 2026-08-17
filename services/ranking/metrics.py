@@ -33,6 +33,13 @@ elo_updates = Counter(
     "Games that moved at least one rating",
 )
 
+# P7's second stream, counted separately: the two ratings are different numbers answering different
+# questions, and one board going quiet while the other moves is a thing worth seeing.
+placement_updates = Counter(
+    "ranking_placement_updates_total",
+    "Tournaments that moved at least one placement rating",
+)
+
 events_deduped = Counter(
     "ranking_events_deduped_total",
     "Redeliveries recognised by ce-id and dropped",

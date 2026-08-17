@@ -19,6 +19,12 @@ import metrics
 TOPIC = "room.lifecycle.events"
 GROUP_ID = "ranking-elo"
 
+# P7's second stream, in its own group: §7.2 says a new consumer must not join an existing one, and
+# these two genuinely are different consumers — one applies Elo from games, the other a placement
+# rating from tournaments, and neither should stall behind the other's backlog.
+TOURNAMENT_TOPIC = "tournament.lifecycle.events"
+TOURNAMENT_GROUP_ID = "ranking-placement"
+
 # The Kotlin enum name, which is what travels on the wire — not the catalog's `Casual`. The producer
 # is the truth here (CHANGELOG-design.md §10.5) and a plausible-looking `"Casual"` would silently
 # rank nothing at all.
@@ -36,6 +42,19 @@ def classify(event_type: str, body: dict[str, Any]) -> tuple[bool, str]:
     if len(body.get("finishingOrder") or []) < 2:
         return False, "too_few_players"
     return True, "casual"
+
+
+def classify_tournament(event_type: str, body: dict[str, Any]) -> tuple[bool, str]:
+    """P7's scope rules for the placement rating. Returns (should_apply, reason).
+
+    A tournament with one finisher is not a field: nobody was beaten, so there is nothing to
+    redistribute — the same reasoning `classify` applies to a game with one player in it.
+    """
+    if event_type != "TournamentCompleted":
+        return False, "not_tournament_completed"
+    if len(body.get("finalPlacements") or []) < 2:
+        return False, "too_few_players"
+    return True, "tournament_completed"
 
 
 def header_value(headers: list[tuple[str, bytes]] | None, name: str) -> str | None:
@@ -88,6 +107,36 @@ def handle(message: Any, store: Any) -> str:
     return outcome
 
 
+def handle_tournament(message: Any, store: Any) -> str:
+    """One `tournament.lifecycle.events` message. The body's `type` classifies it, never `ce-type`.
+
+    The relay writes `ce-type: com.unoarena.tournament.TournamentCompleted.v1` for these — a
+    different prefix from the room topic's, and one more reason not to build a rule out of it.
+    """
+    body = json.loads(message.value())
+    headers = message.headers()
+    event_type = event_name(headers, body)
+    fallback_key = f"{body.get('tournamentId')}:{body.get('sequenceNumber')}"
+    event_key = header_value(headers, "ce-id") or fallback_key
+
+    metrics.events_consumed.inc()
+    should_apply, reason = classify_tournament(event_type, body)
+    if reason == "not_tournament_completed":
+        # A tournament emits nine kinds of event and ranking cares about one. Nothing is written for
+        # the rest, so there is nothing a redelivery could double.
+        metrics.events_skipped.labels(reason=reason).inc()
+        return "ignored"
+
+    outcome: str = store.consume_tournament_completed(event_key, body, should_apply)
+    if outcome == "duplicate":
+        metrics.events_deduped.inc()
+    elif outcome == "skipped":
+        metrics.events_skipped.labels(reason=reason).inc()
+    else:
+        metrics.placement_updates.inc()
+    return outcome
+
+
 def refresh_lag(consumer: Any) -> None:
     """Lag from the broker's high watermark, never from a cursor this process holds.
 
@@ -107,8 +156,22 @@ def refresh_lag(consumer: Any) -> None:
     metrics.lag_reads.inc()
 
 
-def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) -> None:
-    """Poll, decide, commit. Backs off on failure and never exits on one (delta §10.11)."""
+def run(
+    consumer: Any,
+    store: Any,
+    should_run: Any,
+    lag_interval: float = 15.0,
+    topic: str = TOPIC,
+    handler: Any = None,
+) -> None:
+    """Poll, decide, commit. Backs off on failure and never exits on one (delta §10.11).
+
+    The topic and handler are parameters because P7 runs this loop twice — once for games and once
+    for tournaments. Everything that made the loop survivable (retry the subscribe for ever, isolate
+    the lag read, commit after the transaction) is the same either way, and the second consumer
+    should inherit it rather than grow its own version with the lessons left out.
+    """
+    handle_message = handler or handle
     # Subscribing is inside the loop, and retried, for the same reason spectator's start is: a
     # consumer that gives up is worse than one that crashes. This thread is a daemon, so an
     # exception escaping here would end it silently while the HTTP server kept answering /health
@@ -119,10 +182,10 @@ def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) 
     while should_run():
         if not subscribed:
             try:
-                consumer.subscribe([TOPIC])
+                consumer.subscribe([topic])
                 subscribed = True
                 metrics.consumer_starts.inc()
-                metrics.log_line("info", "consumer-running")
+                metrics.log_line("info", "consumer-running", topic=topic)
             except Exception as error:  # noqa: BLE001
                 metrics.consumer_errors.inc()
                 metrics.log_line("error", "subscribe-retrying", error=str(error))
@@ -146,7 +209,7 @@ def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) 
                 metrics.consumer_errors.inc()
                 metrics.log_line("warn", "poll-failed", error=str(message.error()))
                 continue
-            outcome = handle(message, store)
+            outcome = handle_message(message, store)
             # Committed only after the transaction landed, so a crash re-delivers rather than
             # skipping. The dedup insert is what makes that safe.
             consumer.commit(message=message, asynchronous=False)

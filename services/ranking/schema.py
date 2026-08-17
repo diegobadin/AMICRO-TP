@@ -34,6 +34,28 @@ STATEMENTS = (
          at            timestamptz not null default now()
        )""",
     "create index if not exists rating_changes_player_idx on rating_changes (player_id, id desc)",
+    # P7. Design §3.3.4 lists `tournamentPlacementRating` as its own field, separate from Elo, and
+    # the two must not be confused: Elo is casual-only by §4.5, so a tournament may never touch it.
+    # Additive columns rather than a second table — one row per player is still the whole answer to
+    # "how good is this player", and a join to say it would be ceremony.
+    "alter table player_ratings add column if not exists placement_rating int not null"
+    " default 1000",
+    "alter table player_ratings add column if not exists tournaments int not null default 0",
+    # The audit row for a placement, the way `rating_changes` is one for a game. `room_id` and
+    # `game_number` have no meaning here, which is exactly why this is not that table.
+    """create table if not exists placement_changes (
+         id            bigserial primary key,
+         player_id     text not null,
+         tournament_id uuid not null,
+         placement     int  not null,
+         field_size    int  not null,
+         rating_before int not null,
+         rating_after  int not null,
+         delta         int not null,
+         at            timestamptz not null default now()
+       )""",
+    "create index if not exists placement_changes_player_idx"
+    " on placement_changes (player_id, id desc)",
     # The idempotency pattern P5 handed over: at-least-once is real, the relay publishes before it
     # marks, and `ce-id` = {roomId}:{sequenceNumber} is the log's primary key. Applying an Elo delta
     # twice is not a duplicate, it is a wrong rating, so this insert and the deltas share a

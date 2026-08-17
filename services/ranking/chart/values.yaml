@@ -7,12 +7,12 @@ image:
   tag: latest # fallback only; digest wins when set
   pullPolicy: IfNotPresent
 
-# One replica, and NOT merely because a second buys nothing. Applying Elo is a read-modify-write:
-# `consume_game_completed` reads each player's current rating and writes the new one inside one
-# transaction, which at READ COMMITTED does not stop a second consumer reading the same rating
-# before either commits. Two replicas would lose updates on any player who finishes two games at
-# once. Scaling this needs `select ... for update` plus a real row for every player (a new player
-# has none to lock), which is a change, not a knob — do not raise this number expecting it to work.
+# One replica, but no longer because a second would be wrong. Until P7 applying a rating was a
+# read-modify-write that two consumers could interleave, so two replicas lost updates; `_lock_ratings`
+# now creates any missing row and takes `for update` on every player of the batch in player-id order,
+# which is what makes the write safe and the lock order deadlock-free. What is left is ordinary
+# capacity: one replica keeps up with this system easily, and a second would buy a rebalance to
+# reason about and nothing else. Raising it is now a decision about throughput, not a data-loss bug.
 replicas: 1
 port: 8084
 healthPath: /health
