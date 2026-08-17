@@ -2,7 +2,7 @@
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/outbox-relay
-  digest: "sha256:9eb3898245b10c50047e62aa82670d74f8b4d9dfd183f0857e7858c86a3ed402" # pinned by CI (deploy-gitops)
+  digest: "sha256:acb9252e02ea99ca37a915bc21493075a22a30e5840a0a8a1c533bb728ec7d6b" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
@@ -24,7 +24,6 @@ env:
     value: unoarena-kafka-bootstrap.kafka.svc.cluster.local:9092
   - name: POLL_INTERVAL_MS
     value: "1000"
-
 # P7's second producer, drained by the same binary from a second Deployment. Everything that differs
 # between the two outboxes is here: whose database, whose column, whose `ce-source`. The defaults in
 # the image are still room-gameplay's, so the Deployment above needs none of this.
