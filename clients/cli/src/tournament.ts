@@ -23,19 +23,29 @@ export interface Placement {
 const call = (method: string, path: string, body?: unknown): Promise<Reply> =>
   request(API, method, path, { body, token: loadSession().token });
 
-/** An open tournament to join, or null when there is none. */
+/**
+ * The open tournament to join, or null when there is none. The **lowest id**, not the first the
+ * service happened to list: every client applies the same rule to the same list and picks the same
+ * tournament, which is what makes four processes starting together converge without a coordinator.
+ */
 async function openTournament(): Promise<string | null> {
   const reply = await call("GET", "/tournaments");
   if (reply.status !== 200) return null;
   const list = (reply.payload as unknown as { tournamentId: string; status: string }[]) ?? [];
-  const open = Array.isArray(list) ? list.find((t) => t.status === "REGISTRATION") : undefined;
-  return open ? open.tournamentId : null;
+  if (!Array.isArray(list)) return null;
+  const open = list.filter((t) => t.status === "REGISTRATION").map((t) => t.tournamentId).sort();
+  return open[0] ?? null;
 }
 
 /**
- * Join an existing tournament or open one. Two players registering at the same moment both find
- * nothing and both create — so the loser of that race simply registers for the one that already
- * exists, the same convergence `play --casual` uses for rooms (P3's two-process lesson).
+ * Join an existing tournament or open one.
+ *
+ * Four clients started together all find nothing and all create — the P3 two-process lesson, which
+ * P7 walked into again: the first drill produced four tournaments holding one player each, none of
+ * them ever reaching the threshold. Creating is therefore not the end of the decision. Every client
+ * re-reads the list afterwards and converges on the lowest id, which is the same rule on every side
+ * and needs no coordinator; the tournaments the losers opened stay empty and are joinable by
+ * whoever comes next.
  */
 async function enterTournament(flags: Record<string, string | boolean>, json: boolean): Promise<string | null> {
   if (flags.id) return String(flags.id);
@@ -48,7 +58,7 @@ async function enterTournament(flags: Record<string, string | boolean>, json: bo
     emit(resultLine("tournament_create", created), json);
     return null;
   }
-  return String(created.payload.tournamentId);
+  return (await openTournament()) ?? String(created.payload.tournamentId);
 }
 
 /** Where this player stands right now, from the service that decides it. */

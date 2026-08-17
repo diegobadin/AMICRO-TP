@@ -119,3 +119,52 @@ describe("following a tournament", () => {
     expect(code).toBe(1);
   });
 });
+
+describe("entering a tournament", () => {
+  /**
+   * The first P7 drill produced four tournaments with one player each: four bots started together,
+   * all found nothing, all created, and none ever reached the threshold. Converging on the lowest
+   * id is the same rule P3 used for rooms — every client applies it to the same list and lands in
+   * the same place, with no coordinator.
+   */
+  it("converges on the lowest open tournament even when everyone created one", async () => {
+    session();
+    const registered: string[] = [];
+    const created = ["ffff-4", "aaaa-1", "cccc-3"];
+    let creates = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/tournaments") && method === "GET") {
+          // Every racer's tournament is already listed by the time anyone re-reads.
+          return new Response(
+            JSON.stringify(created.map((id) => ({ tournamentId: id, status: "REGISTRATION" }))),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/tournaments") && method === "POST") {
+          creates += 1;
+          return new Response(JSON.stringify({ tournamentId: "zzzz-9" }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        registered.push(url);
+        return new Response(JSON.stringify({ tournamentId: url }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }) as unknown as typeof fetch,
+    );
+
+    const { registerForTournament } = await import("../src/tournament.js");
+    const chosen = await registerForTournament({}, true);
+
+    expect(chosen).toBe("aaaa-1");
+    expect(creates).toBe(0);
+    expect(registered[0]).toContain("/tournaments/aaaa-1/register");
+  });
+});

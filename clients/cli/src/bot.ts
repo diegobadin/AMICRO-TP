@@ -163,8 +163,13 @@ function autoplay(
       if (closed || reading) return;
       reading = true;
       try {
-        const reply = await call("GET", `/rooms/${roomId}/games/1`);
+        const reply = await call("GET", `/rooms/${roomId}/games/${view.gameNumber}`);
         if (reply.status === 401) return dead();
+        // A tournament room starts its next game the instant the last one ends, and the finished
+        // game stops being readable at that moment. So a 404 here is not an error: it is this game
+        // being over, told from the outside. Without it the bot waits for a completion it can no
+        // longer see — four of them sat there through a whole round in P7's first drill.
+        if (reply.status === 404) return finish(null);
         if (reply.status === 200) adopt(reply.payload as unknown as GameView);
       } finally {
         reading = false;
@@ -180,7 +185,12 @@ function autoplay(
           if (!move) break;
           answered = view.sequenceNumber;
 
-          const reply = await call("POST", `/rooms/${roomId}/games/1/moves`, move.body, { "if-match": etag });
+          const reply = await call(
+            "POST",
+            `/rooms/${roomId}/games/${view.gameNumber}/moves`,
+            move.body,
+            { "if-match": etag },
+          );
           emit(resultLine(move.action, reply, { room: roomId, player }), true);
           if (reply.status === 401) return dead();
           // A `201` is what the move produced and a `412` is what the room actually looks like:

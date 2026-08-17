@@ -258,7 +258,7 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
       if (closed || (reading && render === undefined)) return;
       reading = true;
       try {
-        const reply = await call("GET", `/rooms/${roomId}/games/1`, undefined, {});
+        const reply = await call("GET", `/rooms/${roomId}/games/${view.gameNumber}`, undefined, {});
         if (reply.status === 401) return superseded();
         if (reply.status === 200) adopt(reply.payload as unknown as GameView, render);
       } finally {
@@ -325,7 +325,7 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
     });
 
     const move = async (body: Record<string, unknown>, action: string) => {
-      const reply = await call("POST", `/rooms/${roomId}/games/1/moves`, body, { "if-match": etag });
+      const reply = await call("POST", `/rooms/${roomId}/games/${view.gameNumber}/moves`, body, { "if-match": etag });
       emit(resultLine(action, reply, { room: roomId, player }), json);
 
       // Both bodies are the authoritative state: a `201` is what the move produced, and a `412` is
