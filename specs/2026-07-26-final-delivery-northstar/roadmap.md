@@ -302,18 +302,55 @@ What P6 inherits, and must not break:
   loop rather than a crash. Do not add a shared Go module without solving the build context first —
   kaniko builds each service from its own directory.
 
-## P7 — Tournaments — **next**
+## P7 — Tournaments — **SHIPPED 2026-08-18**
 
-- Ships: tournament orchestrator — registration with a **low configurable test threshold**,
-  bracket state machine, round saga on `room.completed`, room provisioning through the same
-  room-gameplay API, best-of-three series, top-3 advancement, deterministic tiebreaks.
-- CLI: `tournament register/status`, `bot --tournament` registers and plays whatever it is
-  assigned, rounds end to end.
-- Degradable per N3: if the clock wins, what works/what doesn't is documented in the README
-  without touching P1–P6.
-- Depends on: P5 (saga events), P6 (bracket read model useful but not blocking).
+Triad + closure: [`../2026-08-16-p7-tournaments/`](../2026-08-16-p7-tournaments/) — decisions E1–E4,
+evidence in [`validation.md`](../2026-08-16-p7-tournaments/validation.md) and
+[`ESTADO-FINAL.md`](../2026-08-16-p7-tournaments/ESTADO-FINAL.md); design deltas in
+`CHANGELOG-design.md` §12.
 
-## P8 — Observability consolidation (≥3 business metrics)
+**Ten of ten deployables are real.** The last placeholder is gone. Four `bot --tournament`
+processes register, are drawn into rooms, play best-of-three matches and produce a champion; the
+bracket is readable from analytics; a placement rating moves without touching Elo.
+
+- Ships: tournament orchestrator (registration with a low configurable threshold, round generation,
+  the `tournament-saga` consumer, a reconciler), best-of-three matches decided by the **room**
+  (`MatchCompleted` + `advancingPlayers`), synchronous room provisioning through an internal
+  ClusterIP endpoint, a source-agnostic outbox-relay running twice, the placement rating, the
+  bracket read model, and two more contract pairs.
+- CLI: `tournament register/status/bracket`, `bot --tournament`.
+- Depends on: P5 (the spine), P6 (the read models).
+
+### Handoff from P7 (2026-08-18)
+
+What P8 inherits, and must not break:
+
+- **Every service exposes `/metrics` already, and P8 should retrofit nothing.** The business
+  counters exist since each service's first real phase. P7 added `tournament_*` (registrations,
+  rounds started/completed, rooms provisioned, room results, consumer starts, skips by reason,
+  contended commands) and `ranking_placement_updates_total`. The ≥3 business metrics the exam asks
+  for can be picked from what is already collecting.
+- **Pair every gauge with a success counter.** Third phase running with this rule; a gauge never
+  `Set` reads 0, and 0 is usually the healthy value.
+- **`tournament_commands_contended_total` is the one to watch.** It moving a little is a
+  registration rush; a lot means the retry budget is too small for the contention.
+- **Two relay Deployments, one image.** Dashboards must split `outboxrelay_*` **by pod or by
+  topic** — the two instances publish to different topics and a summed panel hides one of them
+  going idle.
+- **A fresh cluster cannot show every class of defect.** P7's timer-worker outage came from a
+  rolling upgrade: `envFrom` resolves at pod creation, so a Deployment does not pick up a key added
+  to an existing Secret. The from-empty drill did not reproduce it, because secrets sync at wave −1.
+  Drill both ways.
+- **`consumed_events` is keyed `(source, event_key)` and there are now two sources per consumer in
+  ranking.** A dedup table keyed on the event id alone would have collided the day P7 shipped.
+- **Ten of ten deployables are real**, so `digest: ""` no longer appears anywhere and an
+  `ImagePullBackOff` is now always a real failure — the "that placeholder is meant to look like
+  that" exception is gone.
+- **`gcr.io/distroless` intermittently rejects the shared runners.** Five occurrences across P6 and
+  P7, including two consecutive retries of one job before the third passed. It is not the repo. For
+  the exam, mirror the distroless bases into the project registry rather than trusting a retry.
+
+## P8 — Observability consolidation (≥3 business metrics) — **next**
 
 - Ships: ServiceMonitors for every real service, one Grafana dashboard with the business metrics
   (candidates: games completed/min, active rooms, moves/s, registered users, Elo updates/min —

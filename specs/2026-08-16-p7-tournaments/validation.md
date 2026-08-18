@@ -29,11 +29,39 @@
 | **AC-P7.19** | The contract check has bite with the new schemas. | Green with the tournament consumers declared; red on a hand-edit in **both** directions. |
 | **AC-P7.20** | Pipelines green, digests real. | Every changed service's digest verified to have moved; the tournament staging overlay holds a `sha256:`. |
 
-## Evidence so far (2026-08-17, on the branch cluster)
+## The from-empty drill (2026-08-18)
 
-Recorded as obtained. The from-empty drill is still outstanding — these ran against a cluster
-tracking `feat/p7-tournaments` through rolling deploys, which is exactly the condition the standing
-rule says cold-start findings cannot be trusted under.
+`kind delete cluster` → `install.sh TARGET_REVISION=feat/p7-tournaments` → everything below, on a
+cluster that had never seen any of this code.
+
+| Check | Result |
+|---|---|
+| Ten of ten | **All ten deployables `Synced/Healthy`**, both relay Deployments running, from an empty cluster with no intervention. |
+| Cold-start restarts | Schema owners 6–7 (`identity`, `room-gameplay`, `ranking`, `analytics-workers`, `tournament`) — the documented §11.12 posture, not a defect. `analytics-api` **0** (lazy connect), both relays **0**, `timer-worker` **0**, `spectator` **0**. |
+| The saga's startup | `saga-consumer-started` **1**, `saga-consumer-error` **0** — it got in first try against a broker that was still electing. The retry-for-ever loop was not needed here, which is the outcome it exists to guarantee rather than evidence it is unnecessary. |
+| Six consumer groups | `ranking-elo`, `ranking-placement`, `tournament-saga`, `analytics-projections`, `spectator-view`, `room-gameplay`. |
+| The timer worker's token | **0** real 401s. The rolling-upgrade failure (below) did **not** reproduce, exactly as predicted: `secrets-staging` syncs at wave −1, so the secret exists before any service pod starts. |
+| A whole tournament | 4 `bot --tournament` → round 1 → 2 advanced → final → **1 champion, 3 eliminated**, every bot exiting 0. |
+| The bracket | Both rounds, every room and its advancers, and all four placements, read through the CLI from analytics. |
+| Placement vs Elo | Champion **1024**, last **976** after one tournament (the pot conserved); **Elo 1000 / 0 games** for both. |
+| Privacy | `grep -c seed` → **0** on `tournament.lifecycle.events`. |
+| The casual gate | A full two-process casual game to a winner, with **wild, draw, uno and challenge all observed** in one run. |
+
+**What this drill found:** one defect, and it is not a cold-start one — `submit` exhausted its
+optimistic-concurrency attempts and returned `Ok`, so four bots were each told they had registered
+while only three registrations existed and the threshold was never reached. Fixed as a distinct
+`Contended` outcome → `409`, with the client retrying; re-verified on this same cluster, where all
+four then registered and played through to a champion.
+
+**No second from-empty drill.** The standing rule asks for one when the first drill's findings are
+*startup-shaped*, because a cold-start fix verified warm is not verified. This drill's cold start was
+clean on every axis it could have failed on, and its single finding is a concurrency bug at
+registration that a rolling deploy reproduces exactly as well as a fresh cluster.
+
+## Evidence from the branch cluster (2026-08-17, rolling deploys)
+
+Kept because it covers ground the from-empty run does not repeat — the replay proof and the
+rolling-upgrade failure, which is a real class of defect that a fresh cluster cannot show.
 
 | AC | Result |
 |---|---|
