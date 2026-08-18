@@ -29,6 +29,45 @@
 | **AC-P7.19** | The contract check has bite with the new schemas. | Green with the tournament consumers declared; red on a hand-edit in **both** directions. |
 | **AC-P7.20** | Pipelines green, digests real. | Every changed service's digest verified to have moved; the tournament staging overlay holds a `sha256:`. |
 
+## Evidence so far (2026-08-17, on the branch cluster)
+
+Recorded as obtained. The from-empty drill is still outstanding — these ran against a cluster
+tracking `feat/p7-tournaments` through rolling deploys, which is exactly the condition the standing
+rule says cold-start findings cannot be trusted under.
+
+| AC | Result |
+|---|---|
+| AC-P7.1/2/4/7/9 | **Four `bot --tournament` processes played one tournament to a champion** through the gateway: 4 in round 1, 2 advanced, 1 champion and 3 eliminated, every bot exiting 0. |
+| AC-P7.3 | Two real tournament rooms provisioned per round through `POST /internal/rooms`; `rooms` shows `room_type = TOURNAMENT`. |
+| AC-P7.10 | `tournament.lifecycle.events` carries the full sequence (`TournamentCreated → PlayerRegistered ×4 → TournamentStarted → RoundStarted → …`) with `ce-source=/tournament`. |
+| AC-P7.11 | `outboxrelay_rows_published_total` by pod and topic: the room relay published only `room.*` (2 lifecycle, 7 public), the tournament relay only `tournament.*` (7). Neither touched the other's outbox. |
+| AC-P7.12 | Champion **1032**, others 968/1000 after four tournaments — while **Elo stayed 1000 with 0 games** for every one of them. The casual drill moved Elo (1016/984) and left placement at 1000. Both directions of §4.5, live. |
+| AC-P7.14 | `unoarena tournament bracket` prints both rounds, every room, its players, its advancers and the four placements. |
+| AC-P7.15 | **All four consumer groups reset to `earliest` and replayed: 1,587 events redelivered and deduped (ranking 31, analytics 1,541, tournament 15); every projection byte-identical**, checked by diffing full table dumps of both databases before and after. |
+| AC-P7.17 | **The casual gate holds.** The unmodified P4/P6 two-process drill played a full game to a winner and scored it. |
+| AC-P7.19 | Three contract pairs green; red in both directions when a required field is dropped or a producer field renamed. |
+| AC-P7.20 | `tournament` staging overlay holds a real `sha256:` — the `needs: build` fix worked, where the stub's `needs` would have pinned an empty string and gone green. |
+
+### What the drill caught that nothing else did
+
+1. **`ModuleNotFoundError: No module named 'placement'`** — ranking crash-looped. The Dockerfile
+   lists modules by name and P7 added one without adding it there; every test passed, because a test
+   imports from a directory and a container imports from an image. Now checked by a test in all
+   three Python services.
+2. **Four bots opened four tournaments**, one player each, none reaching the threshold. P3's
+   two-process lesson in a new place — and the code carried a comment claiming a convergence it did
+   not implement. Every client now takes the lowest open id.
+3. **The bot treated a room as finished after one game.** A tournament room is a best-of-three, so
+   the round could never complete.
+4. **`autoplay` hardcoded `/games/1`.** When game 2 started, game 1 stopped being readable, so the
+   bot waited for a completion it could no longer see. Correct until P7, because a casual room only
+   ever has one game.
+5. **The timer worker 401'd on every tick.** Its pod started 37 seconds *before* the secret gained
+   `INTERNAL_TOKEN`, and `envFrom` is resolved at pod creation — a Deployment does not restart when
+   a Secret changes. A consequence of D1b that only a **rolling upgrade** produces: on a fresh
+   cluster the secrets app syncs at wave −1, ahead of the services. Restarting it unstuck four
+   tournaments at once, which was itself a good demonstration of the saga.
+
 ## Checklists
 
 ### Local — room-gameplay
