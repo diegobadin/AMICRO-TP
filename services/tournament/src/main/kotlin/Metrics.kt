@@ -62,6 +62,11 @@ object Metrics {
     val consumerFailures: Counter = Counter.builder("tournament.consumer.failures")
         .description("Times the saga consumer fell out of its poll loop and backed off").register(registry)
 
+    // Commands that lost every race for a sequence number. A registration rush makes this move;
+    // it moving a lot means the retry budget is too small for the contention.
+    val contended: Counter = Counter.builder("tournament.commands.contended")
+        .description("Commands that exhausted their optimistic-concurrency attempts").register(registry)
+
     val reconcileSweeps: Counter = Counter.builder("tournament.reconcile.sweeps")
         .description("Reconciler passes completed").register(registry)
 

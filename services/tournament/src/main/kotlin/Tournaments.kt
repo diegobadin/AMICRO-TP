@@ -10,6 +10,15 @@ sealed interface Outcome {
 
     data class Ok(override val state: TournamentState, val events: List<Event> = emptyList()) : Outcome
     data class Refused(val reason: Rejection, override val state: TournamentState) : Outcome
+
+    /**
+     * Every attempt lost the race for a sequence number. Distinct from `Ok` on purpose: four
+     * players registering at once is the normal case, and returning success for a command that
+     * wrote nothing tells a client it is in a tournament it never joined. The P7 drill did exactly
+     * that — four bots reported `ok`, three registrations existed, and the threshold was never
+     * reached because the fourth player was only ever imaginary.
+     */
+    data class Contended(override val state: TournamentState) : Outcome
     data object NotFound : Outcome {
         override val state: TournamentState get() = TournamentState()
     }
@@ -45,7 +54,7 @@ class Tournaments(
      * see. Registration is what crosses the threshold, so this is also the path that starts a
      * tournament — and then round 1 has to be provisioned, which happens outside the transaction.
      */
-    fun submit(tournamentId: UUID, command: Command, correlationId: String?, attempts: Int = 3): Outcome {
+    fun submit(tournamentId: UUID, command: Command, correlationId: String?, attempts: Int = 8): Outcome {
         repeat(attempts) {
             val loaded = store.load(tournamentId)
             if (!loaded.found) return Outcome.NotFound
@@ -65,7 +74,8 @@ class Tournaments(
                 return Outcome.Ok(after, decision.events)
             }
         }
-        return Outcome.Ok(store.load(tournamentId).state)
+        Metrics.contended.increment()
+        return Outcome.Contended(store.load(tournamentId).state)
     }
 
     /**

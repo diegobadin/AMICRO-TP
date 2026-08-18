@@ -67,6 +67,8 @@ fun Route.tournamentRoutes(tournaments: Tournaments) {
                 when (val outcome = tournaments.submit(id, RegisterPlayer(call.player().playerId), call.correlationId())) {
                     is Outcome.Ok -> call.respond(HttpStatusCode.Created, outcome.state.view())
                     is Outcome.Refused -> call.refuse(outcome.reason)
+                    // Nothing was written, so the client must ask again rather than believe it is in.
+                    is Outcome.Contended -> call.respond(HttpStatusCode.Conflict, ErrorBody("contended"))
                     Outcome.NotFound -> call.respond(HttpStatusCode.NotFound, ErrorBody("tournament_not_found"))
                 }
             }
@@ -76,6 +78,7 @@ fun Route.tournamentRoutes(tournaments: Tournaments) {
                 val id = call.tournamentId() ?: return@delete call.respond(HttpStatusCode.NotFound, ErrorBody("tournament_not_found"))
                 when (val outcome = tournaments.submit(id, UnregisterPlayer(call.player().playerId), call.correlationId())) {
                     is Outcome.Ok -> call.respond(HttpStatusCode.NoContent)
+                    is Outcome.Contended -> call.respond(HttpStatusCode.Conflict, ErrorBody("contended"))
                     is Outcome.Refused ->
                         if (outcome.reason == Rejection.NOT_REGISTERED) call.respond(HttpStatusCode.NoContent)
                         else call.refuse(outcome.reason)

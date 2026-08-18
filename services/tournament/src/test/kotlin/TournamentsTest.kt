@@ -290,6 +290,47 @@ class TournamentsTest {
         assertTrue(bracket.single { it.isFinal }.roundNumber == 2)
     }
 
+    /**
+     * The P7 drill's most expensive finding: four bots reported a successful registration and only
+     * three existed, so the threshold was never reached and nothing anywhere said why. Losing every
+     * attempt at a sequence number is a real outcome and must be reported as one — a client that is
+     * told "created" for a write that did not happen cannot retry, because it does not know it
+     * needs to.
+     */
+    @Test
+    fun `a command that loses every race says so instead of reporting success`() {
+        val t = tournaments()
+        val id = openTournament(t)
+
+        // Zero attempts is the same condition as exhausting them, without racing anything.
+        val outcome = t.submit(id, RegisterPlayer(ALICE), null, attempts = 0)
+
+        assertTrue(outcome is Outcome.Contended, "a write that did not happen is not an Ok")
+        assertTrue(t.load(id).state.registered.isEmpty(), "and nothing was written")
+    }
+
+    @Test
+    fun `four players registering at once all end up registered`() {
+        val t = tournaments()
+        val id = openTournament(t)
+
+        val threads = listOf(ALICE, BOB, CAROL, DAVE).map { player ->
+            Thread {
+                // What the CLI does with a 409: ask again, because nothing was recorded.
+                repeat(10) {
+                    if (t.submit(id, RegisterPlayer(player), null) !is Outcome.Contended) return@Thread
+                    Thread.sleep(50)
+                }
+            }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join(20_000) }
+
+        val state = t.load(id).state
+        assertEquals(4, state.registered.size, "every player who was told they registered is in: ${state.registered}")
+        assertEquals(TournamentStatus.IN_PROGRESS, state.status, "and the threshold was reached")
+    }
+
     private fun rows(sql: String): List<String> = dataSource.connection.use { connection ->
         connection.createStatement().use { statement ->
             statement.executeQuery(sql).use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } }

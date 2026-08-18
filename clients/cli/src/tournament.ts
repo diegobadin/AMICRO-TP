@@ -141,12 +141,26 @@ export async function followTournament(
 export async function registerForTournament(
   flags: Record<string, string | boolean>,
   json: boolean,
+  attempts = 5,
 ): Promise<string | null> {
   const tournamentId = await enterTournament(flags, json);
   if (!tournamentId) return null;
-  const reply = await call("POST", `/tournaments/${tournamentId}/register`);
-  emit(resultLine("tournament_register", reply, { tournament: tournamentId }), json);
-  return reply.status < 300 ? tournamentId : null;
+
+  // A `409 contended` means the write lost every race for a sequence number and nothing was
+  // recorded — so it is the one status worth retrying. Four players registering in the same second
+  // is the normal case at the start of a tournament, and in P7's drill it cost a registration that
+  // every side reported as successful.
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const reply = await call("POST", `/tournaments/${tournamentId}/register`);
+    if (reply.status !== 409) {
+      emit(resultLine("tournament_register", reply, { tournament: tournamentId }), json);
+      return reply.status < 300 ? tournamentId : null;
+    }
+    await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+  }
+
+  emit(line({ action: "tournament_register", result: "error", error_code: "contended", tournament: tournamentId }), json);
+  return null;
 }
 
 export async function tournamentCommand(
