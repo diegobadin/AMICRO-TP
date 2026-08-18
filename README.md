@@ -224,7 +224,7 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`services/gateway/`](./services/gateway/) | The only way in: the route table, HS256 validation, the header whitelist that makes the trust boundary real, and `GET /rooms/{id}/stream` — Server-Sent Events whose frame ids *are* the events' sequence numbers, so a client resumes with `Last-Event-ID` and can prove it missed nothing. |
 | [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
 
-**What is real so far — nine of the ten deployables.** `gateway` (the single entry point: token
+**What is real — all ten deployables.** `gateway` (the single entry point: token
 validation, routing and the SSE tier), `identity` (accounts, single-active-session, JWTs),
 `room-gameplay` (the event-sourced Uno core: rooms, moves, the immutable game log and its
 transactional outbox), `outbox-relay` (that outbox drained to Kafka as CloudEvents, at-least-once
@@ -236,8 +236,15 @@ through the CLI and play a casual game to the end against a cluster deployed fro
 **one** URL, with each move pushed to the other player rather than polled for, and a `bot --casual`
 able to take either seat headless. A game now also *finishes* without them: a player who stops
 answering loses the seat after three lapsed turns, and a room nobody joined closes on the clock.
-When it ends, two ratings move and three projections update. Only `tournament` is still a
-placeholder — that is P7.
+When it ends, two ratings move and three projections update.
+
+**And tournaments run.** `tournament` is the tenth service and the last placeholder to go: four
+players register through the CLI with one command each, a low configurable threshold starts the
+event, and it plays itself out — rooms provisioned round by round, best-of-three matches decided by
+the room that hosted them, survivors reseeded, a final, a champion. The bracket is readable from
+analytics, and finishing moves a *placement* rating that never touches Elo, because Elo is
+casual-only by design and now enforced in both directions. Nothing in the repo carries
+`digest: ""` any more.
 
 **A stranger can watch, and sees no hand.** `spectate <roomId>` streams a room's public state to any
 logged-in player who is not sitting at the table. The boundary is not a filter added at the edge:

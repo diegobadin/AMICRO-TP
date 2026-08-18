@@ -1,9 +1,10 @@
 # UnoArena Client CLI (authentication + casual gameplay)
 
 The canonical command surface the faculty uses to drive the cluster (Client-Checkpoint.md). This
-repo ships the **authentication slice** (§5.A), the **casual room/play slice** (§5.B, §5.C) and the
-**headless bot** (§5.E); spectate and tournament commands land with the phases that make them real
-(P6–P7).
+repo ships the **authentication slice** (§5.A), the **casual room/play slice** (§5.B, §5.C), the
+**headless bot** (§5.E), the **spectator** and **read** commands (P6) and the **tournament**
+commands (P7). Every functional requirement the exam names can now be driven from here — no `curl`,
+no `psql`, no operator step.
 
 ## Commands
 
@@ -43,6 +44,22 @@ offered — `pass` appears once you have drawn, not before.
 | `uno` | call Uno! on its own (only useful while you still hold one or two cards) |
 | `challenge` | catch an opponent sitting on one card who did not call |
 | `state`, `quit` | re-render the board; leave |
+
+### Tournaments (§5.D) — against `tournament`
+
+| Command | Notes |
+|---|---|
+| `tournament register` | joins the open tournament (or opens one), then **plays every round to the end** — it waits to be drawn, plays its room, and comes back for the next round until eliminated or champion |
+| `tournament register --id <id>` | the same, for a named tournament |
+| `tournament status [--id <id>]` | who is registered, which round, which rooms, and who advanced |
+| `tournament bracket [--id <id>]` | the bracket from the read model, including the final placements |
+| `bot --tournament` | the whole event, headless — the same loop with a random number generator in the seat |
+
+One command per player is the whole demo: four terminals running `tournament register` produce a
+champion with nothing else typed. The client decides nothing about the bracket — it asks the
+tournament where it stands and plays what it is given, which is why the advancement rules live in
+one place rather than two. Clients converge on the **lowest open tournament id**, so processes
+started together join the same event without a coordinator.
 
 ### Headless play (§5.E)
 
@@ -96,14 +113,13 @@ Global `--json` emits one machine-readable line per action (Client §6), always 
 `{ts, action, room, player, latency_ms, result, error_code, seq, correlationId}`. Fields that do
 not apply to an action are `null` rather than absent.
 
-## What is deliberately not here yet
+## Behaviour worth knowing before you drive it
 
-- **`spectate`, `tournament`** — P6 and P7.
-- **Lazy timers have a visible consequence.** P3 has no timer worker: deadlines live in the room
-  aggregate and are evaluated when the *next* command arrives (decision E2). A turn that timed out
-  while nobody was playing is settled the moment anyone acts — correct, but it can land late. P5's
-  timer worker closes that gap; until then, a player who walks away is only penalised once someone
-  else moves.
+- **Deadlines are still evaluated by the aggregate, not by a clock inside it** (decision E2): a
+  turn that timed out while nobody was playing is settled the moment anyone acts. Since P5 the timer
+  worker is what makes "anyone acts" happen without a player, so a table nobody is sitting at now
+  ends by itself. The backstop stays deliberate: with the worker stopped the room still resolves its
+  own deadlines on the next command, which P6 proved with the worker held at zero replicas.
 - **Token refresh.** A session that is superseded ends `play` with
   `error_code: "session_superseded"` — from the stream's control frame if one is open, and from the
   next `401` otherwise.
