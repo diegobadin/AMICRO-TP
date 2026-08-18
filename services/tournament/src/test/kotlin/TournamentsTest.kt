@@ -331,6 +331,26 @@ class TournamentsTest {
         assertEquals(TournamentStatus.IN_PROGRESS, state.status, "and the threshold was reached")
     }
 
+    /**
+     * The reconciler is built to race the saga, so two callers announcing one round is the designed
+     * case. Whoever loses must say so — reporting a `RoundStarted` that was never written would
+     * count metrics for events nobody can read.
+     */
+    @Test
+    fun `two callers starting the same round do not both claim to have started it`() {
+        val t = tournaments()
+        val id = openTournament(t)
+        register(t, id, ALICE, BOB, CAROL, DAVE)
+
+        // The round already exists; a second advance must not invent a duplicate of it.
+        val before = t.load(id).state
+        t.reconcile()
+        val after = t.load(id).state
+
+        assertEquals(before.sequenceNumber, after.sequenceNumber, "a sweep with nothing to do writes nothing")
+        assertEquals(1, after.rounds.size)
+    }
+
     private fun rows(sql: String): List<String> = dataSource.connection.use { connection ->
         connection.createStatement().use { statement ->
             statement.executeQuery(sql).use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } }

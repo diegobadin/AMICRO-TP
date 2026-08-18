@@ -302,3 +302,40 @@ closed by the roadmap's four-step procedure.
   trade the Go workers and the CQRS pair already made.
 - **Scaling any consumer past one replica.** F6 removes the correctness *barrier* in ranking; it
   does not turn the replica count up, and no drill claims partition scale-out.
+
+---
+
+## 11. Review pass — findings (2026-08-18)
+
+Read as a PR reviewer would read someone else's diff, after the from-empty drill and before the
+merge. The convention says this is where the real defects are; it held again.
+
+| # | Finding | Change |
+|---|---|---|
+| R1 | **`submitStartRound` ignored the append's result.** It returned `Ok` and counted business metrics whether or not the events were written — and this is the one place where a collision is *designed in*, because the reconciler exists to race the saga. Two callers announcing the same round would both report having started it, and `tournament_rounds_started_total` would count a `RoundStarted` nobody can read. The same defect the drill found in `submit`, hiding one call deeper. | Checked; a lost race returns `Contended` with the state that is actually stored, and counts nothing. Test: a sweep with a round already started writes nothing and adds no round. |
+| R2 | **`Store.markConsumed` is public but only ever called from inside `consume`.** It takes a `Connection`, so it is unusable outside a transaction the store owns — a public method that cannot be called correctly from outside is an invitation. | Left public and used by `consume` only; noted here rather than changed, because the tests read it as documentation of the dedup mechanism. Revisit if a second caller never appears. |
+| R3 | **The relay's four knobs default to room-gameplay's values.** A reviewer's first question is "what happens if someone sets three of them and forgets the fourth" — the answer is a tournament event published with `ce-source: /room-gameplay`, which no consumer would reject. | Left as is: the alternative (no defaults) would mean editing the shipped room-gameplay Deployment to keep it working, which is the change the additive-growth rule exists to avoid. The byte-identity test pins the default, and the second instance's four values are set together in one overlay block. |
+
+### Checked and NOT changed, and why
+
+- **The ~75 duplicated lines between `ranking/consumer.py` and `analytics-workers/consumer.py`
+  (D6), revisited deliberately as P6 asked.** P7 added a third consumer — in Kotlin — so the
+  duplication did not grow, and the kaniko per-service build context that made sharing expensive
+  has not changed. What *did* change is that ranking's poll loop is now shared between two consumers
+  **within** the service, by parameterising `run(topic, handler)` rather than copying it: the
+  lessons that loop encodes (retry the subscribe for ever, isolate the lag read, commit after the
+  transaction) are exactly what a second copy would have dropped. That is the duplication worth
+  removing, and it was removed where it was cheap. If P8 adds a fourth Python consumer, the
+  cross-service trade flips and a shared package earns its build-context cost.
+- **The tournament service duplicates room-gameplay's log/outbox shape** (D8) rather than sharing a
+  module — same trade, same reason, and the two schemas have already diverged (`tournament_id` vs
+  `room_id`, no privacy filter on the way out).
+- **`estimatedRounds` builds a throwaway list of placeholder ids** to reuse `assignRooms`. Ugly on
+  the page, correct, and only ever runs once per tournament; extracting a pure "how many rooms for N
+  players" would be a second implementation of the seeding rule.
+- **The reconciler sweeps every tournament that is `IN_PROGRESS`**, not only stuck ones. With the
+  numbers this system has that is a handful of rows every five seconds, and a query that filtered
+  "stuck" would be a second copy of the round-completion rule.
+- **`RoomClient` retries nothing.** A failed provision throws, the round is not announced, and the
+  reconciler tries the whole step again under the same idempotency keys. One retry policy, in the
+  place that can also recover from a crash, beats two.

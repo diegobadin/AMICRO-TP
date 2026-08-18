@@ -116,13 +116,27 @@ class Tournaments(
         return submitStartRound(tournamentId, StartRound(roundNumber, provisioned, isFinal), correlationId)
     }
 
+    /**
+     * The append's result is checked, and that is not pedantry: the reconciler exists precisely to
+     * race the saga, so two callers announcing the same round is the expected case rather than a
+     * remote one. Ignoring a conflict here would report a `RoundStarted` that was never written and
+     * count business metrics for it — the same defect the drill found in `submit`, in the one place
+     * where the collision is by design.
+     */
     private fun submitStartRound(tournamentId: UUID, command: StartRound, correlationId: String?): Outcome {
         val loaded = store.load(tournamentId)
         val state = loaded.state
         val decision = decide(state, command, now())
         if (decision is Decision.Rejected) return Outcome.Refused(decision.reason, state)
         val after = state.after(decision.events)
-        store.append(tournamentId, state.sequenceNumber, decision.events, after, correlationId)
+        if (store.append(tournamentId, state.sequenceNumber, decision.events, after, correlationId)
+            !is AppendResult.Committed
+        ) {
+            // Somebody else started this round. Their events are the real ones; report what is
+            // actually stored rather than what this call computed.
+            Metrics.contended.increment()
+            return Outcome.Contended(store.load(tournamentId).state)
+        }
         countBusiness(decision.events)
         return Outcome.Ok(after, decision.events)
     }
