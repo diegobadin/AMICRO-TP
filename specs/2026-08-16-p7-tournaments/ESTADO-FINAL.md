@@ -97,6 +97,20 @@ the mirror image of the P6 lesson and worth remembering in both directions.
   not inherited: P7's own consumer is Kotlin, so the duplication did not grow, and the kaniko
   build-context trade that made sharing expensive has not changed.
 
+## Closure
+
+FF-merged to `main` at **`bd09298`** (45 commits, no merge commit). The closure run on `main` is
+pipeline **2769309742**: **43 jobs, 42 success + 1 manual** — the widest run the pipeline offers,
+because the phase touched `ci/contracts/**` and nine of ten services, so change detection pulled
+everything in. The roadmap's usual surprise did not apply: the last commit carried code rather than
+`[skip ci]`, so the push produced a real pipeline and no manual trigger was needed to give the
+"green `main` pipeline" criterion a run behind it.
+
+Both Argo roots were repointed at `main` before the branch was retired, and the cluster reconciled
+to main's freshly pinned digests: **ten of ten `Synced/Healthy`, every pod Running, and all ten
+staging overlays carrying a real `sha256:`** — the first phase in this program where no overlay is
+left holding `digest: ""`.
+
 ## Next
 
 **P8 — observability consolidation.** Every service has exposed `/metrics` since its first real
