@@ -12,20 +12,24 @@ after F1 is `gitops/**` or docs, which change detection keeps out of the service
 
 ## F1 — Latency histograms on the two Kotlin timers (D1)
 
-1.1 `services/room-gameplay/src/main/kotlin/Metrics.kt:67` — add `.publishPercentileHistogram()`
-to `Timer.builder("roomgameplay.command.duration")`.
+1.1 `services/room-gameplay/src/main/kotlin/Metrics.kt` — `.serviceLevelObjectives(*LATENCY_SLOS)`
+on `Timer.builder("roomgameplay.command.duration")`, where `LATENCY_SLOS` is the gateway's own
+boundary list (5, 10, 50, 100, 250, 500 ms, 1 s, 2.5 s).
 
-1.2 `services/tournament/src/main/kotlin/Metrics.kt:79` — same for
-`Timer.builder("tournament.http.request.duration")`.
+1.2 `services/tournament/src/main/kotlin/Metrics.kt` — same for
+`Timer.builder("tournament.http.request.duration")`. The list is duplicated per service rather than
+shared, per P7/D8: kaniko builds each service from its own directory.
 
 1.3 A test per service asserting the **exact exposed strings**: scrape the registry and require
 `roomgameplay_command_duration_seconds_bucket` / `tournament_http_request_duration_seconds_bucket`
 to be present. Assert the name as a string — Prometheus rewrites names it dislikes, which is how
 `roomgameplay_rooms_created_total` became `roomgameplay_rooms_total`.
 
-1.4 Push both services, **one at a time**, and confirm each digest actually moved in
-`gitops/apps/<svc>/overlays/staging/values.yaml`. `git pull --rebase` first: CI pins back to the
-branch.
+1.4 One commit per service, **pushed together in one pipeline**, then confirm **both** digests moved
+in `gitops/apps/<svc>/overlays/staging/values.yaml`. `git pull --rebase` first: CI pins back to the
+branch. (Two services pinning in the same stage race on the ref and the loser retries by re-reading
+the winner's head — known since P2 and handled; splitting this into two pipelines would spend scarce
+CI minutes to avoid a race that is already covered.)
 
 1.5 After Argo syncs, confirm the `_bucket` series is live in Prometheus, not just in a test.
 
