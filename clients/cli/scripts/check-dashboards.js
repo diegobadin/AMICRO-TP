@@ -91,6 +91,15 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".json"))) {
         }
       }
 
+      // The P7 handoff's standing requirement: two relay Deployments publish to different topics
+      // from one image, so a summed panel hides one of them going idle. Enforced rather than
+      // remembered — this is the kind of rule that survives exactly as long as the person who
+      // wrote it is the one editing the board.
+      if (expr.includes("outboxrelay_") && !/by\s*\(\s*job\b/.test(expr)) {
+        console.log(`  RELAY NOT SPLIT ${panel.title}: ${expr}`);
+        failures += 1;
+      }
+
       const result = await prom("/query", { query: expr });
       if (result.status !== "success") {
         console.log(`  QUERY FAILED    ${panel.title}: ${expr}`);

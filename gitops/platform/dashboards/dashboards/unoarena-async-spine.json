@@ -1,0 +1,174 @@
+{
+  "uid": "unoarena-async-spine",
+  "title": "UnoArena — Async spine",
+  "tags": ["unoarena", "platform"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "The log-before-broadcast spine: two outbox relays, six consumer groups, the reconciler and the timer worker. Every relay panel is grouped by job — the two relays publish to different topics and a summed panel would hide one of them going idle.",
+  "panels": [
+    {
+      "type": "text",
+      "title": "How to read this board",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Every relay panel is `by (job)`.** `outbox-relay` drains room-gameplay's outbox, `outbox-relay-tournament` drains the tournament's — one image, two Deployments, two scrape jobs. Summed, one relay stopping is invisible.\n\n**Every gauge here is paired with a success counter.** `backlog_rows` and `lag_seconds` both read `0` from a relay that has never once reached its database — the healthiest possible reading. `backlog_reads_total` is what tells the two apart.\n\n**`consumer_starts_total` at 0 while the pod is Running means the consumer never started.** A projection counter at 0 cannot otherwise be told from \"nobody has played a game yet\": that cost 13 minutes of silent outage in P6.\n\n**`tournament_commands_contended_total` moving a little is a registration rush.** A lot means the retry budget is too small for the contention."
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox relays — rows published per second, by relay and topic",
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "description": "Both relays run the same binary with four env knobs changed. If one line flattens while the other keeps moving, the producer behind it has stopped or its relay has.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (job, topic) (rate(outboxrelay_rows_published_total[5m])) or vector(0)", "legendFormat": "{{job}} → {{topic}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox backlog and lag, with the read counter that makes a zero meaningful",
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "description": "lag_seconds is the age of the oldest unpublished row and is the first number to go wrong when Kafka is unreachable. If backlog_reads is flat at the same time, the relay is not reading the database at all and the two zeroes above it mean nothing.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (job) (outboxrelay_backlog_rows) or vector(0)", "legendFormat": "{{job}} backlog rows" },
+        { "refId": "B", "expr": "sum by (job) (outboxrelay_lag_seconds) or vector(0)", "legendFormat": "{{job}} lag seconds" },
+        { "refId": "C", "expr": "sum by (job) (rate(outboxrelay_backlog_reads_total[5m])) or vector(0)", "legendFormat": "{{job}} backlog reads/s" },
+        { "refId": "D", "expr": "sum by (job) (rate(outboxrelay_publish_failures_total[5m])) or vector(0)", "legendFormat": "{{job}} publish failures/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 0, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Consumer lag, by group and topic",
+      "id": 4,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "description": "Six groups read this spine: ranking-elo, ranking-placement, tournament-saga, analytics-projections, spectator-view and room-gameplay. Lag that climbs and does not come back is a consumer that has stopped keeping up; lag that is flat at zero next to a lag_reads counter that is also flat is a consumer that is not measuring at all.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (job) (ranking_consumer_lag) or vector(0)", "legendFormat": "ranking" },
+        { "refId": "B", "expr": "sum by (job, topic) (analytics_consumer_lag) or vector(0)", "legendFormat": "analytics {{topic}}" },
+        { "refId": "C", "expr": "sum by (job, topic) (spectator_consumer_lag) or vector(0)", "legendFormat": "spectator {{topic}}" },
+        { "refId": "D", "expr": "sum(rate(ranking_lag_reads_total[5m])) or vector(0)", "legendFormat": "ranking lag reads/s" },
+        { "refId": "E", "expr": "sum(rate(analytics_lag_reads_total[5m])) or vector(0)", "legendFormat": "analytics lag reads/s" },
+        { "refId": "F", "expr": "sum(rate(spectator_lag_reads_total[5m])) or vector(0)", "legendFormat": "spectator lag reads/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 0, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "stat",
+      "title": "Consumer starts — has each consumer ever entered its poll loop?",
+      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "description": "Zero here while the pod is Running is the P6 failure exactly: kafkajs exhausted its own retries during a cold start, start() rejected, a .catch that only logged left the service alive with no consumer, and /health answered 200 for thirteen minutes. Any value above one means the consumer has restarted its loop, which is the healthy backoff doing its job.",
+      "targets": [
+        { "refId": "A", "expr": "sum(ranking_consumer_starts_total) or vector(0)", "legendFormat": "ranking" },
+        { "refId": "B", "expr": "sum(analytics_consumer_starts_total) or vector(0)", "legendFormat": "analytics-workers" },
+        { "refId": "C", "expr": "sum(spectator_consumer_starts_total) or vector(0)", "legendFormat": "spectator" },
+        { "refId": "D", "expr": "sum(tournament_consumer_starts_total) or vector(0)", "legendFormat": "tournament-saga" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name", "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Events consumed, projected and deduped",
+      "id": 6,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "description": "Deduped moving is not a fault — at-least-once delivery means a redelivery is expected, and consumed_events refusing it is the guarantee working. Deduped climbing while projected stays flat is a consumer stuck redelivering one batch.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(ranking_events_consumed_total[5m])) or vector(0)", "legendFormat": "ranking consumed/s" },
+        { "refId": "B", "expr": "sum(rate(analytics_events_consumed_total[5m])) or vector(0)", "legendFormat": "analytics consumed/s" },
+        { "refId": "C", "expr": "sum(rate(analytics_events_projected_total[5m])) or vector(0)", "legendFormat": "analytics projected/s" },
+        { "refId": "D", "expr": "sum(rate(spectator_events_projected_total[5m])) or vector(0)", "legendFormat": "spectator projected/s" },
+        { "refId": "E", "expr": "sum(rate(ranking_events_deduped_total[5m])) or vector(0)", "legendFormat": "ranking deduped/s" },
+        { "refId": "F", "expr": "sum(rate(analytics_events_deduped_total[5m])) or vector(0)", "legendFormat": "analytics deduped/s" },
+        { "refId": "G", "expr": "sum(rate(tournament_events_deduped_total[5m])) or vector(0)", "legendFormat": "tournament deduped/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Skipped and rejected events, by reason",
+      "id": 7,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "description": "A consumer skipping an event type it has no use for is correct and counted on purpose. This panel is what turned a whole class of silent bug visible in P6: ranking read four lifecycle events and scored none of them, because it compared ce-type (a reverse-DNS URI) to a bare event name — invisible without a skip counter carrying the reason.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (reason) (rate(ranking_events_skipped_total[5m])) or vector(0)", "legendFormat": "ranking {{reason}}" },
+        { "refId": "B", "expr": "sum by (reason) (rate(tournament_events_skipped_total[5m])) or vector(0)", "legendFormat": "tournament {{reason}}" },
+        { "refId": "C", "expr": "sum(rate(spectator_events_malformed_total[5m])) or vector(0)", "legendFormat": "spectator malformed/s" },
+        { "refId": "D", "expr": "sum(rate(spectator_private_field_rejections_total[5m])) or vector(0)", "legendFormat": "spectator private-field rejections/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Contended tournament commands — the metric P7 said to watch",
+      "id": 8,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "description": "A command that exhausted its optimistic-concurrency attempts. It returns 409 and the client retries — it must never return success, which is the defect P7's review pass found in the one path where the reconciler races the saga by design. A few during a registration rush is the design working; a sustained climb means the retry budget is too small for the contention.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(tournament_commands_contended_total[5m])) * 60 or vector(0)", "legendFormat": "contended/min" },
+        { "refId": "B", "expr": "sum(tournament_commands_contended_total) or vector(0)", "legendFormat": "contended (cumulative)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "The two sweepers — reconciler and timer worker",
+      "id": 9,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "description": "Both are designed to race the thing they repair, and both are idempotent. due_rooms is a gauge and reads 0 both when there is nothing due and when the worker has never swept — which is why sweeps_total is plotted next to it. The timer worker is also the recovery path that unstuck four tournaments at once in P7 when its token was fixed.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(tournament_reconcile_sweeps_total[5m])) or vector(0)", "legendFormat": "reconciler sweeps/s" },
+        { "refId": "B", "expr": "sum(rate(tournament_reconcile_failures_total[5m])) or vector(0)", "legendFormat": "reconciler failures/s" },
+        { "refId": "C", "expr": "sum(rate(timerworker_sweeps_total[5m])) or vector(0)", "legendFormat": "timer sweeps/s" },
+        { "refId": "D", "expr": "sum(rate(timerworker_sweep_failures_total[5m])) or vector(0)", "legendFormat": "timer sweep failures/s" },
+        { "refId": "E", "expr": "sum(timerworker_due_rooms) or vector(0)", "legendFormat": "rooms due now" },
+        { "refId": "F", "expr": "sum(rate(timerworker_ticks_total[5m])) or vector(0)", "legendFormat": "ticks/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 0, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Consumer errors and the timer worker's tick lag",
+      "id": 10,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "description": "Tick lag is how late a deadline was resolved relative to when it fell due — the number that went wrong invisibly in P7 when the timer worker's pod held a Secret without the internal token and 401'd on every tick.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(ranking_consumer_errors_total[5m])) or vector(0)", "legendFormat": "ranking errors/s" },
+        { "refId": "B", "expr": "sum(rate(analytics_consumer_errors_total[5m])) or vector(0)", "legendFormat": "analytics errors/s" },
+        { "refId": "C", "expr": "sum(rate(spectator_consumer_errors_total[5m])) or vector(0)", "legendFormat": "spectator errors/s" },
+        { "refId": "D", "expr": "sum(rate(tournament_consumer_failures_total[5m])) or vector(0)", "legendFormat": "tournament-saga failures/s" },
+        { "refId": "E", "expr": "histogram_quantile(0.95, sum by (le) (rate(timerworker_tick_lag_seconds_bucket[5m]))) or vector(0)", "legendFormat": "timer tick lag p95 (s)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 0, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    }
+  ]
+}
