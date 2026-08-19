@@ -6,7 +6,7 @@
 // until the TTL collected it. Reading both is the delta, and it is what makes the interleaving
 // problem real — see `store.ts` for why the dedup is a set.
 
-import type { Consumer } from "kafkajs";
+import type { Consumer, IHeaders } from "kafkajs";
 import * as metrics from "./metrics.js";
 import { privateFields } from "./privacy.js";
 import type { Broker } from "./broker.js";
@@ -19,6 +19,13 @@ export const GROUP_ID = "spectator-view";
 export const TOPICS = [PUBLIC_TOPIC, LIFECYCLE_TOPIC];
 
 export type Outcome = "projected" | "duplicate" | "rejected" | "malformed";
+
+/** One Kafka header as a string. kafkajs hands them back as Buffers, and repeated as arrays. */
+export function headerValue(headers: IHeaders | undefined, name: string): string {
+  const raw = headers?.[name];
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  return first === undefined ? "" : first.toString();
+}
 
 /**
  * Project one event. Everything the consumer does per message, with the broker plumbing passed in
@@ -71,7 +78,16 @@ export async function start(consumer: Consumer, store: Store, broker: Broker): P
     eachMessage: async ({ topic, message }) => {
       try {
         const body = JSON.parse(message.value?.toString() ?? "{}") as PublicEvent;
-        await project(topic, body, store, broker);
+        const outcome = await project(topic, body, store, broker);
+        // The relay carries the originating request's correlation id onto every message
+        // (outbox-relay/envelope.go), so one id can be followed from the player's command into the
+        // live view. Reading it here is what makes that true — the header has travelled the whole
+        // spine since P5 with nobody consuming it.
+        metrics.log("info", "projected", {
+          outcome,
+          offset: message.offset,
+          correlationId: headerValue(message.headers, "ce-correlationid"),
+        });
       } catch (error) {
         metrics.consumerErrors.inc();
         throw error; // kafkajs retries the message; the claim was released above.

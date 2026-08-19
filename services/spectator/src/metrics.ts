@@ -3,6 +3,16 @@
 // these — the same lie P4 found in a Redis outage and P5 found twice in the relay's backlog.
 
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
+import { SERVICE } from "./app.js";
+
+// The structured log line lives here rather than in server.ts because the consumer needs it too,
+// and server.ts imports the consumer — the other direction would be a cycle. Same home as the two
+// Python consumers' `log_line`, for the same reason.
+export function log(level: string, action: string, fields: Record<string, unknown> = {}) {
+  process.stdout.write(
+    JSON.stringify({ ts: new Date().toISOString(), level, service: SERVICE, action, ...fields }) + "\n",
+  );
+}
 
 export const registry = new Registry();
 collectDefaultMetrics({ register: registry });

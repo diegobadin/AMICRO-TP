@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import { Broker } from "./broker.js";
 import * as consumerModule from "./consumer.js";
 import * as metrics from "./metrics.js";
+import { log } from "./metrics.js";
 import { SERVICE, handle } from "./app.js";
 import { Store } from "./store.js";
 import { HEARTBEAT_MS, encodeFrame, heartbeatFrame, snapshotFrame, updateFrame } from "./sse.js";
@@ -17,12 +18,6 @@ const PORT = Number(process.env.PORT ?? 8086);
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const BROKERS = (process.env.KAFKA_BROKERS ?? "localhost:9092").split(",");
 const LAG_INTERVAL_MS = Number(process.env.LAG_INTERVAL_MS ?? 15_000);
-
-function log(level: string, action: string, fields: Record<string, unknown> = {}) {
-  process.stdout.write(
-    JSON.stringify({ ts: new Date().toISOString(), level, service: SERVICE, action, ...fields }) + "\n",
-  );
-}
 
 // The projection's own connection. Its loop retries, so it must be told about a failure rather than
 // have it parked in an offline queue — P4/F8's lesson, decided per connection and not per service.
