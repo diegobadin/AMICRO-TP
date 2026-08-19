@@ -109,24 +109,37 @@ The nine rules and the failure each is derived from:
       A filter, not an absence.
 - [x] **The Loki query bites.** A `correlationId` that does not exist returns **0 lines** — a query
       that matched everything would be indistinguishable from a working one on a busy cluster.
-- [~] One `correlationId` returns lines from ≥3 distinct services. — **2 today**
-      (`gateway` → `identity` for a register, verified live). See the gap below; this box stays
-      open.
+- [x] One `correlationId` returns lines from ≥3 distinct services. — **5**, from one `POST /rooms`
+      in a single LogQL query, after D8 closed the chain:
+
+      room-gameplay      {'status': 201}
+      gateway            {'action': 'POST /rooms', 'status': 201}
+      ranking            {'action': 'consumed',  'outcome': 'ignored',   'offset': 5}
+      spectator          {'action': 'projected', 'outcome': 'projected', 'offset': 5}
+      spectator          {'action': 'projected', 'outcome': 'projected', 'offset': 130}
+      analytics-workers  {'action': 'projected', 'outcome': 'projected', 'offset': 5}
+      analytics-workers  {'action': 'projected', 'outcome': 'projected', 'offset': 130}
+
+      The command, the aggregate that owned it, the relay's envelope, and all three read models —
+      and `ranking` reporting `ignored` is the design being legible, not a gap: a `RoomOpened` is
+      not a `GameCompleted`, and the skip is counted rather than silent.
 - [ ] **Loki is non-load-bearing**: with Loki scaled to zero, all three dashboards render and all
       alerts still evaluate.
 
-### The gap: the chain stops at the consumers
+### The gap that was found and closed (D8)
 
-`outbox-relay/envelope.go:64` puts the originating `correlationId` on every Kafka message as a
-**`ce-correlationid` header** — and `ranking`, `analytics-workers` and `spectator` all read
-`X-Correlation-Id` from **HTTP requests only**. Nothing reads the Kafka header, so a trace ends at
-the service that produced the event.
+`outbox-relay/envelope.go:64` has put the originating `correlationId` on every Kafka message as a
+**`ce-correlationid` header since P5** — and `ranking`, `analytics-workers` and `spectator` all read
+`X-Correlation-Id` from **HTTP requests only**. Nothing read the Kafka header, so a trace ended at
+the service that produced the event: 2 services for a register, measured before the fix.
 
-This is the "promise nobody verifies" shape: the relay carefully carries a header no consumer
-consumes. It is not a P8 regression — it has been true since P5 — but E4 was chosen so that one id
-is one query across the system, and today the answer is "across the two services that handled the
-request". Closing it means each consumer reading one header into the log line it already writes:
-small per service, but three services and three image rebuilds. **Escalated rather than decided.**
+The "promise nobody verifies" shape — the relay carefully carrying a header no consumer consumes.
+Not a P8 regression, but E4 was chosen so that one id is one query across the system, and that was
+not true as sold. Escalated rather than decided, because it is the only P8 change that edits shipped
+P5/P6 code; the user chose to close it. Each consumer now reads the header into the log line it
+already writes. Three services rebuilt, pipeline **2774042504** green (14 jobs), all three digests
+moved in their overlays and all three pods verified running the new images before the trace above
+was taken.
 
 ## 6. GitOps and platform
 
