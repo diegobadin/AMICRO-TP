@@ -6,20 +6,47 @@
 // cluster reads 0 instead of "No data" — but that also makes a MISTYPED metric name render as a
 // confident zero, which is indistinguishable from a healthy idle system. Three phases of this
 // project have been bitten by that shape (a gauge never Set, a consumer that never started, a
-// rating keyed on the wrong field). So the two questions are asked separately: does the query run,
-// and is the series it names one Prometheus has ever seen.
+// rating keyed on the wrong field). So the questions are asked separately: does the query run, has
+// Prometheus ever seen the series, and — when it has not — does any service actually declare it.
 //
 //   PROM_URL=http://localhost:9091 node scripts/check-dashboards.js
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const PROM = process.env.PROM_URL ?? "http://localhost:9091";
-const DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "..", "gitops", "platform", "dashboards", "dashboards",
-);
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const DIR = join(ROOT, "gitops", "platform", "dashboards", "dashboards");
+
+// A metric whose name carries a tag has no series until the first thing it counts happens:
+// `roomgameplay_engine_rejections_total` does not exist until somebody plays an illegal card, and on
+// a freshly installed cluster that is true of most of them. Prometheus cannot tell that apart from a
+// typo — both are "no such series" — so the name is checked against the source that declares it
+// instead. Unknown to Prometheus *and* undeclared in any service is a typo and fails; unknown to
+// Prometheus but declared is reported and allowed.
+function declaredNames() {
+  const blob = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === "node_modules" || entry === "build" || entry === "dist" || entry === ".gradle") continue;
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(kt|py|ts|go)$/.test(entry)) blob.push(readFileSync(path, "utf8"));
+    }
+  };
+  walk(join(ROOT, "services"));
+  return blob.join("\n");
+}
+
+const SOURCES = declaredNames();
+
+function isDeclared(metric) {
+  const stem = metric.replace(/_(total|bucket|count|sum|created)$/, "");
+  // Micrometer declares `roomgameplay.engine.rejections`; prom-client and prometheus_client use the
+  // underscore form directly.
+  return SOURCES.includes(stem) || SOURCES.includes(stem.replace(/_/g, "."));
+}
 
 // A metric name in PromQL: lowercase word with at least one underscore. Function names are filtered
 // out rather than parsed — this is a lint, not a PromQL implementation.
@@ -38,6 +65,7 @@ const known = new Set((await prom("/label/__name__/values")).data);
 let failures = 0;
 let queries = 0;
 const referenced = new Set();
+const lazy = new Set();
 
 for (const file of readdirSync(DIR).filter((f) => f.endsWith(".json"))) {
   const board = JSON.parse(readFileSync(join(DIR, file), "utf8"));
@@ -51,8 +79,15 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".json"))) {
         if (FUNCTIONS.has(name)) continue;
         referenced.add(name);
         if (!known.has(name)) {
-          console.log(`  UNKNOWN METRIC  ${panel.title}: ${name}`);
-          failures += 1;
+          if (isDeclared(name)) {
+            if (!lazy.has(name)) {
+              console.log(`  not yet emitted  ${name} (declared in a service, tagged — no series until first use)`);
+              lazy.add(name);
+            }
+          } else {
+            console.log(`  UNKNOWN METRIC  ${panel.title}: ${name} — declared nowhere in services/`);
+            failures += 1;
+          }
         }
       }
 
@@ -71,5 +106,5 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".json"))) {
   console.log(`  ${board.panels.length} panels checked`);
 }
 
-console.log(`\n${queries} queries, ${referenced.size} distinct metric names, ${failures} problem(s)`);
+console.log(`\n${queries} queries, ${referenced.size} distinct metric names, ${lazy.size} not yet emitted, ${failures} problem(s)`);
 if (failures > 0) process.exit(1);

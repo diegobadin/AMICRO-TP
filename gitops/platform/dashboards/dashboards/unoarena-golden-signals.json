@@ -1,0 +1,149 @@
+{
+  "uid": "unoarena-golden-signals",
+  "title": "UnoArena — Golden signals",
+  "tags": ["unoarena", "platform"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "Latency, traffic, errors and saturation per service. Health and metrics routes are excluded everywhere: the kubelet probes every few seconds forever, and left in they are most of the traffic on an idle cluster. Two services have no latency histogram and say so rather than showing an empty panel.",
+  "panels": [
+    {
+      "type": "text",
+      "title": "How to read this board",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**`/health` and `/metrics` are excluded from every panel.** A probe is not an event; on an idle cluster it is otherwise ~all of the traffic.\n\n**4xx is not a fault here.** The engine refusing an illegal move is a `409`, and a lost optimistic-concurrency race is a `409` the client retries. 5xx is the panel to watch.\n\n**`analytics-api` and `spectator` publish no latency histogram** — they get traffic and errors only (P8/D2). No panel below is blank because a service is broken.\n\n**No app container declares resource requests or limits**, so saturation is absolute working-set bytes, not a percentage of a limit."
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency — the four services that publish a histogram",
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "description": "All four share the same bucket boundaries (5 ms → 2.5 s), so a p95 means the same thing on both sides of one request. room-gameplay and tournament only gained buckets in P8 — before that a Micrometer Timer published sum/count/max and no quantile was computable.",
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(gateway_http_request_duration_seconds_bucket{route!~\"/health|/metrics\"}[5m]))) or vector(0)", "legendFormat": "gateway" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(identity_http_request_duration_seconds_bucket{route!~\"/health|/metrics\"}[5m]))) or vector(0)", "legendFormat": "identity" },
+        { "refId": "C", "expr": "histogram_quantile(0.95, sum by (le) (rate(roomgameplay_command_duration_seconds_bucket{route!~\"/health|/metrics\"}[5m]))) or vector(0)", "legendFormat": "room-gameplay" },
+        { "refId": "D", "expr": "histogram_quantile(0.95, sum by (le) (rate(tournament_http_request_duration_seconds_bucket{route!~\"/health|/metrics\"}[5m]))) or vector(0)", "legendFormat": "tournament" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Traffic — requests per second",
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "description": "The gateway is the only door, so its line should be at least the sum of what the backends see from players. room-gameplay above the gateway means internal traffic: the timer worker's ticks and the tournament's room provisioning, neither of which is routed.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(gateway_requests_total{route!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "gateway" },
+        { "refId": "B", "expr": "sum(rate(identity_http_request_duration_seconds_count{route!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "identity" },
+        { "refId": "C", "expr": "sum(rate(roomgameplay_command_duration_seconds_count{route!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "room-gameplay" },
+        { "refId": "D", "expr": "sum(rate(tournament_http_request_duration_seconds_count{route!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "tournament" },
+        { "refId": "E", "expr": "sum(rate(analyticsapi_reads_total{surface!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "analytics-api" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx per second — the errors that are faults",
+      "id": 4,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "description": "Any line leaving zero here is a defect. Shown as a rate rather than a ratio on purpose: a ratio divides by a traffic figure that is zero on an idle cluster, and NaN on a demo screen is worse than a flat line.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(gateway_requests_total{status=~\"5..\"}[5m])) or vector(0)", "legendFormat": "gateway" },
+        { "refId": "B", "expr": "sum(rate(identity_http_request_duration_seconds_count{status=~\"5..\"}[5m])) or vector(0)", "legendFormat": "identity" },
+        { "refId": "C", "expr": "sum(rate(roomgameplay_command_duration_seconds_count{status=~\"5..\"}[5m])) or vector(0)", "legendFormat": "room-gameplay" },
+        { "refId": "D", "expr": "sum(rate(tournament_http_request_duration_seconds_count{status=~\"5..\"}[5m])) or vector(0)", "legendFormat": "tournament" },
+        { "refId": "E", "expr": "sum(rate(analyticsapi_reads_total{status=~\"5..\"}[5m])) or vector(0)", "legendFormat": "analytics-api" },
+        { "refId": "F", "expr": "sum(rate(analyticsapi_read_failures_total[5m])) or vector(0)", "legendFormat": "analytics-api projections unreachable" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "4xx per second — the rules working, not a fault",
+      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "description": "A 409 is an illegal move refused, a stale command, or a registration that lost its race and will retry. A 401 is the trust boundary doing its job. Expect movement here during a normal demo; a sustained climb in tournament 409s is the signal, and the async-spine board counts those directly.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(gateway_requests_total{status=~\"4..\"}[5m])) or vector(0)", "legendFormat": "gateway" },
+        { "refId": "B", "expr": "sum(rate(roomgameplay_command_duration_seconds_count{status=~\"4..\"}[5m])) or vector(0)", "legendFormat": "room-gameplay" },
+        { "refId": "C", "expr": "sum(rate(tournament_http_request_duration_seconds_count{status=~\"4..\"}[5m])) or vector(0)", "legendFormat": "tournament" },
+        { "refId": "D", "expr": "sum(rate(roomgameplay_engine_rejections_total[5m])) or vector(0)", "legendFormat": "engine rejections (all reasons)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "The two services without a latency histogram",
+      "id": 6,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "description": "P8/D2: neither analytics-api nor spectator publishes request latency, and P8 declined to add one — that would be instrumenting a service the phase has no other reason to touch. Traffic and errors are the signals they do have. This panel exists so the gap is stated rather than showing as an empty graph somebody has to diagnose.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (surface) (rate(analyticsapi_reads_total{surface!~\"/health|/metrics\"}[5m])) or vector(0)", "legendFormat": "analytics-api {{surface}}" },
+        { "refId": "B", "expr": "sum(spectator_active_streams) or vector(0)", "legendFormat": "spectator streams active" },
+        { "refId": "C", "expr": "sum(rate(spectator_streams_opened_total[5m])) or vector(0)", "legendFormat": "spectator streams opened/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Saturation — memory working set per pod",
+      "id": 7,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "description": "Absolute bytes, because no app container declares a memory limit — there is no percentage to compute. The JVM services sit highest by construction; what matters is a line that climbs and never comes back down.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"unoarena-staging\", container!=\"\"}) or vector(0)", "legendFormat": "{{pod}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 0, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "type": "stat",
+      "title": "Scrape targets up",
+      "id": 8,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 28 },
+      "description": "Eleven for ten services: outbox-relay runs twice, one Deployment per producer, and each is its own scrape job.",
+      "targets": [
+        { "refId": "A", "expr": "sum(up{namespace=\"unoarena-staging\"}) or vector(0)", "legendFormat": "up" },
+        { "refId": "B", "expr": "count(up{namespace=\"unoarena-staging\"}) or vector(0)", "legendFormat": "expected" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name", "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Container restarts",
+      "id": 9,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 16, "x": 8, "y": 28 },
+      "description": "Five to seven restarts on a cold start is the documented posture for the services that own their schema — identity, room-gameplay, ranking, analytics-workers and tournament exit rather than serve against a database that is not migrated yet. analytics-api is the contrast: it reads a schema it does not own, connects lazily, and should stay at zero.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"unoarena-staging\"}) or vector(0)", "legendFormat": "{{pod}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 0, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    }
+  ]
+}
