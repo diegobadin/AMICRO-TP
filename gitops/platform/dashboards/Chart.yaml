@@ -1,0 +1,8 @@
+apiVersion: v2
+name: unoarena-dashboards
+description: >-
+  Grafana dashboards for UnoArena, delivered as ConfigMaps that the kube-prometheus-stack Grafana
+  sidecar discovers by label. The sidecar already runs with NAMESPACE=ALL and LABEL=grafana_dashboard,
+  so nothing about the monitoring release has to change for a board to appear.
+type: application
+version: 0.1.0

@@ -1,0 +1,17 @@
+{{/*
+One ConfigMap per dashboard file, so a board stays a reviewable .json in git and there is exactly
+one copy of it — no inline values, no import step that can drift from what Grafana shows.
+The sidecar watches for this label; the namespace comes from the Application's destination.
+*/}}
+{{- range $path, $bytes := .Files.Glob "dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ base $path | trimSuffix ".json" }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  {{ base $path }}: |
+{{ $bytes | toString | indent 4 }}
+{{- end }}

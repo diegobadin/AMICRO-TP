@@ -1,0 +1,171 @@
+{
+  "uid": "unoarena-business",
+  "title": "UnoArena — Business",
+  "tags": ["unoarena", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "What the system has actually produced. The consigna's three business metrics are games completed, tournaments completed and players registered; everything else here is the same story at more resolution. Every query ends in 'or vector(0)' so a freshly installed cluster reads zero rather than 'No data' — a blank panel reads as an outage.",
+  "panels": [
+    {
+      "type": "text",
+      "title": "The three business metrics",
+      "id": 1,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**`roomgameplay_games_completed_total`** — games played to a winner &nbsp;·&nbsp; **`tournament_tournaments_completed_total`** — tournaments run to a champion &nbsp;·&nbsp; **`identity_registrations_total`** — players registered.\n\nEach is a counter incremented from a committed domain event, not from the request that appeared to cause it."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Games completed",
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 3 },
+      "description": "Counted from the committed GameCompleted event, so games that end by forfeit or by the last player leaving are included — the paths a per-request counter misses.",
+      "targets": [
+        { "refId": "A", "expr": "sum(roomgameplay_games_completed_total) or vector(0)", "legendFormat": "games" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "colorMode": "none", "graphMode": "area", "justifyMode": "auto", "orientation": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tournaments completed",
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 3 },
+      "description": "A tournament reaching a champion. 'Opened' counts tournaments created for registration — on a busy demo those two differ, because clients that lose the create race leave empty tournaments behind in REGISTRATION.",
+      "targets": [
+        { "refId": "A", "expr": "sum(tournament_tournaments_completed_total) or vector(0)", "legendFormat": "completed" },
+        { "refId": "B", "expr": "sum(tournament_tournaments_opened_total) or vector(0)", "legendFormat": "opened" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name", "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Players registered",
+      "id": 4,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 3 },
+      "targets": [
+        { "refId": "A", "expr": "sum(identity_registrations_total) or vector(0)", "legendFormat": "registered" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "colorMode": "none", "graphMode": "area", "justifyMode": "auto", "orientation": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tournament registrations",
+      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
+      "description": "Players who joined a tournament. Four of these crossing TOURNAMENT_MIN_PLAYERS is what starts the demo event.",
+      "targets": [
+        { "refId": "A", "expr": "sum(tournament_registrations_total) or vector(0)", "legendFormat": "registrations" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "colorMode": "none", "graphMode": "area", "justifyMode": "auto", "orientation": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Games completed per minute",
+      "id": 6,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(roomgameplay_games_completed_total[5m])) * 60 or vector(0)", "legendFormat": "completed" },
+        { "refId": "B", "expr": "sum(rate(roomgameplay_games_started_total[5m])) * 60 or vector(0)", "legendFormat": "started" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Rating updates per minute — Elo and placement are separate ratings",
+      "id": 7,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "description": "Elo is casual-only and placement is tournament-only, enforced in both directions since P7. Seeing one move while the other is flat is the design working, not a gap.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(ranking_elo_updates_total[5m])) * 60 or vector(0)", "legendFormat": "Elo (casual)" },
+        { "refId": "B", "expr": "sum(rate(ranking_placement_updates_total[5m])) * 60 or vector(0)", "legendFormat": "placement (tournament)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Moves per second, by outcome",
+      "id": 8,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "description": "Rejected moves are not an error condition — the engine refusing an illegal play is the rules working. A rejection rate that swamps the accepted rate is the signal.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (result) (rate(roomgameplay_moves_total[5m])) or vector(0)", "legendFormat": "{{result}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Rooms opened, provisioned and expired",
+      "id": 9,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "description": "'Provisioned' is the subset a tournament asked for through the internal route; those also count as opened. 'Expired' is a waiting room the clock closed — nobody came back.",
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(roomgameplay_rooms_opened_total[5m])) * 60 or vector(0)", "legendFormat": "opened/min" },
+        { "refId": "B", "expr": "sum(rate(roomgameplay_rooms_provisioned_total[5m])) * 60 or vector(0)", "legendFormat": "provisioned/min" },
+        { "refId": "C", "expr": "sum(rate(roomgameplay_rooms_expired_total[5m])) * 60 or vector(0)", "legendFormat": "expired/min" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Live spectator streams",
+      "id": 10,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "description": "The gauge is paired with its counter on purpose: a gauge that was never Set reads 0, which is identical to a healthy idle system. If 'opened' has never moved, the 0 means nobody has watched — not that the tier is fine.",
+      "targets": [
+        { "refId": "A", "expr": "sum(spectator_active_streams) or vector(0)", "legendFormat": "active now" },
+        { "refId": "B", "expr": "sum(spectator_streams_opened_total) or vector(0)", "legendFormat": "opened (cumulative)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Identity — registrations and logins per minute",
+      "id": 11,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(identity_registrations_total[5m])) * 60 or vector(0)", "legendFormat": "registrations/min" },
+        { "refId": "B", "expr": "sum(rate(identity_logins_total[5m])) * 60 or vector(0)", "legendFormat": "logins/min" },
+        { "refId": "C", "expr": "sum(rate(identity_sessions_superseded_total[5m])) * 60 or vector(0)", "legendFormat": "sessions superseded/min" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
+    }
+  ]
+}
