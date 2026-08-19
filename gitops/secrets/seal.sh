@@ -36,6 +36,10 @@ generate TOURNAMENT_DB_PASSWORD 24
 # model's answer there is a NetworkPolicy, which kindnet does not enforce — so this is the half that
 # works on the cluster the demo actually runs on.
 generate INTERNAL_TOKEN 32
+# P8. Until now Grafana ran on the credential its chart generates for itself, which nobody owns and
+# nobody can look up without reading a Secret — fine while the only way in was a port-forward, not
+# fine once it answers on a NodePort.
+generate GRAFANA_ADMIN_PASSWORD 24
 set -a; . "$PLAINTEXT"; set +a
 
 # The registry credential is issued by GitLab, not by us, so it cannot be regenerated here.
@@ -128,3 +132,13 @@ seal "$HERE/../platform/postgres/tournament-db-role.yaml" \
   --type=kubernetes.io/basic-auth \
   --from-literal=username=tournament \
   --from-literal=password="$TOURNAMENT_DB_PASSWORD"
+
+# P8. Grafana's admin login, in the monitoring namespace and next to what consumes it, the same way
+# the CNPG role passwords sit next to their Cluster CRs. The key names are the Grafana chart's
+# defaults (`admin.userKey` / `admin.passwordKey`) — the chart wires them into
+# GF_SECURITY_ADMIN_USER and GF_SECURITY_ADMIN_PASSWORD, so renaming them here silently falls back
+# to the chart's own generated secret.
+seal "$HERE/../platform/monitoring-secrets/grafana-admin.yaml" \
+  generic grafana-admin -n monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"

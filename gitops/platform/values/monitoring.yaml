@@ -39,8 +39,19 @@ prometheusOperator:
     limits:
       memory: 256Mi
 grafana:
-  # Chart-default admin credentials — acceptable only while access is port-forward on a private
-  # cluster; must move to a managed secret when the ingress lands (P4).
+  # P8: the credential is ours now, sealed into `grafana-admin` by gitops/secrets/seal.sh and
+  # delivered by the monitoring-secrets app at wave -1. It replaces the password the chart generates
+  # for itself, which nobody owns and which could only be recovered by reading a Secret — tolerable
+  # while the only way in was a port-forward, not once Grafana answers on a node port. The key names
+  # are the chart's own defaults; renaming them falls back to the generated secret without erroring.
+  admin:
+    existingSecret: grafana-admin
+  # 30081 is published by the kind node and has been free since P4 collapsed the two NodePorts into
+  # the gateway. One fixed URL that behaves the same on kind and on EKS, and one less live command
+  # during the demo. Still no ingress and no TLS: same posture as the gateway on a private cluster.
+  service:
+    type: NodePort
+    nodePort: 30081
   resources:
     requests:
       cpu: 50m
