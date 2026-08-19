@@ -213,7 +213,17 @@ def run(
             # Committed only after the transaction landed, so a crash re-delivers rather than
             # skipping. The dedup insert is what makes that safe.
             consumer.commit(message=message, asynchronous=False)
-            metrics.log_line("info", "consumed", outcome=outcome, offset=message.offset())
+            # The relay carries the originating request's correlation id onto every message
+            # (outbox-relay/envelope.go). Logging it here is what joins a player's command to the
+            # rating it eventually moved: without it a trace stops at the service that produced the
+            # event, and the header travels the whole spine with nobody reading it.
+            metrics.log_line(
+                "info",
+                "consumed",
+                outcome=outcome,
+                offset=message.offset(),
+                correlationId=header_value(message.headers(), "ce-correlationid") or "",
+            )
         except Exception as error:  # noqa: BLE001 — a consumer that dies on a bad row stops ranking
             metrics.consumer_errors.inc()
             metrics.log_line("error", "consume-failed", error=str(error))
