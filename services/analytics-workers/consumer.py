@@ -127,7 +127,17 @@ def run(consumer: Any, store: Any, should_run: Any, lag_interval: float = 15.0) 
             # Committed only after the transaction landed, so a crash re-delivers rather than
             # skipping. The dedup insert is what makes that safe.
             consumer.commit(message=message, asynchronous=False)
-            metrics.log_line("info", "projected", outcome=outcome, offset=message.offset())
+            # The relay carries the originating request's correlation id onto every message
+            # (outbox-relay/envelope.go), so one id can be followed from the player's command all
+            # the way into the projections. Reading it here is what makes that true — the header
+            # has travelled the whole spine since P5 with nobody consuming it.
+            metrics.log_line(
+                "info",
+                "projected",
+                outcome=outcome,
+                offset=message.offset(),
+                correlationId=header_value(message.headers(), "ce-correlationid") or "",
+            )
         except Exception as error:  # noqa: BLE001 — one bad row must not stop the projections
             metrics.consumer_errors.inc()
             metrics.log_line("error", "project-failed", error=str(error))
