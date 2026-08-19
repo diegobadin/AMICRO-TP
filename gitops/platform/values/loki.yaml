@@ -32,6 +32,17 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: false
+  # `persistence.enabled: false` removes the PVC and mounts nothing in its place, while the
+  # container keeps `readOnlyRootFilesystem: true` — so Loki cannot create /var/loki and dies on
+  # `mkdir /var/loki: read-only file system` while initialising ruler-storage. Storage being
+  # ephemeral still means it has to exist somewhere writable. An emptyDir is that somewhere, and it
+  # keeps the "no volume outlives the cluster" property the PVC was dropped for.
+  extraVolumes:
+    - name: loki-data
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: loki-data
+      mountPath: /var/loki
   resources:
     requests:
       cpu: 100m
