@@ -2,8 +2,20 @@
 # requirement yet), Grafana reached by port-forward until an ingress exists (P4), business
 # dashboards arrive with P8. Everything ephemeral (default emptyDir storage) and sized for
 # kind (R1).
+# P8 (E3) turns this back on: "infraestructura de observabilidad" reads thin if nothing in the
+# system can alert. What ships is the alerting plane and the rules — the chart's default route with
+# its null receiver, and **no notification config at all**. An alert that pages a channel nobody
+# reads is theatre; these are meant to be seen firing, in Prometheus and on the async-spine board.
+# Storage stays ephemeral like everything else here.
 alertmanager:
-  enabled: false
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
 # Control-plane scrape targets: off. Their Services land in kube-system (outside the platform
 # AppProject), EKS's managed control plane never exposes them, and kind binds them to localhost
 # — permanently-down targets either way. kubelet stays on (operator-managed, works on both).
@@ -25,6 +37,10 @@ prometheus:
     # have to know the name of the monitoring release to be discovered.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
+    # Same rule for alert rules (P8): a PrometheusRule is selected because it is a rule, not because
+    # it carries this release's name. Without this the operator silently ignores gitops/platform/
+    # alert-rules and Prometheus shows no rules at all — with nothing anywhere reporting an error.
+    ruleSelectorNilUsesHelmValues: false
     resources:
       requests:
         cpu: 200m

@@ -1,0 +1,135 @@
+# Alert rules for UnoArena. Deliberately small, and every one of them is a failure this project has
+# actually had — a rule that has never fired is the alerting form of a gauge that was never Set:
+# it looks like coverage and proves nothing. Each is fired on purpose during the P8 drill.
+#
+# No receiver is configured anywhere: Alertmanager runs so that alerts have somewhere to go and a
+# firing rule is visible, but nothing pages a channel nobody reads (P8, out of scope).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: unoarena
+  namespace: monitoring
+spec:
+  groups:
+    - name: unoarena.platform
+      rules:
+        - alert: UnoArenaTargetDown
+          expr: up{namespace="unoarena-staging"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.job }} is not being scraped"
+            description: >-
+              Eleven targets exist for ten services — outbox-relay runs twice, one Deployment per
+              producer. Since P7 no overlay carries an empty digest, so this is never a placeholder.
+
+        - alert: UnoArenaContainerCrashLooping
+          expr: kube_pod_container_status_waiting_reason{namespace="unoarena-staging", reason="CrashLoopBackOff"} == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.pod }} has been crash-looping for 10 minutes"
+            description: >-
+              Five to seven restarts during a cold start is the documented posture for the services
+              that own their schema — they exit rather than serve against an unmigrated database.
+              Ten continuous minutes is not that. `ModuleNotFoundError` looked exactly like this
+              in P7.
+
+    - name: unoarena.spine
+      rules:
+        - alert: UnoArenaOutboxRelayLagging
+          expr: outboxrelay_lag_seconds > 60
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.job }} has a row older than a minute waiting to publish"
+            description: >-
+              The age of the oldest unpublished outbox row, per relay. This is the number that goes
+              wrong first when Kafka is unreachable. Both relays are separate scrape jobs, so this
+              names which one.
+
+        - alert: UnoArenaOutboxRelayNotReading
+          expr: rate(outboxrelay_backlog_reads_total[5m]) == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.job }} has stopped querying its outbox"
+            description: >-
+              backlog_rows and lag_seconds both read 0 from a relay that has never once reached its
+              database — the healthiest possible reading. This counter is what tells the two apart,
+              so this rule is the one that catches a relay that is up, silent, and doing nothing.
+
+        - alert: UnoArenaConsumerNeverStarted
+          expr: >-
+            ranking_consumer_starts_total == 0
+            or analytics_consumer_starts_total == 0
+            or spectator_consumer_starts_total == 0
+            or tournament_consumer_starts_total == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.job }} is running but its consumer never entered the poll loop"
+            description: >-
+              P6 exactly: kafkajs exhausted its own retries while the broker was still electing,
+              start() rejected, and a .catch that only logged left the service alive with no
+              consumer for thirteen minutes while /health answered 200 throughout. A projection
+              counter at 0 cannot otherwise be told from "nobody has played a game yet".
+
+        - alert: UnoArenaConsumerLagging
+          expr: >-
+            ranking_consumer_lag > 500
+            or analytics_consumer_lag > 500
+            or spectator_consumer_lag > 500
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.job }} is behind on {{ $labels.topic }}"
+            description: >-
+              Lag that climbs and does not come back. Threshold set above a normal tournament burst
+              so a busy demo does not fire it.
+
+        - alert: UnoArenaTimerTicksFailing
+          expr: rate(timerworker_ticks_total{result="failed"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The timer worker's ticks are being refused"
+            description: >-
+              This is the alert P7 did not have. Its pod started 37 seconds before the secret gained
+              INTERNAL_TOKEN, envFrom resolves at pod creation, and a Deployment does not restart
+              when a Secret changes — so every tick 401'd, deadlines went unresolved and four
+              tournaments sat stuck with nothing logging a problem.
+
+    - name: unoarena.tournament
+      rules:
+        - alert: UnoArenaCommandsContended
+          expr: rate(tournament_commands_contended_total[5m]) * 60 > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Tournament commands are losing their optimistic-concurrency races"
+            description: >-
+              A few during a registration rush is the design working — the command returns 409 and
+              the client retries. Sustained means the retry budget is too small for the contention.
+              What must never happen is a lost race reported as success, which is the defect P7's
+              review pass found.
+
+        - alert: UnoArenaReconcilerFailing
+          expr: rate(tournament_reconcile_failures_total[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The tournament reconciler cannot advance a tournament"
+            description: >-
+              The reconciler sweeps every 5s and is designed to race the saga; every step it calls
+              is idempotent. Sustained failures mean the thing that finishes what a crash
+              interrupted is itself stuck.

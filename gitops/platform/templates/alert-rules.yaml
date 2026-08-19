@@ -1,0 +1,37 @@
+# Wave 1: PrometheusRule is a CRD the operator installs at wave 0, so the rules land after it
+# exists. SkipDryRunOnMissingResource covers the first sync of a brand-new cluster, where the CRD
+# and this app can still race.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alert-rules
+  namespace: argocd
+  # Removing a component from git must remove it from the cluster too: the root prunes this
+  # Application, and the finalizer cascades that deletion to its resources instead of
+  # orphaning them.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: unoarena-platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/platform/alert-rules
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

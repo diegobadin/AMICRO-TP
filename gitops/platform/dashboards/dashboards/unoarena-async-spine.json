@@ -14,11 +14,41 @@
       "type": "text",
       "title": "How to read this board",
       "id": 1,
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 18, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
         "content": "**Every relay panel is `by (job)`.** `outbox-relay` drains room-gameplay's outbox, `outbox-relay-tournament` drains the tournament's — one image, two Deployments, two scrape jobs. Summed, one relay stopping is invisible.\n\n**Every gauge here is paired with a success counter.** `backlog_rows` and `lag_seconds` both read `0` from a relay that has never once reached its database — the healthiest possible reading. `backlog_reads_total` is what tells the two apart.\n\n**`consumer_starts_total` at 0 while the pod is Running means the consumer never started.** A projection counter at 0 cannot otherwise be told from \"nobody has played a game yet\": that cost 13 minutes of silent outage in P6.\n\n**`tournament_commands_contended_total` moving a little is a registration rush.** A lot means the retry budget is too small for the contention."
       }
+    },
+    {
+      "type": "stat",
+      "title": "Alerts firing",
+      "id": 11,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "description": "Prometheus publishes its own alert state as the ALERTS series, so this needs no Grafana-managed alerting and no Alertmanager query. Zero is the expected reading; the rule set is small and every rule in it is a failure this project has actually had.",
+      "targets": [
+        { "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "legendFormat": "firing" },
+        { "refId": "B", "expr": "count(ALERTS{alertstate=\"pending\"}) or vector(0)", "legendFormat": "pending" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name", "colorMode": "none", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Which alerts are firing, and since when",
+      "id": 12,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 44 },
+      "description": "A line appearing here is a rule that matched. Pending means the condition is true but its `for:` window has not elapsed — several rules wait 5 or 10 minutes on purpose, because the cold-start restarts of the schema-owning services are legitimate and would otherwise page every install.",
+      "targets": [
+        { "refId": "A", "expr": "sum by (alertname, alertstate) (ALERTS) or vector(0)", "legendFormat": "{{alertname}} ({{alertstate}})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 20, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } }
     },
     {
       "type": "timeseries",
