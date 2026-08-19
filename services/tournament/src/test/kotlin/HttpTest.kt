@@ -115,6 +115,27 @@ class HttpTest {
         assertEquals(HttpStatusCode.NotFound, client.get("/tournaments/$missing/rounds/1") { asPlayer(ALICE) }.status)
     }
 
+    /**
+     * The exact exposed names, not just "some metrics came back" — P8 charts these and a rename is
+     * a silent break. The bucket series is the one worth asserting: a Micrometer Timer publishes
+     * only sum/count/max unless it is given objectives, so a p95 panel would have been blank here
+     * and populated for the two Node services, which reads as an outage rather than as a gap.
+     */
+    @Test
+    fun `metrics exposes the counters and the latency buckets P8 will chart`() = testApplication {
+        wire(tournaments())
+        // The request timer carries route/status tags, so it exists only once something is served.
+        client.get("/health")
+        val body = client.get("/metrics").bodyAsText()
+        listOf(
+            "tournament_tournaments_opened_total",
+            "tournament_registrations_total",
+            "tournament_tournaments_completed_total",
+            "tournament_commands_contended_total",
+            "tournament_http_request_duration_seconds_bucket",
+        ).forEach { assertTrue(body.contains(it), "missing $it") }
+    }
+
     @Test
     fun `the route label does not grow a series per tournament id`() {
         assertEquals("/tournaments", routeLabel("/tournaments"))

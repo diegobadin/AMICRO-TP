@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 object Metrics {
@@ -76,7 +77,17 @@ object Metrics {
     fun eventsSkipped(reason: String): Counter = Counter.builder("tournament.events.skipped")
         .description("Room events the saga had no use for").tag("reason", reason).register(registry)
 
+    // The gateway's histogram boundaries, so a p95 means the same thing on both sides of one
+    // request. Stated as objectives rather than `publishPercentileHistogram()`, which emits
+    // Micrometer's full percentile-histogram bucket set per tag combination — and this timer is
+    // tagged by route *and* status.
+    private val LATENCY_SLOS = arrayOf(
+        Duration.ofMillis(5), Duration.ofMillis(10), Duration.ofMillis(50), Duration.ofMillis(100),
+        Duration.ofMillis(250), Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500),
+    )
+
     fun requestDuration(route: String, status: Int): Timer = Timer.builder("tournament.http.request.duration")
+        .serviceLevelObjectives(*LATENCY_SLOS)
         .tag("route", route).tag("status", status.toString()).register(registry)
 
     fun record(timer: Timer, nanos: Long) = timer.record(nanos, TimeUnit.NANOSECONDS)
