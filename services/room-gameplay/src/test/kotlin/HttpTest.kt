@@ -40,6 +40,10 @@ class HttpTest {
             "roomgameplay_games_started_total",
             "roomgameplay_games_completed_total",
             "roomgameplay_command_duration_seconds",
+            // P8: the bucket series is what makes a p95 computable across instances. A Micrometer
+            // Timer publishes only sum/count/max unless it is given objectives, and the gateway's
+            // histogram would have been the only one on the board.
+            "roomgameplay_command_duration_seconds_bucket",
         ).forEach { assertTrue(body.contains(it), "missing $it") }
     }
 

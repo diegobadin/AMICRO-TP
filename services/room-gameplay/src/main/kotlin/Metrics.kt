@@ -11,8 +11,18 @@ import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
+import java.time.Duration
 
 object Metrics {
+    // The gateway's histogram boundaries, so a p95 means the same thing on both sides of one
+    // request. Stated as objectives rather than `publishPercentileHistogram()`, which emits
+    // Micrometer's full percentile-histogram bucket set per tag combination — and this timer is
+    // tagged by route *and* status.
+    private val LATENCY_SLOS = arrayOf(
+        Duration.ofMillis(5), Duration.ofMillis(10), Duration.ofMillis(50), Duration.ofMillis(100),
+        Duration.ofMillis(250), Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500),
+    )
+
     val registry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT).also {
         ClassLoaderMetrics().bindTo(it)
         JvmMemoryMetrics().bindTo(it)
@@ -66,6 +76,7 @@ object Metrics {
 
     fun commandDuration(route: String, status: Int): Timer = Timer.builder("roomgameplay.command.duration")
         .description("Request latency by route and status")
+        .serviceLevelObjectives(*LATENCY_SLOS)
         .tags("route", route, "status", status.toString()).register(registry)
 }
 
