@@ -6,26 +6,39 @@
 
 ## 1. Metrics surface
 
-- [ ] Prometheus shows **every service target `up`**, including both relay jobs
-      (`outbox-relay`, `outbox-relay-tournament`).
-- [ ] `roomgameplay_command_duration_seconds_bucket` exists in Prometheus (F1).
-- [ ] `tournament_http_request_duration_seconds_bucket` exists in Prometheus (F1).
-- [ ] `histogram_quantile(0.95, …)` returns a number for gateway, identity, room-gameplay and
-      tournament.
-- [ ] No metric name was added to any service. `git diff` over `services/**` touches only the two
+- [x] Prometheus shows **every service target `up`**, including both relay jobs
+      (`outbox-relay`, `outbox-relay-tournament`). — 11 targets for 10 services, all `up`.
+- [x] `roomgameplay_command_duration_seconds_bucket` exists in Prometheus (F1). — 18 series
+      (2 route/status pairs × 9 buckets).
+- [x] `tournament_http_request_duration_seconds_bucket` exists in Prometheus (F1). — 18 series.
+- [x] `histogram_quantile(0.95, …)` returns a number for gateway, identity, room-gameplay and
+      tournament. — `0.00475 / 0.00475 / 0.00475 / 0.00525`, measured without the `or vector(0)`
+      fallback so an empty result could not pass as a zero.
+- [x] No metric name was added to any service. `git diff` over `services/**` touches only the two
       `Metrics.kt` timer builders and their tests.
+- [x] Bucket cardinality is bounded: **9 bucket series per route/status pair** (the 8 gateway
+      boundaries plus `+Inf`), not Micrometer's default percentile-histogram set. Measured on the
+      real scrape before the change was pushed.
 
 ## 2. Dashboards
 
-- [ ] All three boards appear in Grafana **from a git commit alone** — no manual import, no
-      `kubectl apply` by hand.
-- [ ] Business board names, in its own description, **which three panels are the consigna's ≥3
-      business metrics**.
+- [x] All three boards appear in Grafana **from a git commit alone** — no manual import, no
+      `kubectl apply` by hand. — the `dashboards` Application syncs `gitops/platform/dashboards`,
+      the three ConfigMaps carry `grafana_dashboard=1`, and the sidecar logged
+      `Writing /tmp/dashboards/<board>.json` for each.
+- [x] Business board names, in its own description, **which three panels are the consigna's ≥3
+      business metrics**. — and in a text panel at the top of the board, which is what gets read.
+- [x] **Every panel query resolves and every metric name it references is real.**
+      `node scripts/check-dashboards.js` → 83 queries, 67 distinct metric names, 0 problems.
+      The check distinguishes a typo (declared nowhere in `services/`, hard failure) from a
+      tag-parameterised counter with no series yet (`roomgameplay_engine_rejections_total`,
+      reported and allowed) — because `or vector(0)` renders both as a confident zero.
 - [ ] On a cluster with no traffic yet, every panel reads `0` or an explicit "No data" — **no panel
       errors, none is blank**.
 - [ ] After the tournament drill, every business panel has moved.
-- [ ] Every `outboxrelay_*` panel is grouped `by (job)`. **No summed relay panel exists** — grep the
-      dashboard JSON for `outboxrelay_` and confirm each query carries the grouping.
+- [x] Every `outboxrelay_*` panel is grouped `by (job)`. **No summed relay panel exists** — no
+      longer a grep somebody has to remember: `check-dashboards.js` fails any expression that
+      names `outboxrelay_` without `by (job`, and the rule was bite-checked by summing one.
 - [ ] Every gauge panel has its success counter beside it (`*_reads_total`, `*_sweeps_total`,
       `*_consumer_starts_total`).
 - [ ] `analytics-api` and `spectator` latency: the panel states the metric does not exist rather
@@ -71,10 +84,18 @@
 Presence is not proof. Each of these breaks something on purpose and requires the safety net to
 notice.
 
-- [ ] **The histogram test bites.** Restore the pre-fix `Timer.builder` (via
-      `git show <fixcommit>^:<path> > <path>`, **not** `git stash` — stash reverts to HEAD, which
-      already has the fix) and confirm the `_bucket` assertion fails. Restore from a copy afterwards,
-      using absolute paths.
+- [x] **The histogram test bites.** Removing `.serviceLevelObjectives(*LATENCY_SLOS)` fails
+      `HttpTest > metrics exposes the business counters under the names P8 will chart`; restoring it
+      is green again. (Run before the fix was committed, so a working copy was enough — once it is
+      in history this needs `git show <fixcommit>^:<path>`, **not** `git stash`, which reverts to a
+      HEAD that already contains the fix.)
+- [x] **The dashboard checker bites.** A one-character typo in a metric name
+      (`roomgameplay_games_completd_total`) is reported as `UNKNOWN METRIC … declared nowhere in
+      services/` and the script **exits 1**. Verified the exit code directly rather than through a
+      pipe — `$?` after `| tail` is `tail`'s status, and the first run of this check reported
+      `EXIT=0` for exactly that reason.
+- [x] **The relay-split rule bites.** Rewriting one panel as `sum(outboxrelay_backlog_rows)` is
+      reported as `RELAY NOT SPLIT` and exits 1.
 - [ ] **The relay panel bites.** Suspend the Argo root, scale one relay to zero, and confirm
       **exactly one** series flattens on the by-job panels while the other keeps moving. A summed
       panel would show a dip and hide which relay died — this is the P7 handoff's warning, tested.
@@ -125,6 +146,20 @@ These must **not** appear in the diff:
 - [ ] No Ingress, TLS certificate or auth proxy.
 - [ ] No new pipeline stage.
 - [ ] No change to any event, schema or database table.
+
+## 10b. Findings so far (not defects P8 introduced)
+
+- **No app container declares resource requests or limits.**
+  `kube_pod_container_resource_requests{namespace="unoarena-staging"}` and the matching `_limits`
+  both return **nothing**, while every platform component sets them. Consequences: saturation
+  cannot be expressed as a percentage of a limit (the golden-signals board shows absolute
+  working-set bytes and says why), and every app pod is `BestEffort` QoS — first to be evicted
+  under memory pressure. Academic on a single-node kind cluster, less so on the 2× t3.large EKS
+  rehearsal. **Not fixed in P8**: it is a deployment concern, not observability, and it touches all
+  ten charts. Candidate for P9.
+- **`gradle check` runs no linter.** `tech-stack.md` §2 lists ktlint/detekt for both Kotlin
+  services, and neither `build.gradle.kts` applies either plugin — so `check` is just `test`. Long
+  predates P8; recorded here because P8 read the file while adding the histogram tests.
 
 ## 11. Mission check
 
