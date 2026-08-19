@@ -123,8 +123,9 @@ The nine rules and the failure each is derived from:
       The command, the aggregate that owned it, the relay's envelope, and all three read models —
       and `ranking` reporting `ignored` is the design being legible, not a gap: a `RoomOpened` is
       not a `GameCompleted`, and the skip is counted rather than silent.
-- [ ] **Loki is non-load-bearing**: with Loki scaled to zero, all three dashboards render and all
-      alerts still evaluate.
+- [x] **Loki is non-load-bearing**: with the Loki StatefulSet scaled to **0**, `check-dashboards.js`
+      still reports **86 queries, 0 problems**, all **9 rules still evaluate**, and Grafana serves
+      `/api/search` → 200. Nothing on the metrics side depends on the log side.
 
 ### The gap that was found and closed (D8)
 
@@ -168,10 +169,23 @@ notice.
       `EXIT=0` for exactly that reason.
 - [x] **The relay-split rule bites.** Rewriting one panel as `sum(outboxrelay_backlog_rows)` is
       reported as `RELAY NOT SPLIT` and exits 1.
-- [ ] **The relay panel bites.** Suspend the Argo root, scale one relay to zero, and confirm
-      **exactly one** series flattens on the by-job panels while the other keeps moving. A summed
-      panel would show a dip and hide which relay died — this is the P7 handoff's warning, tested.
-- [ ] **The relay-idle alert bites.** The same outage fires the rule, and it clears on restore.
+- [x] **The relay panel bites, and the summed version lies.** Rather than scaling the relay to zero
+      — which removes the scrape target entirely and is not the interesting failure — the tournament
+      relay was pointed at a database host that does not exist, so it stayed **1/1 Running** and
+      stopped draining. That is the "up and silent" case its gauges cannot express.
+
+      | query | reading |
+      |---|---|
+      | `by (job)` — `outbox-relay` | **1.000/s** |
+      | `by (job)` — `outbox-relay-tournament` | **0.000/s** |
+      | `sum(...)` — what a summed panel shows | **1.000/s — healthy-looking, one relay dead** |
+
+      Restored: both back to ~1.0/s.
+- [x] **The relay-idle alert bites.** `UnoArenaOutboxRelayNotReading` went to `firing` with
+      `job="outbox-relay-tournament"` — naming the dead relay, not the pair — and **cleared on its
+      own** once the host was restored. Neither `UnoArenaTargetDown` nor
+      `UnoArenaContainerCrashLooping` would have caught this: the pod was healthy and being
+      scraped throughout. That is exactly the gap this rule exists for.
 - [ ] **The consumer-never-started alert bites.** With a consumer pod up and its
       `*_consumer_starts_total` at 0, the rule fires — this is P6's 13-minute silent outage in alert
       form.
@@ -220,6 +234,20 @@ These must **not** appear in the diff:
 - [ ] No change to any event, schema or database table.
 
 ## 10b. Findings so far (not defects P8 introduced)
+
+- **Scaling a workload to zero fires no alert of ours, by construction.** A Deployment at zero
+  replicas has no endpoints, so its scrape target *disappears* rather than reporting `up 0` —
+  neither `UnoArenaTargetDown` nor `UnoArenaOutboxRelayNotReading` can see it. The failures that
+  are covered are the ones that actually happen here: a pod that is up and stuck, and a pod that
+  crash-loops. "Workload deliberately absent" is the case GitOps `selfHeal` prevents in the first
+  place, which is why it is left uncovered rather than papered over with an `absent()` rule that
+  would fire during every rollout. Worth knowing before someone tests the alerts by scaling
+  something down and concludes they do not work.
+- **The host disk is at 98% (6.1 GB free), and the stack's own
+  `NodeFilesystemAlmostOutOfSpace` is firing about it.** Docker is holding ~10 GB of build cache
+  (~5.5 GB reclaimable). This is not a repo problem, but a from-empty drill re-pulls every image,
+  and P8 adds three more (Loki, Alloy, Alertmanager). **Prune before the from-empty run**, or the
+  drill measures the disk rather than the install.
 
 - **No app container declares resource requests or limits.**
   `kube_pod_container_resource_requests{namespace="unoarena-staging"}` and the matching `_limits`
