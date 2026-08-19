@@ -366,6 +366,23 @@ What P8 inherits, and must not break:
   and at least one full rehearsal on a freshly created AWS cluster (R1).
 - Depends on: everything shipped by then; rehearse at least twice.
 
+### Carried into P9's checklist
+
+- **Mirror the `gcr.io/distroless` bases into the project registry.** Five rejections of the GitLab
+  shared runners across P6 and P7, including two consecutive retries of one job before the third
+  passed. It is not the repo, and a retry is not a fix — the exam should not depend on a public
+  registry's mood. A CI supply-chain change, which is why P8 left it alone.
+- **Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
+- **Decide whether the ten app containers get resource requests/limits.** None of them declare
+  either today, while every platform component does — so they are `BestEffort` QoS, first to be
+  evicted under memory pressure, and saturation cannot be expressed as a percentage of a limit
+  (P8's golden-signals board shows absolute bytes and says why). Academic on a single-node kind
+  cluster; less so on the 2× t3.large EKS rehearsal, and a plausible thing for a grader to ask
+  about.
+- **`gradle check` runs no linter.** `tech-stack.md` §2 lists ktlint/detekt for `room-gameplay` and
+  `tournament`, and neither `build.gradle.kts` applies either plugin, so `check` is just `test`.
+  Either wire them or correct the table.
+
 ## Dependency sketch
 
 ```

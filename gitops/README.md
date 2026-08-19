@@ -13,8 +13,12 @@ gitops/
   platform-root.yaml              # app-of-apps → renders the platform chart below
   platform/                       # Helm chart: one child Application per template
     templates/{strimzi-operator,kafka,cnpg-operator,postgres,redis,monitoring}.yaml
+    templates/{monitoring-secrets,dashboards,alert-rules,loki,alloy}.yaml   # observability (P8)
     values/                       # pinned chart values per component (kind-sized requests)
     kafka/ postgres/ redis/       # raw CRs / manifests the instance apps point at
+    monitoring-secrets/           # Grafana's sealed admin credential (wave -1, before Grafana starts)
+    dashboards/                   # a local chart: committed dashboard JSON → labelled ConfigMaps
+    alert-rules/                  # PrometheusRule manifests
   apps-root/                      # Helm chart: one Application per service per environment
     values.yaml                   # the service list and which environments to register
   apps/<svc>/overlays/<env>/values.yaml   # env overlay; image.digest pinned here by CI

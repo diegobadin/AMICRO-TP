@@ -222,6 +222,7 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`devops-checkpoint/README.md`](./devops-checkpoint/README.md) | The delivery pipeline: stages, change detection, promotion by digest, drills and their evidence. |
 | [`services/room-gameplay/engine/`](./services/room-gameplay/engine/) | The Uno rules, as a module with no framework on its classpath: `decide(state, command)` and `evolve(state, event)`. The property suites run thousands of generated games with no database and no container. |
 | [`services/gateway/`](./services/gateway/) | The only way in: the route table, HS256 validation, the header whitelist that makes the trust boundary real, and `GET /rooms/{id}/stream` — Server-Sent Events whose frame ids *are* the events' sequence numbers, so a client resumes with `Last-Event-ID` and can prove it missed nothing. |
+| [`docs/observability-runbook.md`](./docs/observability-runbook.md) | The three dashboards and what each answers, the Grafana URL and where its credential lives, the one LogQL query that follows a request across the system, how to fire an alert on purpose, and the handful of readings that look like faults and are not. |
 | [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
 
 **What is real — all ten deployables.** `gateway` (the single entry point: token
@@ -262,3 +263,13 @@ and overwrites on every request, so a client cannot supply its own.
 sees the result, in the same transaction as the outbox rows a consumer will later read. If a
 rebuilt aggregate ever disagrees with the state that was served, the log wins and the bug is in
 the code.
+
+**And all of it is visible.** The same install that brings the system up brings up its
+observability: Prometheus scrapes eleven targets (ten services — the outbox relay runs twice), and
+Grafana answers on `30081` with three dashboards built from committed JSON. The business board
+carries the exam's three metrics — games completed, tournaments completed, players registered —
+each counted from a **committed domain event** rather than from the request that appeared to cause
+it, so a game that ends by forfeit still counts. Nine alert rules cover failures this project has
+actually had, and Loki holds the logs: one `correlationId`, printed by the CLI, returns the gateway
+that routed a command, the aggregate that owned it and all three read models that projected the
+event it produced — **five services in one query**. The runbook above is the operational half.

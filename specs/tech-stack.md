@@ -109,6 +109,15 @@ and `analytics-workers`. The check lints a JSON Schema / AsyncAPI fragment (alre
 
 ## 9. Observability hook (lightweight)
 
+> **Superseded by P8 for the final delivery** (`specs/2026-08-18-p8-observability/`, delta 13.10).
+> The paragraph below was the right scope for the DevOps checkpoint, whose §3 criterion 11 is
+> *restraint* — "no observability stack before the smoke test works". It was written before
+> `docs/final/consigna.md` existed, and that asks for observability infrastructure with at least
+> three business metrics, deployed from an empty cluster. P8 ships dashboards, alerting and log
+> aggregation. **Tracing collectors are still out**, so the last third of the sentence holds.
+> Kept rather than deleted: it was true when written, and the gate it describes is what every
+> phase since P2 instrumented its way past.
+
 `identity` emits **one structured JSON log line** per `register`/`whoami` (carrying
 `correlationId`). The README documents retrieval via `kubectl logs deploy/identity -n unoarena-staging`.
 No dashboards/alerting/tracing collectors — just the seam left in place.
