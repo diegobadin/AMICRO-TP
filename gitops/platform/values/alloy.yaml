@@ -43,9 +43,22 @@ alloy:
           target_label  = "container"
         }
         // `service` is what a person actually searches by, and it is the same string the services
-        // put in their own JSON log lines.
+        // put in their own JSON log lines. Two conventions live in this cluster: the ten UnoArena
+        // charts label pods `app: <svc>`, while the upstream platform charts use
+        // `app.kubernetes.io/name`. Taking only the second one silently yields a Loki that knows
+        // every platform component and none of the actual services.
+        //
+        // `regex = "(.+)"` is what makes this a fallback rather than a race: a rule whose source
+        // label is empty simply does not match, so it leaves the previous value alone instead of
+        // overwriting it with "". The canonical label is applied last, so it wins where both exist.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          regex         = "(.+)"
+          target_label  = "service"
+        }
         rule {
           source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
           target_label  = "service"
         }
       }
