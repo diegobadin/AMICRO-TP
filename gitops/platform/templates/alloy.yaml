@@ -1,0 +1,40 @@
+# Wave 2: after Loki, so the collector has somewhere to push on a fresh cluster. It would retry
+# regardless — this only spares a new install a minute of connection-refused lines, which read like
+# a fault to anyone watching the first boot.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  # Removing a component from git must remove it from the cluster too: the root prunes this
+  # Application, and the finalizer cascades that deletion to its resources instead of
+  # orphaning them.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: unoarena-platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.11.1
+    helm:
+      values: |
+{{ .Files.Get "values/alloy.yaml" | indent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

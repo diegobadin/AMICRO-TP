@@ -1,0 +1,75 @@
+# Grafana Alloy as the log collector — a DaemonSet reading container logs through the Kubernetes
+# API and shipping them to Loki. Alloy rather than promtail: promtail is still published but is end
+# of life upstream, and shipping a deprecated agent to a final exam in 2026 is a question we would
+# have to answer.
+#
+# `loki.source.kubernetes` reads through the API server rather than mounting the node's log
+# directory, so this behaves the same on kind and on EKS with no hostPath and no assumptions about
+# the container runtime's on-disk layout.
+controller:
+  type: daemonset
+
+alloy:
+  # No Alloy UI: it is a debugging surface for the collector, not part of the demo, and it would be
+  # another thing listening.
+  enableReporting: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  configMap:
+    content: |-
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      // Keep the labels a human would filter by, and nothing else. Every distinct label value is a
+      // separate stream in Loki, so pod name is deliberately the finest granularity here.
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        // `service` is what a person actually searches by, and it is the same string the services
+        // put in their own JSON log lines.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "service"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.drop_probes.receiver]
+      }
+
+      // A probe is not an event. The kubelet hits /health every few seconds forever, and in P6
+      // those lines drowned the single line that explained a whole failure — diagnosis needed
+      // `grep -v '"action":"GET /health"'`. The Kotlin services already decline to log them; the
+      // Node ones still do, so the collector drops them centrally rather than each service
+      // learning the lesson separately.
+      loki.process "drop_probes" {
+        stage.drop {
+          expression = "\"action\":\"GET /(health|metrics)\""
+          drop_counter_reason = "probe"
+        }
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }

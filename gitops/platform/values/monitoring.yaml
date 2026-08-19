@@ -68,6 +68,16 @@ grafana:
   service:
     type: NodePort
     nodePort: 30081
+  # P8 (E4): metrics and logs in one pane, so following a correlationId across ten services is one
+  # query instead of ten `kubectl logs`. The Prometheus and Alertmanager datasources come from the
+  # chart with fixed uids; this one matches, so a dashboard can reference `loki` and keep working
+  # across reinstalls.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+      access: proxy
   resources:
     requests:
       cpu: 50m

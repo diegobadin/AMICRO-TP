@@ -1,0 +1,40 @@
+# Wave 1, like the other instances. Loki is deliberately NOT load-bearing: with it down, all three
+# dashboards and every alert still work, because they read Prometheus. The P8 drill asserts that by
+# taking it away.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  # Removing a component from git must remove it from the cluster too: the root prunes this
+  # Application, and the finalizer cascades that deletion to its resources instead of
+  # orphaning them.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: unoarena-platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.3.0
+    helm:
+      values: |
+{{ .Files.Get "values/loki.yaml" | indent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
