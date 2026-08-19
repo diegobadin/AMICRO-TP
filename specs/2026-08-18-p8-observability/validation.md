@@ -97,13 +97,36 @@ The nine rules and the failure each is derived from:
 
 ## 5. Logs
 
-- [ ] Loki and Alloy are Running in `monitoring`.
-- [ ] One `correlationId` from a single CLI command returns log lines from **≥3 distinct services**
-      in one LogQL query.
-- [ ] The CLI prints that `correlationId` — the demo does not require reading it out of a log first.
-- [ ] Kubelet health-probe lines are **not** in Loki.
+- [x] Loki and Alloy are Running in `monitoring`. — `loki-0` 2/2 and `alloy-pqnv4` 2/2, **0
+      restarts**, **no PVC**.
+- [x] All ten services appear as Loki streams. — the `service` label resolves for
+      `gateway, identity, room-gameplay, tournament, ranking, spectator, analytics-api,
+      analytics-workers, outbox-relay, timer-worker`.
+- [x] The CLI prints that `correlationId`. — **already true, nothing added**: `api.ts` mints one
+      per request and `cli.ts` puts it in the output line. P8 retrofits nothing here either.
+- [x] Kubelet health-probe lines are **not** in Loki. — gateway: **98 of its last 100 `kubectl
+      logs` lines are `GET /health`**, and Loki holds **0** of them while keeping its 8 real ones.
+      A filter, not an absence.
+- [x] **The Loki query bites.** A `correlationId` that does not exist returns **0 lines** — a query
+      that matched everything would be indistinguishable from a working one on a busy cluster.
+- [~] One `correlationId` returns lines from ≥3 distinct services. — **2 today**
+      (`gateway` → `identity` for a register, verified live). See the gap below; this box stays
+      open.
 - [ ] **Loki is non-load-bearing**: with Loki scaled to zero, all three dashboards render and all
       alerts still evaluate.
+
+### The gap: the chain stops at the consumers
+
+`outbox-relay/envelope.go:64` puts the originating `correlationId` on every Kafka message as a
+**`ce-correlationid` header** — and `ranking`, `analytics-workers` and `spectator` all read
+`X-Correlation-Id` from **HTTP requests only**. Nothing reads the Kafka header, so a trace ends at
+the service that produced the event.
+
+This is the "promise nobody verifies" shape: the relay carefully carries a header no consumer
+consumes. It is not a P8 regression — it has been true since P5 — but E4 was chosen so that one id
+is one query across the system, and today the answer is "across the two services that handled the
+request". Closing it means each consumer reading one header into the log line it already writes:
+small per service, but three services and three image rebuilds. **Escalated rather than decided.**
 
 ## 6. GitOps and platform
 
