@@ -26,10 +26,10 @@
       "id": 11,
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "description": "Prometheus publishes its own alert state as the ALERTS series, so this needs no Grafana-managed alerting and no Alertmanager query. Zero is the expected reading; the rule set is small and every rule in it is a failure this project has actually had.",
+      "description": "Prometheus publishes its own alert state as the ALERTS series, so this needs no Grafana-managed alerting and no Alertmanager query. Zero is the expected reading. Watchdog is excluded: it is the stack's deliberately always-firing alert, whose entire job is to prove the alerting path works — the same idea as pairing a gauge with a success counter, so that silence means healthy rather than broken. It is still visible in the panel at the bottom of this board.",
       "targets": [
-        { "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "legendFormat": "firing" },
-        { "refId": "B", "expr": "count(ALERTS{alertstate=\"pending\"}) or vector(0)", "legendFormat": "pending" }
+        { "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"}) or vector(0)", "legendFormat": "firing" },
+        { "refId": "B", "expr": "count(ALERTS{alertstate=\"pending\", alertname!=\"Watchdog\"}) or vector(0)", "legendFormat": "pending" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
       "options": {

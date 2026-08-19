@@ -46,18 +46,54 @@
 
 ## 3. Grafana exposure
 
-- [ ] `http://localhost:30081` serves Grafana on a **freshly created** kind cluster.
-- [ ] The sealed admin credential logs in.
-- [ ] The chart default (`admin` / `prom-operator`) **does not** log in.
-- [ ] No plaintext credential anywhere in the repo: `grep -rn "prom-operator" gitops/` returns
-      nothing outside a comment explaining that it is gone.
+- [x] `http://localhost:30081` serves Grafana. — `/api/health` → **200** with no auth.
+      *(Re-check on a freshly created cluster in §8.)*
+- [x] The sealed admin credential logs in. — `/api/datasources` → **200**.
+- [x] The chart default **does not** log in. — `admin:prom-operator` → **401**, empty password →
+      **401**. Note the values file's old comment said "chart-default admin credentials"; the chart
+      in fact *generates a random password per install*, so before P8 nobody could have logged in
+      without reading a Secret.
+- [x] The three boards are loaded and addressable at stable UIDs — `/api/search?query=UnoArena`
+      returns `unoarena-business`, `unoarena-golden-signals`, `unoarena-async-spine`, so the demo
+      URLs are fixed: `http://localhost:30081/d/unoarena-business` and friends.
+- [x] The Grafana pod was **recreated** against the new secret rather than left holding the old one
+      — its env now resolves `GF_SECURITY_ADMIN_*` from `grafana-admin`. This is the P7 shape
+      (`envFrom` resolves at pod creation); it worked here because the Deployment's own spec
+      changed, not merely the Secret's contents.
+- [x] No plaintext credential anywhere in the repo: `grep -rn "prom-operator" gitops/` returns
+      **nothing at all**.
 
 ## 4. Alerting
 
-- [ ] Alertmanager is Running and reachable, with the null receiver and **no notification config**.
-- [ ] Every rule in the shipped set has been observed in `firing` at least once (§7 does this).
+- [x] Alertmanager is Running and reachable, with the null receiver and **no notification config**.
+      — `alertmanager-monitoring-kube-prometheus-alertmanager-0` 2/2 Running; Grafana's
+      pre-provisioned `alertmanager` datasource proxies `/api/v2/status` → **200**, having pointed
+      at a Service that did not exist until now.
+- [x] **Prometheus actually selected the rules.** 3 `unoarena.*` groups, **9 rules**, all
+      `inactive`. This needed `ruleSelectorNilUsesHelmValues: false` — the operator otherwise
+      selects only rules labelled with the release name and ignores the rest **with no error
+      anywhere**, which would have looked identical to shipping no rules at all.
+- [x] No rule fires on a healthy idle cluster — the only firing alert is the stack's **Watchdog**,
+      which fires permanently by design to prove the alert path is alive. It is excluded from the
+      board's "Alerts firing" count (it is not a fault) and kept in the detail panel with the
+      reason, because an always-on alert is the alerting form of pairing a gauge with a success
+      counter: it makes silence mean healthy rather than broken.
+- [ ] Every rule in the shipped set has been observed in `firing` at least once (§7/§8 does this).
 - [ ] The alert-state panel on the async-spine board shows a firing rule without leaving Grafana.
-- [ ] No rule fires on a healthy idle cluster (checked after the from-empty install, before traffic).
+
+The nine rules and the failure each is derived from:
+
+| Rule | The failure it would have caught |
+|---|---|
+| `UnoArenaTargetDown` | a service not being scraped at all |
+| `UnoArenaContainerCrashLooping` | P7's `ModuleNotFoundError: placement` — 10 min `for:`, because 5–7 cold-start restarts are the documented posture |
+| `UnoArenaOutboxRelayLagging` | the relay not draining; per job, so it names which one |
+| `UnoArenaOutboxRelayNotReading` | a relay that is up and silent — both its gauges read 0, the healthiest possible reading |
+| `UnoArenaConsumerNeverStarted` | P6's 13 minutes with no consumer while `/health` answered 200 |
+| `UnoArenaConsumerLagging` | a consumer that stops keeping up |
+| `UnoArenaTimerTicksFailing` | **P7's worst outage** — every tick 401ing after a rolling upgrade left the pod holding a Secret without `INTERNAL_TOKEN` |
+| `UnoArenaCommandsContended` | the retry budget being too small for the contention |
+| `UnoArenaReconcilerFailing` | the thing that finishes what a crash interrupted being itself stuck |
 
 ## 5. Logs
 
