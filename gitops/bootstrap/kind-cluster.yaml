@@ -8,8 +8,9 @@ nodes:
     extraPortMappings:
       - containerPort: 30080 # the gateway — the single entry point (UNOARENA_API_URL)
         hostPort: 30080
-      # Kept mapped and unused since P4 collapsed the two entry points into one. Port mappings are
-      # fixed when the cluster is created, so leaving it here is what lets an existing cluster pick
-      # up P4 without being recreated — and what leaves room for a second port if one is ever needed.
-      - containerPort: 30081
+      # Grafana since P8. It was room-gameplay's until P4 collapsed the two entry points into one,
+      # then sat mapped and unused — which is exactly why it was worth keeping: port mappings are
+      # fixed when the cluster is created, so an unused mapping is the only thing that lets a later
+      # phase expose something without recreating every existing cluster.
+      - containerPort: 30081 # Grafana — the observability entry point
         hostPort: 30081
