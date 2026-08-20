@@ -350,13 +350,50 @@ What P8 inherits, and must not break:
   P7, including two consecutive retries of one job before the third passed. It is not the repo. For
   the exam, mirror the distroless bases into the project registry rather than trusting a retry.
 
-## P8 — Observability consolidation (≥3 business metrics) — **next**
+## P8 — Observability consolidation (≥3 business metrics) — **SHIPPED 2026-08-20**
 
-- Ships: ServiceMonitors for every real service, one Grafana dashboard with the business metrics
-  (candidates: games completed/min, active rooms, moves/s, registered users, Elo updates/min —
-  pick ≥3), correlationId traceable CLI → gateway → service logs.
-- Small by design: the stack exists since P1 and services instrumented as they shipped.
-- Depends on: whatever shipped; runs in parallel with P7 if needed.
+Triad + closure: [`../2026-08-18-p8-observability/`](../2026-08-18-p8-observability/) — decisions
+E1–E4, evidence in [`validation.md`](../2026-08-18-p8-observability/validation.md); design deltas in
+`CHANGELOG-design.md` §13. Operational half: [`docs/observability-runbook.md`](../../docs/observability-runbook.md).
+
+**The exam's observability requirement is answered.** The same install that brings the system up
+brings up its observability, and the consigna's three business metrics are named on the board
+itself.
+
+- Ships: three dashboards as committed JSON (business, golden signals, async spine), Grafana on
+  NodePort **30081** with a sealed admin credential, Alertmanager plus **nine alert rules**, and
+  **Loki + Alloy** so one `correlationId` is one query. Plus `check-dashboards.js`, which fails a
+  panel whose metric no service declares.
+- **Not what the line above predicted.** ServiceMonitors were already enabled on all ten services
+  and `correlationId` was already propagated end to end — that half was done. What was missing was
+  anything that *rendered* it: zero dashboards, zero alert rules, Grafana on ClusterIP behind a
+  password the chart generated and nobody held.
+- Only two services' instrumentation changed (`serviceLevelObjectives` on the two Kotlin timers) and
+  three gained one log field. No new business counter.
+
+### Handoff from P8 (2026-08-20)
+
+What P9 inherits, and must not break:
+
+- **The demo has a second URL now.** Grafana is `http://localhost:30081`, admin, password in
+  `~/.amicro_secrets.env`. It is sealed, so it works on a cluster that has never existed — verified
+  on the from-empty drill. Board UIDs are stable: `/d/unoarena-business` and friends.
+- **From empty is ~12½ minutes to 24/24 Synced/Healthy** (`install.sh` returns at ~3 min), against
+  P7's ~11 min for 19 apps. P8's five extra components cost about **90 seconds**. Both figures are
+  on a warm host image cache; budget more on a cold one.
+- **Read an async system one scrape interval late.** Twice in one drill a check run immediately
+  after the action looked like a defect and was not: a champion with `tournaments_completed` still
+  at 0, and a correlationId trace showing 3 services that was 5 a minute later. The inverse of P4's
+  "a probe sent late measures the deadline".
+- **Two of nine alert rules have been observed firing**, both by recreating a real outage. Seven are
+  untested and listed as such. Do not describe the set as "covered".
+- **Set a threshold from a measurement, not from a plausible production number.** Two rules shipped
+  that could not fire at all: the lag threshold was higher than the total event volume of an entire
+  demo (179 events). Found by the review pass, not by the drill.
+- **A workload scaled to zero fires nothing.** Its scrape target disappears rather than reporting
+  `up 0`. Do not "test" the alerts that way and conclude they are broken.
+- **Loki is non-load-bearing and must stay that way** — with it down, all three boards and all nine
+  rules still work. Verified by taking it away.
 
 ## P9 — Demo rehearsal + presentation
 
