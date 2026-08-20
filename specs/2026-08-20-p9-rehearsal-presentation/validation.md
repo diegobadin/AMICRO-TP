@@ -2,9 +2,10 @@
 
 Every item is binary. A box is checked because it was observed, not because the code looks right.
 
-> **Progress 2026-08-20.** Groups 1–4 and 6–7 done, plus the review pass (8.5, eleven findings).
-> **R1 on EKS has not run**, so E1's NodePort decision is still unproven on AWS and every EKS
-> timing is still absent. The CI-token renewal needs the user. `[~]` marks a partial.
+> **Progress 2026-08-20.** Groups 1–7 done, plus the review pass (8.5, eleven findings) and **R1 on
+> EKS — E1 proven with a bite test, 24/24 in 8 m 53 s, account swept clean**. Remaining: the CI-token
+> renewal (user), the tournament-cut branch end to end, the interactive two-human game, and closure
+> (8.1/8.3/8.4). `[~]` marks a partial.
 
 ## 1. The carried checklist (group 1)
 
@@ -30,9 +31,10 @@ Every item is binary. A box is checked because it was observed, not because the 
       does not fail.
 - [x] `create.sh` prints both reachable URLs.
 - [x] A re-authorize path for a different source IP exists and is documented in the EKS README.
-- [ ] At R1: `curl` reaches the gateway on 30080 and Grafana answers on 30081 **from the laptop**,
-      with no port-forward running.
-- [ ] `destroy.sh` then `sweep.sh` exits 0 and empty with the SG rule in place.
+- [x] At R1: `curl` reached the gateway on 30080 and Grafana on 30081 **from the laptop**, no
+      port-forward, on **both** node public IPs — `200` four times.
+- [x] `destroy.sh` then `sweep.sh` exited 0 and empty with the SG rule in place (one leaked EBS
+      volume auto-deleted by destroy's own sweep).
 - [x] The port-forward fallback is written in the runbook with the exact two commands.
 
 ## 3. The demo runbook (group 3)
@@ -59,10 +61,10 @@ Every item is binary. A box is checked because it was observed, not because the 
       loud. A clean run with the block skipped has **not** been done.
 - [x] A second from-empty pass was **not** required: R0's defect was a client-side convergence race,
       not a startup defect, so 4.5's trigger did not fire.
-- [ ] **R1 (EKS)**: cluster created that day, `install.sh`, 24/24, the full runbook, both URLs.
-- [ ] R1 recorded the number that does not exist yet: **time to 24/24 for 24 apps on 2× t3.large**.
-- [ ] R1 confirmed no pod Pending on insufficient CPU/memory.
-- [ ] R1 ended with `destroy.sh` + an empty `sweep.sh`, exit 0, and the budget banner read.
+- [x] **R1 (EKS)**: cluster created that day, `install.sh`, 24/24, the full runbook, both URLs.
+- [x] R1 recorded it: **8 m 53 s** to 24/24 for 24 apps on 2× t3.large — faster than either kind run.
+- [x] R1 confirmed no pod Pending on insufficient CPU/memory — **zero** such events, 11/11 Running.
+- [x] R1 ended with `destroy.sh` + an empty `sweep.sh`, exit 0. Budget before: **$0.2 of $50**.
 - [ ] Nothing in service code, charts or CI changed after R1 — or R1 was re-walked.
 
 ## 5. Deck and README (groups 6–7)
@@ -90,8 +92,8 @@ afterwards; `git stash` reverts to HEAD, which already contains the fix.
 - [x] **ktlint is wired into `check`, not merely applied.** Introduce a formatting violation in each
       Kotlin service and confirm `gradle check` goes red — a plugin present but not in the `check`
       graph is `tech-stack.md` §2's promise all over again.
-- [ ] **The SG rule is what opens the port.** At R1, revoke it and confirm `curl` to 30080 times
-      out; re-authorize and confirm it answers. Without this, "it worked" may be some other rule.
+- [x] **The SG rule is what opens the port.** Revoked → `http 000`; re-authorized → `http 200`.
+      A second authorize run reported `already open`, so it is idempotent as designed.
 - [~] **The degrade branch lands.** Port-forward: walked, and it found a defect. Tournament-cut:
       reasoned through, not run clean end to end.
 - [ ] **The runbook has a reader other than its author.** The teammate reads it cold and reports

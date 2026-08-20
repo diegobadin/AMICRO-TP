@@ -9,9 +9,9 @@
 > [`observability-runbook.md`](./observability-runbook.md) — the boards, the LogQL query, and the
 > readings that look like faults and are not. This file does not repeat it; it says when to open it.
 
-**Every timing here is tagged with the rehearsal that produced it** — `_(R0)_` is P9's kind drill,
-`_(P1)_` the AWS one. An untagged number would be a guess, and there are none. **No EKS figure for
-the full system exists yet**: P1's only covered a platform-only install, so R1 is what fills it in.
+**Every timing here is tagged with the rehearsal that produced it** — `_(R1)_` is P9's **EKS**
+rehearsal and is the one that matters, `_(R0)_` its kind drill, `_(P1)_` the platform-only AWS run.
+An untagged number would be a guess, and there are none.
 
 ---
 
@@ -37,14 +37,14 @@ the deadline that matters; everything below hangs off it.
 ## 2. Before the slot — the cluster exists and is empty
 
 The consigna says *"arrancar de un cluster de k8s vacío"* — an **empty** cluster, not a nonexistent
-one. Creating it live costs **16m58s** _(measured, P1)_ of `eksctl` output before anything can be
-shown, so the cluster is created ahead of the slot and the demo starts at `install.sh`. Cluster
+one. Creating it live costs **15m44s** _(R1; P1 measured 16m58s)_ of `eksctl` output before anything
+can be shown, so the cluster is created ahead of the slot and the demo starts at `install.sh`. Cluster
 creation is still ours and still demonstrable: `gitops/bootstrap/eks/create.sh` is in the repo and
 its rehearsal log is the evidence.
 
 ```bash
 cd gitops/bootstrap/eks
-./create.sh                      # ~17 min; also opens 30080/30081 for this machine's address
+./create.sh                      # 15m44s (R1); also opens 30080/30081 for this machine's address
 export KUBECONFIG=~/.kube/unoarena-eks
 kubectl get nodes                # 2 Ready
 kubectl get ns                   # nothing of ours — this is the "empty cluster"
@@ -66,20 +66,21 @@ GITOPS_REPO_TOKEN=<PAT with read_repository> USE_KIND=false gitops/bootstrap/ins
 | T | What | Say while it happens |
 |---|---|---|
 | 0:00 | `install.sh` starts | One command, and it is the same one on kind and on EKS. It installs Argo CD and the Sealed Secrets controller, then applies **two** app-of-apps — platform and services — and stops. Nothing after this point is `kubectl apply`. |
-| **3:06** _(R0)_ | `install.sh` returns | The script is done; the cluster is not. What is running now is Argo reconciling git. |
+| **2:35** _(R1)_ | `install.sh` returns | The script is done; the cluster is not. What is running now is Argo reconciling git. |
 | → | `kubectl get app -n argocd -w` | Sync waves: secrets at −1, then operators, then the stateful set — Kafka, Postgres, Redis — then the ten services. The schema-owning services **restart 5–7 times here and that is correct**: they exit rather than serve against a database that is not migrated yet. R0 measured **7** for each of the five, and **0** for `analytics-api`, which reads a schema it does not own and so connects lazily. |
-| **17:48** _(R0, kind)_ | **24/24 Synced/Healthy** | Twenty-four Argo applications: the ten services, twelve platform components, and the two app-of-apps roots that own them. |
+| **8:53** _(R1, EKS)_ | **24/24 Synced/Healthy** | Twenty-four Argo applications: the ten services, twelve platform components, and the two app-of-apps roots that own them. |
 
-> **Treat that as a range, not a budget.** R0 spent **798 s of its 1068 s pulling images** — 41 pulls
-> into a node that has just been created. The number is bound by registry throughput, not by
-> Kubernetes: P8 measured 12 m 25 s for the same 24 apps, and the difference between the two runs is
-> network, not work. **EKS has no measurement at all yet** (P1's "~8 min" was a platform-only
-> install), and its nodes are always brand new. Say "somewhere between twelve and twenty minutes,
-> mostly image pulls" rather than a figure — and start the narration early.
+> **EKS is the fast one, and the reason is image pulls.** R1 reached 24/24 in **8 m 53 s**, against
+> R0's 17 m 48 s on kind and P8's 12 m 25 s. Convergence is bound by registry throughput, not by
+> Kubernetes — R0 spent **798 of its 1068 seconds** pulling — and two EC2 nodes in `us-east-1`
+> pull from `registry.gitlab.com` far faster than one kind node behind a domestic uplink, and
+> pull in parallel. **Budget ten minutes and be pleased**; if the venue's network is poor the
+> number moves, so keep the narration ready rather than the stopwatch.
 >
-> R0 recorded **zero** `Insufficient cpu/memory` events: the requests added in P9 cost nothing on a
-> single kind node. The ten `FailedScheduling` events it did record are all the node's own
-> not-ready taint in the first seconds, before the kubelet registers.
+> **Nothing went Pending on resources**, on either rehearsal. R1 logged **zero**
+> `Insufficient cpu/memory` events with all 11 pods Running, which answers on real hardware the one
+> risk P9's requests introduced. R0's ten `FailedScheduling` events were the node's own not-ready
+> taint in the first seconds, before the kubelet registers.
 
 ```bash
 kubectl get app -n argocd            # 24/24 Synced Healthy
@@ -180,6 +181,10 @@ number.**
 
 Grafana: `http://<node-ip>:30081`, `admin` / `GRAFANA_ADMIN_PASSWORD` from `~/.amicro_secrets.env`.
 
+**Either node's public IP works.** A NodePort answers on every node and kube-proxy routes to the pod
+wherever it landed — R1 verified both, `200` on both ports from both IPs. `authorize-nodeports.sh`
+prints only the first, so if that instance is ever replaced, re-run it for the current address.
+
 **If a reading looks wrong, open [`observability-runbook.md`](./observability-runbook.md) §"Things
 that look like faults and are not"** rather than debugging live. The short list: the `Watchdog`
 alert always fires by design, schema-owning services restart 5–7× on a cold start, `ranking`
@@ -214,9 +219,14 @@ Each of these is a decision made now, not on the day.
 
 ```bash
 cd gitops/bootstrap/eks
-./destroy.sh                     # ~10 min; drops stateful namespaces first to free EBS
+./destroy.sh                     # 10m22s (R1); drops stateful namespaces first to free EBS
 ./sweep.sh                       # MUST print nothing and exit 0
 ```
 
 Billing continues while the lab is **off** for the control plane, EC2, EBS and any ELB. This step
 is never optional, and the budget banner is checked after it.
+
+R1's teardown **did** leave one EBS volume behind — namespace deletion races the stack teardown —
+and `destroy.sh`'s own sweep deleted it (`vol-0a9f…`). That is the P1 lesson still being true, and
+the mitigation still working. `sweep.sh` then printed nothing and exited 0. **A full R1 cycle is
+about 55 minutes and roughly $0.30.**

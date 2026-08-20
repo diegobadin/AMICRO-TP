@@ -189,6 +189,47 @@ one step still unrehearsed with a human); §4's tournament needed the warning th
 **Done when:** the demo has been performed once, start to finish, on a cluster created that day, and
 the runbook's numbers are AWS numbers rather than kind numbers.
 
+### 5.7 Results (2026-08-20) — **R1 DONE, and E1 is proven**
+
+Budget before: **$0.2 of $50**; account swept clean beforehand. Cluster created, demo performed,
+torn down, swept. **≈55 minutes, ≈$0.30.**
+
+| Step | R1 | For comparison |
+|---|---|---|
+| `create.sh` | **15 m 44 s** | P1: 16 m 58 s |
+| `install.sh` returns | **2 m 35 s** | R0 on kind: 3 m 06 s |
+| **24/24 Synced/Healthy** | **8 m 53 s** | R0 kind 17 m 48 s · P8 kind 12 m 25 s |
+| `destroy.sh` | **10 m 22 s** | P1: 10 m 22 s |
+
+**EKS is the fast one**, which retires the worry behind R2's timing half: convergence is bound by
+registry throughput, and two EC2 nodes in `us-east-1` pull from `registry.gitlab.com` far faster
+than one kind node on a domestic uplink, in parallel. The runbook now says *budget ten minutes*.
+
+**E1 is proven, with a bite test.** Both NodePorts answered from the operator's laptop with **no
+port-forward**, on **both** node public IPs (`200` on 30080 and 30081, ×2). Revoking the rule made
+30080 return `http 000`; re-authorizing brought it back to `200`. A second `authorize-nodeports.sh`
+run reported `already open` — idempotent as designed. This path had never run on AWS before today.
+
+**R2 is answered on real hardware.** **Zero** `Insufficient cpu/memory` events, 11/11 pods Running.
+The requests sized from kind measurements fit 2× `t3.large` with room; no third node needed.
+
+**Functional pass, all on EKS:** `register`/`whoami` ok · casual game 21 + 17 actions, **0 errors**
+(max latency ~500 ms — it is Buenos Aires to `us-east-1`, worth knowing before the day) ·
+`spectate <roomId>` positional · **four `tournament register` clients converged on ONE tournament**
+— the exact fresh-cluster scenario R0 split on, so the convergence fix is validated where it failed
+— `COMPLETED`, a champion, 2 rounds, 4 registered, full placements · `tournament status <id>`
+positional · **11/11 scrape targets up** · business metrics **4 / 1 / 7** after one scrape interval ·
+one `correlationId` returning **5 services** from Loki.
+
+**Teardown left one EBS volume behind** and `destroy.sh`'s own sweep deleted it (`vol-0a9f…`) — P1's
+lesson still true, its mitigation still working. `sweep.sh` printed nothing, exit 0.
+
+**Process failure worth recording:** the first teardown attempt never ran. The command began with
+`pkill -f "port-forward …"`, which **matched and killed the shell running it** — the `pgrep -f`
+trap in the drill notes, in its `pkill` form. `destroy.sh` was never reached and the cluster billed
+an extra ~13 minutes before the empty log gave it away. **Never start a teardown command with a
+`pkill -f` whose pattern appears in its own command line.**
+
 ---
 
 ## 6. The presentation deck (E4)
