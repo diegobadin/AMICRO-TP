@@ -2,7 +2,7 @@
 # deploy time — build once, promote the SAME digest from staging to production (no rebuild).
 image:
   repository: registry.gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp/unoarena/timer-worker
-  digest: "sha256:0c87986a8a58300307c00081b1625210583b0b2ab4c236d568973fd8346b7c23" # pinned by CI (deploy-gitops)
+  digest: "sha256:f99839229d3d333be2cbec681d8e146e20efc16e31c40c4b3a3964cf25a3a8eb" # pinned by CI (deploy-gitops)
 imagePullSecrets:
   - name: gitlab-registry
 replicas: 1
