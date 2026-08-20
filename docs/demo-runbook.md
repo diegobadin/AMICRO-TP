@@ -9,8 +9,9 @@
 > [`observability-runbook.md`](./observability-runbook.md) — the boards, the LogQL query, and the
 > readings that look like faults and are not. This file does not repeat it; it says when to open it.
 
-**Timings marked _(measured)_ come from a rehearsal. Timings marked _(unmeasured)_ do not exist
-yet** — R0 and R1 fill them in, and nothing here should be read aloud as a number until it does.
+**Every timing here is tagged with the rehearsal that produced it** — `_(R0)_` is P9's kind drill,
+`_(P1)_` the AWS one. An untagged number would be a guess, and there are none. **No EKS figure for
+the full system exists yet**: P1's only covered a platform-only install, so R1 is what fills it in.
 
 ---
 
@@ -28,9 +29,9 @@ the deadline that matters; everything below hangs off it.
       `~/.amicro_sealing_key` **and** `~/.amicro_sealing_cert.pem`. Without the cert half, every
       committed SealedSecret stays sealed forever on a cluster that has never existed.
 - [ ] **Learner Lab budget banner read** (lags 8–12h) — a deactivated account is permanent.
-- [ ] **EKS cluster created and empty**, per §2.
-- [ ] **NodePorts authorized from the presenting machine's address** — §2, and it is almost
-      certainly a different address than the rehearsal used.
+- [ ] **Do NOT create the EKS cluster yet.** It bills ~$0.27/h from the moment it exists — two days
+      early is ~$13 of a $50 budget, for nothing. Creating it is a **same-day** step (§2).
+- [ ] `gitops/bootstrap/eks/` reviewed and the lab credentials known-good, so §2 is uneventful.
 - [ ] The deck renders: `presentation/`.
 
 ## 2. Before the slot — the cluster exists and is empty
@@ -82,11 +83,8 @@ GITOPS_REPO_TOKEN=<PAT with read_repository> USE_KIND=false gitops/bootstrap/ins
 
 ```bash
 kubectl get app -n argocd            # 24/24 Synced Healthy
-kubectl get pod -n unoarena-staging  # 11 containers — the outbox relay runs twice
+kubectl get pod -n unoarena-staging  # 11 pods — the outbox relay runs twice
 ```
-
-**The EKS number does not exist yet.** P1's "~8 min convergence" was a platform-only install; this
-is 24 apps on 2× `t3.large`. R1 measures it.
 
 ## 4. The functional pass — the faculty's CLI
 
@@ -100,7 +98,7 @@ interactive form with a human before the day; it is the only step in this runboo
 
 ```bash
 cd clients/cli && npm install && npm run build
-export UNOARENA_API_URL=http://<node-ip>:30080     # or http://localhost:30080 with the fallback
+export UNOARENA_API_URL=http://<node-ip>:30080     # or http://localhost:18080 on the §6 fallback
 ```
 
 **Authentication (§5.A)** — one player, then the single-active-session rule:
@@ -126,15 +124,23 @@ legality check, and only legal actions are offered — so the client cannot teac
 **A spectator sees no hand (§5.D)** — from a third session:
 
 ```bash
-UNOARENA_SESSION=/tmp/c.json node dist/cli.js spectate --room <roomId>
+UNOARENA_SESSION=/tmp/c.json node dist/cli.js spectate <roomId>
 ```
 
 **A tournament (§5.E)** — four terminals, one command each:
 
+Four accounts first — a session file holds a token, and an unauthenticated one stops at
+`log in first`:
+
 ```bash
-for i in 1 2 3 4; do
-  UNOARENA_SESSION=/tmp/t$i.json node dist/cli.js tournament register &
-done
+node dist/cli.js seed --count 4 --prefix t --json      # ensures t-1 … t-4, password t-pw
+```
+
+Then one terminal per player, started together:
+
+```bash
+UNOARENA_SESSION=/tmp/t$i.json node dist/cli.js login --user t-$i --pass t-pw
+UNOARENA_SESSION=/tmp/t$i.json node dist/cli.js tournament register
 ```
 
 They converge on the lowest open tournament id, so four processes started together join one event.
@@ -143,11 +149,11 @@ are reseeded, and it ends with one champion.
 
 > **Two things R0 learned here.**
 >
-> **Start from a cluster with no open tournaments, or name the id.** A tournament left in
-> `REGISTRATION` by an earlier run absorbs the next player who registers, and the event then starts
-> with a roster that includes clients nobody is running. On a from-empty demo this cannot happen; on
-> a second run against the same cluster it will. The safe form is explicit:
-> `tournament register <id>` / `bot --tournament <id>` against a tournament created for the demo.
+> **The bare form above is correct on the demo's from-empty cluster, and only there.** A tournament
+> left in `REGISTRATION` by an earlier run absorbs the next player who registers, and the event then
+> starts with a roster full of clients nobody is running. So if the demo is ever re-run against a
+> cluster that has already served one, name the id instead — `tournament register <id>` — after
+> reading `tournament status` to see what is already open.
 >
 > **R0 hit the create race and P9 fixed it.** Four clients starting together all found nothing open
 > and all created; the one that finished first could only see *its own* tournament when it re-read,
@@ -195,7 +201,7 @@ Each of these is a decision made now, not on the day.
 | **Convergence stalls below 24/24** | `kubectl get app -n argocd` for the app that is not Synced, then its pods. Do not `kubectl apply` anything — Argo owns it and `selfHeal` will undo you. | Open the async-spine board while diagnosing. |
 | **A pod is Pending on insufficient CPU/memory** | The requests added in P9 do not fit this cluster. `kubectl -n unoarena-staging patch` is undone by Argo; the honest move is to say so and scale the nodegroup. | Should be impossible — R1 checks it — but it is the one new failure mode P9 introduced. |
 | **Loki is down** | Skip the correlationId step and say Loki is deliberately **non-load-bearing**: all three boards and all nine alert rules still work, because they read Prometheus. P8 verified this by taking Loki away. | One demo step. |
-| **The cluster is unrecoverable** | Fall back to kind: `gitops/bootstrap/install.sh` on the laptop, same script, same commit, ~12m25s _(measured)_. | The demo is local, and the EKS story becomes the rehearsal evidence. |
+| **The cluster is unrecoverable** | Fall back to kind: `gitops/bootstrap/install.sh` on the laptop, same script, same commit, **17m48s** _(R0)_ — and pull-bound, so budget the range in §3. | The demo is local, and the EKS story becomes the rehearsal evidence. |
 
 > **Why 18080 and not 30080.** R0 walked this branch and found the obvious spelling is a trap on
 > kind: the node already publishes 30080/30081 on `0.0.0.0`, so `port-forward … 30080:80` binds

@@ -14,8 +14,9 @@ Entrega final — arquitectura y decisiones
 <!--
 El sistema completo corre desde un cluster vacío con un solo comando. Diez servicios
 independientes, veinticuatro aplicaciones de Argo, observabilidad incluida.
-Números para tener a mano: 12m25s de cluster vacío a 24/24 (medido en kind, caché tibia),
-11 targets de scrape, pipeline de 43 jobs.
+Números para tener a mano: de cluster vacío a 24/24 en algo entre 12 y 18 minutos — dos
+mediciones en kind, 12m25s y 17m48s, y la diferencia es descarga de imágenes, no trabajo:
+798 de los 1068 segundos de la última fueron pulls. 11 targets de scrape, pipeline de 43 jobs.
 -->
 
 ---
@@ -183,7 +184,7 @@ Preferimos un panel que nombre la ausencia.
 |---|---|
 | Desplegables reales | **10** (ninguno con `digest: ""`) |
 | Aplicaciones de Argo | **24** |
-| De cluster vacío a 24/24 | **12 m 25 s** _(kind, caché tibia)_ |
+| De cluster vacío a 24/24 | **12–18 min** _(kind, dos mediciones)_ — dominado por pulls |
 | Targets de scrape | **11** |
 | Servicios en una query de `correlationId` | **5** |
 | Pipeline más ancho | **43 jobs** — 42 success + 1 manual |

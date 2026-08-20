@@ -41,7 +41,18 @@ SG=$(aws eks describe-cluster --name "$CLUSTER" --region "$REGION" \
   --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' --output text)
 [ -n "$SG" ] && [ "$SG" != "None" ] || { echo "ERROR: no cluster security group for '$CLUSTER'." >&2; exit 1; }
 
-CIDR="${SOURCE_CIDR:-$(curl -fsS https://checkip.amazonaws.com)/32}"
+# A failed lookup must not become a rule for "/32" — an assignment's command substitution does not
+# trip `set -e`, so the failure would arrive later as an opaque AWS parameter error.
+if [ -n "${SOURCE_CIDR:-}" ]; then
+  CIDR="$SOURCE_CIDR"
+else
+  MYIP=$(curl -fsS --max-time 10 https://checkip.amazonaws.com || true)
+  case "$MYIP" in
+    *[0-9].*[0-9].*[0-9].*[0-9]) CIDR="$MYIP/32" ;;
+    *) echo "ERROR: could not determine this machine's public IP. Pass SOURCE_CIDR=<a.b.c.d/32>." >&2
+       exit 1 ;;
+  esac
+fi
 echo "== $ACTION ${PORTS// /, } on $SG for $CIDR"
 
 for port in $PORTS; do

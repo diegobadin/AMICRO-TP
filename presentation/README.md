@@ -27,7 +27,7 @@ gets questioned, the answer is a file, not a memory:
 
 | Claim | Where it lives |
 |---|---|
-| 24/24 in 12 m 25 s from empty | `specs/2026-08-18-p8-observability/ESTADO-FINAL.md` |
+| 24/24 from empty, 12 m 25 s and 17 m 48 s | P8's `ESTADO-FINAL.md` and P9's `plan.md` §4.6 — **quote the range, not either figure**: 798 s of R0's 1068 s were image pulls, so the number is registry-bound |
 | 43-job pipeline, 42 + 1 manual | the same file, closure section |
 | 179 events in a whole demo | `CHANGELOG-design.md` §13, and P8's alert retuning |
 | five services on one `correlationId` | `docs/observability-runbook.md` |
