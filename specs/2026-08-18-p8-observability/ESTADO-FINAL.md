@@ -93,6 +93,27 @@ themselves within a scrape interval. The inverse of P4's "a probe sent late meas
   linter** despite tech-stack §2. Both found here, neither is observability; both are on P9's
   checklist.
 
+## Closure
+
+FF-merged to `main` at **`d456be6`** (32 commits, no merge commit). Both Argo roots were repointed
+at `main` before the branch was retired, and the children followed within one poll — **24 of 24
+Synced/Healthy**, and all ten staging overlays matching the images actually running.
+
+The roadmap's usual surprise **did** apply this time, unlike P7: the last commit carries
+`[skip ci]`, so the push to `main` produced a **skipped** pipeline and the "green `main` pipeline"
+criterion had nothing behind it until one was triggered deliberately. That run is pipeline
+**2775902300**: **43 jobs, 42 success + 1 manual** — the widest the pipeline offers.
+
+It went red first, and it was not the repo: `build:timer-worker` — a service P8 never touched —
+failed twice with `gcr.io/distroless … UNAUTHORIZED` and passed on the **third** attempt. Sixth
+occurrence across P6–P8, and the first on a closure run. Kaniko does not retry a base-image pull
+("after 0 attempts"), so each retry was manual. P9's checklist carries the fix.
+
+One thing worth remembering for the next closure: `git pull` on `main` pulls from **`origin`, which
+is the stale GitHub mirror** — the local branch tracks it, not `gitlab`. Ten pin commits landed on
+`gitlab/main` during the closure run and a plain `git pull` did not fetch one of them, which briefly
+looked like ten overlays disagreeing with the cluster. `git pull gitlab main`.
+
 ## Next
 
 **P9 — demo rehearsal + presentation.** The system is complete; what remains is rehearsing it,

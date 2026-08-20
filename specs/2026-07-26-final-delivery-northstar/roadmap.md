@@ -405,10 +405,15 @@ What P9 inherits, and must not break:
 
 ### Carried into P9's checklist
 
-- **Mirror the `gcr.io/distroless` bases into the project registry.** Five rejections of the GitLab
-  shared runners across P6 and P7, including two consecutive retries of one job before the third
-  passed. It is not the repo, and a retry is not a fix — the exam should not depend on a public
-  registry's mood. A CI supply-chain change, which is why P8 left it alone.
+- **Mirror the `gcr.io/distroless` bases into the project registry.** **Six** rejections of the
+  GitLab shared runners across P6, P7 and P8. The sixth is the one that should settle it: it hit
+  **P8's closure run on `main`**, on `build:timer-worker` — a service P8 never touched — and took
+  **three attempts** to pass, failing identically twice:
+  `GET https://gcr.io/v2/token?...: UNAUTHORIZED: authentication failed`. Note kaniko reports
+  "unable to complete operation after **0 attempts**", so it does not retry the base-image pull at
+  all; the retry has to be a human clicking the job. A retry is not a fix, and the exam should not
+  depend on a public registry's mood on the day. A CI supply-chain change, which is why P8 left it
+  alone.
 - **Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
 - **Decide whether the ten app containers get resource requests/limits.** None of them declare
   either today, while every platform component does — so they are `BestEffort` QoS, first to be
