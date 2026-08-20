@@ -26,6 +26,10 @@ include:
   - local: ci/templates/deploy-gitops.yml
   - local: ci/contracts/contract.gitlab-ci.yml
 
+  # Supply chain: mirrors the distroless bases into this project's registry. Runs only when its own
+  # file changes, so it adds nothing to a normal pipeline.
+  - local: ci/mirror-bases.yml
+
   # Per-service fragments (one image = one chart = one fragment)
   - local: services/gateway/.gitlab-ci.yml
   - local: services/identity/.gitlab-ci.yml

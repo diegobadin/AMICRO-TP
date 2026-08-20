@@ -1,0 +1,43 @@
+# Copy the distroless bases this repo builds on into the project's own registry, so a build never
+# depends on gcr.io answering. Six rejections across P6-P8 — the sixth on P8's own closure run, on
+# a service that phase never touched, three attempts to pass — and kaniko reports "unable to
+# complete operation after 0 attempts", i.e. it does not retry a base-image pull at all. Every
+# retry was a human clicking the job.
+#
+# The job exists only in pipelines where THIS FILE changed. That is the whole gate: a mirror that
+# re-resolves upstream on every pipeline reintroduces the dependency it removes, and refreshing a
+# base means editing the pinned source digest below anyway. Normal pipelines are unchanged — no
+# extra job, no extra manual gate.
+#
+# Sources are pinned by digest, not by tag: the mirror copies a known image rather than whatever
+# `latest` meant on the day it ran. `--all` copies the whole index, which preserves the digest, so
+# the copy can be proved identical to upstream rather than merely assumed to be.
+#
+# Still upstream of gcr.io: the kaniko executor image itself. That is the runner's own image pull,
+# which GitLab retries, and it has never been the failure.
+
+"mirror:bases":
+  stage: build
+  image:
+    name: quay.io/skopeo/stable:v1.22.2
+    entrypoint: [""]
+  variables:
+    NODEJS_SRC: "gcr.io/distroless/nodejs20-debian12@sha256:6fe218dbad37e979c7542e670d28d6e23d3f53d2929693bc9cdded8b622f339f"
+    STATIC_SRC: "gcr.io/distroless/static-debian12@sha256:6447365a6337c3732f412d1b74357b30a633831955b2bc45552b0086be907687"
+    MIRROR_TAG: "2026-08-20"
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | skopeo login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - skopeo copy --all "docker://$NODEJS_SRC" "docker://$CI_REGISTRY_IMAGE/base/nodejs20-debian12:$MIRROR_TAG"
+    - skopeo copy --all "docker://$STATIC_SRC" "docker://$CI_REGISTRY_IMAGE/base/static-debian12:$MIRROR_TAG"
+    # A copy whose digest moved is not a mirror of what was reviewed. Fail rather than pin it.
+    - |
+      check() {
+        got=$(skopeo inspect --raw "docker://$CI_REGISTRY_IMAGE/base/$1:$MIRROR_TAG" | sha256sum | cut -d' ' -f1)
+        want=${2##*@sha256:}
+        [ "$got" = "$want" ] || { echo "ERROR: $1 digest changed in transit — do not pin this"; exit 1; }
+        echo "pin as: $CI_REGISTRY_IMAGE/base/$1@sha256:$got"
+      }
+    - check nodejs20-debian12 "$NODEJS_SRC"
+    - check static-debian12 "$STATIC_SRC"
+  rules:
+    - changes: ["ci/mirror-bases.yml"]
