@@ -2,9 +2,9 @@
 
 Every item is binary. A box is checked because it was observed, not because the code looks right.
 
-> **Progress 2026-08-20.** Groups 1–3, 6 and most of 7 are done; §4 (rehearsals) has not started, so
-> every item that depends on R0/R1 is still open — including all runbook timings. The one item in
-> group 1 that is **not** done is the CI-token renewal, which needs the user to create the token.
+> **Progress 2026-08-20.** Groups 1–4 and 6–7 done, plus the review pass (8.5, eleven findings).
+> **R1 on EKS has not run**, so E1's NodePort decision is still unproven on AWS and every EKS
+> timing is still absent. The CI-token renewal needs the user. `[~]` marks a partial.
 
 ## 1. The carried checklist (group 1)
 
@@ -39,7 +39,8 @@ Every item is binary. A box is checked because it was observed, not because the 
 
 - [x] `docs/demo-runbook.md` exists and carries: preconditions, the 48h checklist, the timed
       script, a degrade branch per fragile step, and copy-pasteable commands.
-- [ ] Every timing in it came from R0 or R1 — no estimated number is presented as measured.
+- [x] Every timing in it came from R0 or P1 and is tagged with which — the review pass removed the
+      last three stale figures, and the legend now matches the notation actually used.
 - [x] Every step that reads a business counter states the wait, and the narration that fills it.
 - [x] The CLI functional pass in it uses `Client-Checkpoint.md` §5's canonical surface, not our
       drill scripts.
@@ -48,10 +49,16 @@ Every item is binary. A box is checked because it was observed, not because the 
 
 ## 4. Rehearsals (groups 4–5)
 
-- [ ] **R0 (kind)**: from `kind delete cluster` to a finished demo, following the runbook verbatim.
-      Deviations recorded and folded back in.
-- [ ] R0's degrade branches were walked: tournament cut, and port-forward instead of NodePorts.
-- [ ] A second from-empty pass was run **if** R0's findings were about startup.
+- [x] **R0 (kind)**: from `kind delete cluster` to a finished demo, following the runbook verbatim.
+      3 m 06 s to `install.sh` returning, **17 m 48 s to 24/24**. Deviations folded back in.
+- [x] R0's **port-forward** degrade branch was walked live, and found the runbook's own spelling
+      bypassed itself on kind (bound `[::1]` only). Now 18080/18081, both verified `200`.
+- [~] The **tournament-cut** branch is analysed, not performed end to end: every non-tournament step
+      was executed independently in R0, and cutting it makes
+      `tournament_tournaments_completed_total` read 0 — now written into §6 as something to say out
+      loud. A clean run with the block skipped has **not** been done.
+- [x] A second from-empty pass was **not** required: R0's defect was a client-side convergence race,
+      not a startup defect, so 4.5's trigger did not fire.
 - [ ] **R1 (EKS)**: cluster created that day, `install.sh`, 24/24, the full runbook, both URLs.
 - [ ] R1 recorded the number that does not exist yet: **time to 24/24 for 24 apps on 2× t3.large**.
 - [ ] R1 confirmed no pod Pending on insufficient CPU/memory.
@@ -85,8 +92,8 @@ afterwards; `git stash` reverts to HEAD, which already contains the fix.
       graph is `tech-stack.md` §2's promise all over again.
 - [ ] **The SG rule is what opens the port.** At R1, revoke it and confirm `curl` to 30080 times
       out; re-authorize and confirm it answers. Without this, "it worked" may be some other rule.
-- [ ] **The degrade branch lands.** Run the demo skipping the tournament entirely and confirm the
-      runbook still reaches a coherent ending.
+- [~] **The degrade branch lands.** Port-forward: walked, and it found a defect. Tournament-cut:
+      reasoned through, not run clean end to end.
 - [ ] **The runbook has a reader other than its author.** The teammate reads it cold and reports
       every place they would have had to ask a question (N4 makes them the presenter, so this is
       the real test, not a courtesy).
