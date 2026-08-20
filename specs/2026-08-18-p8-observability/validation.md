@@ -33,9 +33,17 @@
       The check distinguishes a typo (declared nowhere in `services/`, hard failure) from a
       tag-parameterised counter with no series yet (`roomgameplay_engine_rejections_total`,
       reported and allowed) — because `or vector(0)` renders both as a confident zero.
-- [ ] On a cluster with no traffic yet, every panel reads `0` or an explicit "No data" — **no panel
-      errors, none is blank**.
-- [ ] After the tournament drill, every business panel has moved.
+- [x] On a cluster with no traffic yet, every panel reads `0` — **86 queries, 0 problems** on the
+      freshly installed cluster before a single request. **9 metrics were reported "declared but not
+      yet emitted"**, which is exactly the case the source cross-check exists for: on a fresh
+      install those nine would otherwise have looked like nine typos.
+- [x] After the drills, every business panel has moved:
+
+      roomgameplay_games_completed_total      4        tournament_registrations_total    4
+      identity_registrations_total            6        tournament_rounds_started_total   2
+      roomgameplay_moves_total               58        tournament_rounds_completed_total 2
+      ranking_elo_updates_total               1        tournament_room_results_total     3
+      ranking_placement_updates_total         1        tournament_tournaments_completed  1
 - [x] Every `outboxrelay_*` panel is grouped `by (job)`. **No summed relay panel exists** — no
       longer a grep somebody has to remember: `check-dashboards.js` fails any expression that
       names `outboxrelay_` without `by (job`, and the rule was bite-checked by summing one.
@@ -144,13 +152,22 @@ was taken.
 
 ## 6. GitOps and platform
 
-- [ ] `kubectl get application -A` is **Synced/Healthy for every app**, including the new ones.
-- [ ] Loki and Alloy chart versions are **exact pins**, matching the platform's existing convention.
-- [ ] No PVC is created by Prometheus, Loki or Alertmanager (`kubectl get pvc -n monitoring` is
-      empty).
-- [ ] From-empty install time is **recorded** and compared against the ~11 min P7 baseline.
-- [ ] The two service overlays carry real digests that moved with F1 — checked in the overlay file,
-      not from the job status. (This is the `needs:`/empty-variable trap that went green in P6.)
+- [x] `kubectl get application -A` is **Synced/Healthy for every app** — **24/24** on the rebuilt
+      cluster (19 before P8, plus `dashboards`, `monitoring-secrets`, `alert-rules`, `loki`,
+      `alloy`).
+- [x] All 11 scrape targets `up` on the fresh cluster (10 services; the relay is two jobs).
+- [x] Loki `7.3.0` and Alloy `1.11.1` are **exact pins**, matching `kube-prometheus-stack 87.19.2`,
+      `strimzi 1.1.0`, `cnpg 0.29.0`.
+- [x] **No PVC** in `monitoring` — Prometheus, Loki and Alertmanager are all ephemeral.
+- [x] From-empty install time **recorded**: `install.sh` returned in **2 m 56 s**, and all 24 apps
+      reached Synced/Healthy at **12 m 25 s**. P7's baseline was ~11 min for 19 apps, so P8's five
+      extra components cost roughly **90 seconds** — measured on a warm host image cache, like P7's.
+- [x] Restart counts on the fresh cluster match the documented posture exactly: **6** for each of
+      the five schema-owning services (`identity`, `room-gameplay`, `ranking`, `analytics-workers`,
+      `tournament`) and **0** for `analytics-api`, which reads a schema it does not own and connects
+      lazily.
+- [x] The two service overlays carry real digests that moved with F1, and the three from D8 — all
+      five checked in the overlay file and again on the running Deployment, not from job status.
 
 ## 7. Bite tests — does the harness actually bite?
 
@@ -199,16 +216,39 @@ notice.
 
 ## 8. Drills
 
-- [ ] **Rolling upgrade** onto the running cluster: no Deployment is left holding a stale Secret.
-      Grafana's admin credential is the exact shape of P7's timer-worker 401 — `envFrom` resolves at
-      pod creation and a Deployment does not restart when a Secret changes.
-- [ ] **From empty**: `kind delete cluster` → install → **all apps Synced/Healthy**, all three boards
-      live, Loki collecting.
-- [ ] The casual gate still plays a full game (wild, draw, uno, challenge observed) — the standing
-      regression gate.
-- [ ] The tournament drill still produces a champion from four bots.
-- [ ] If any finding is startup-shaped, a **second** from-empty drill was run. (Standing rule since
-      P6: a cold-start fix verified warm is not verified.)
+- [x] **Rolling upgrade** onto the running cluster: every P8 change was synced onto the live P7
+      cluster first, including the Grafana credential swap — the exact shape of P7's timer-worker
+      401. Grafana's pod was **recreated** and resolved the new Secret, because the Deployment's own
+      spec changed rather than only the Secret's contents.
+- [x] **From empty**: `kind delete cluster` → `install.sh` → **24/24 Synced/Healthy**, all three
+      boards live, Loki collecting, Grafana on 30081 with the sealed credential — which also proves
+      the SealedSecret decrypts on a cluster that never existed before.
+- [x] The casual gate still plays a full game — 2 bots, **28 actions, 0 errors**, `login`,
+      `room_create`, `room_join`, `play_card`, `draw_card`, `pass`, `summary` all observed.
+- [x] The tournament drill still produces a champion from four bots — four `tournament register`
+      processes started **together**, all four played round 1, two advanced to the final, and
+      **exactly one** reported `champion: true`. P3's and P7's convergence lesson holds: nobody
+      opened a duplicate event they then played alone.
+- [x] The correlationId trace holds on the fresh cluster — **5 services** from one `POST /rooms`.
+- [ ] If any finding is startup-shaped, a **second** from-empty drill. Nothing found here was
+      startup-shaped: the install came up clean on the first attempt with no fix needed.
+
+### The mistake this drill made twice
+
+**Reading an async system immediately after acting on it measures it mid-flight.** Both happened
+within ten minutes, in different subsystems, and both looked like defects:
+
+- `tournament_tournaments_completed_total` read **0** with a champion already declared by the CLI.
+  The saga appends `TournamentCompleted` *after* the client learns its result, and Prometheus
+  scrapes every 30 s. One scrape interval later: **1**, with rounds started/completed both **2** and
+  the placement rating moved.
+- The Loki trace returned **3** services, then **5** forty-five seconds later, once `ranking` and
+  `analytics-workers` had consumed the event.
+
+Neither was a bug. This is the mirror of P4's "a probe sent late measures the deadline, not the
+thing you meant to test" — sent early, it measures a system still working. **Wait at least one
+scrape interval past the last action before reading a business counter**, and past the consumers'
+poll before reading a trace.
 
 ## 9. Docs
 
