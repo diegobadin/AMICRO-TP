@@ -8,7 +8,7 @@
 
 import { existsSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { API, SESSION, emit, line, loadSession, parseFlags, request, saveSession } from "./api.js";
+import { API, SESSION, emit, line, loadSession, parseFlags, positionals, request, saveSession } from "./api.js";
 import { bot } from "./bot.js";
 import { play, roomCommand } from "./rooms.js";
 import { tournamentCommand } from "./tournament.js";
@@ -61,10 +61,10 @@ async function seed(count: number, prefix: string, json: boolean): Promise<numbe
 const USAGE =
   "usage: unoarena <register|login|whoami|logout|seed|room|play|bot|tournament|spectate|rating|leaderboard|stats> " +
   "[--user U --pass P] [--count N --prefix P] [--max N] [--room ID] [--casual] [--json]\n" +
-  "       bot [--casual | --room ID] [--user U --pass P | --token T] [--seed N] " +
+  "       bot [--casual | --room ID | --tournament [ID]] [--user U --pass P | --token T] [--seed N] " +
   "[--forget-uno P] [--timeout S]\n" +
-  "       tournament <register|status|bracket> [--id ID]   register plays every round to the end\n" +
-  "       spectate --room ID [--timeout S]   watch a room: public state only, never a hand\n" +
+  "       tournament <register|status|bracket> [ID | --id ID]   register plays every round to the end\n" +
+  "       spectate <ID | --room ID> [--timeout S]   watch a room: public state only, never a hand\n" +
   "       rating [--player P] | leaderboard [--limit N] | stats [--player P | --room ID]\n";
 
 async function main(): Promise<number> {
@@ -107,7 +107,7 @@ async function main(): Promise<number> {
       return ok ? 0 : 1;
     }
 
-    if (cmd === "room") return roomCommand(rest.filter((a) => !a.startsWith("--")), f, json);
+    if (cmd === "room") return roomCommand(positionals(rest), f, json);
 
     // §5.B: `play --casual` is the abstract entry into a game. `--room <id>` is the explicit form.
     if (cmd === "play") return play(f, json);
@@ -118,8 +118,17 @@ async function main(): Promise<number> {
 
     // P6. `spectate` is the privacy boundary made visible: a session that is not at the table sees
     // the game and no hand. The other three read the projections the consumers build.
-    if (cmd === "tournament") return tournamentCommand(rest.filter((a) => !a.startsWith("--")), f, json);
-    if (cmd === "spectate") return spectate(f, json);
+    // §5.D and §5.E write these positionally — `spectate <roomId>`, `tournament status <id>`. The
+    // faculty drives this CLI from their own document, so the canonical form has to work; the
+    // `--room`/`--id` forms this repo grew stay accepted and still win when both are given.
+    if (cmd === "tournament") {
+      const [, id] = positionals(rest);
+      return tournamentCommand(positionals(rest), id && !f.id ? { ...f, id } : f, json);
+    }
+    if (cmd === "spectate") {
+      const [room] = positionals(rest);
+      return spectate(room && !f.room ? { ...f, room } : f, json);
+    }
     if (cmd === "rating" || cmd === "leaderboard" || cmd === "stats") return read(cmd, f, json);
 
     process.stderr.write(USAGE);

@@ -272,6 +272,20 @@ async function signIn(flags: Record<string, string | boolean>): Promise<boolean>
 // for the flush can cut off the very summary line the run is judged by.
 const flushed = (): Promise<void> => new Promise((resolve) => process.stdout.write("", () => resolve()));
 
+/**
+ * Whether this run is a tournament, and which one. `Client-Checkpoint.md` §5.E writes the canonical
+ * form as `bot --tournament <tournamentId>`, so parseFlags hands the flag that id as its VALUE —
+ * and the `flags.tournament === true` test this replaced was false for exactly the faculty's own
+ * invocation, which then fell through and played a casual game without saying so. Extracted from
+ * the dispatch because a wrong answer here is silent: the bot plays, reports ok, and plays the
+ * wrong thing.
+ */
+export function tournamentMode(flags: Record<string, string | boolean>): { on: boolean; id?: string } {
+  if (!flags.tournament) return { on: false };
+  if (flags.id) return { on: true, id: String(flags.id) };
+  return { on: true, id: typeof flags.tournament === "string" ? flags.tournament : undefined };
+}
+
 export async function bot(flags: Record<string, string | boolean>): Promise<number> {
   const startedAt = Date.now();
   // A flag given without a value parses as `true`, and `Number(true)` is a perfectly plausible 1 —
@@ -318,9 +332,10 @@ export async function bot(flags: Record<string, string | boolean>): Promise<numb
     // `--tournament` plays a whole event rather than one game: register, then play whatever room
     // each round assigns, until eliminated or champion. The rooms arrive already dealing, so there
     // is no table to wait for — the bracket is what decides when this bot plays next.
-    if (flags.tournament === true) {
+    const mode = tournamentMode(flags);
+    if (mode.on) {
       const player = playerId();
-      const tournamentId = await registerForTournament(flags, true);
+      const tournamentId = await registerForTournament(mode.id ? { ...flags, id: mode.id } : flags, true);
       if (!tournamentId) return summarise({ result: "error", error_code: "no_tournament", player });
 
       const code = await followTournament(

@@ -45,15 +45,43 @@ offered — `pass` appears once you have drawn, not before.
 | `challenge` | catch an opponent sitting on one card who did not call |
 | `state`, `quit` | re-render the board; leave |
 
-### Tournaments (§5.D) — against `tournament`
+### Spectator (§5.D) — against `spectator`, through the gateway
+
+| Command | Maps to | Notes |
+|---|---|---|
+| `spectate <roomId>` | `GET /rooms/{id}/spectate` (SSE, relayed by the gateway) | the canonical positional form; `--room <id>` is also accepted |
+| `spectate <roomId> --timeout S` | the same | a deadline over the whole watch, so a room nobody plays does not hang forever |
+
+**Hands never appear here, and not because the CLI hides them.** `publicPayload` strips the RNG seed
+inside room-gameplay in the same transaction that writes the event, so the deck is already gone
+before anything reaches Kafka — and the spectator's view type has no field that could hold a hand.
+
+### Read models (P6) — beyond the canonical surface
+
+Not part of `Client-Checkpoint.md` §5; these read the projections the Kafka consumers build, and
+they are how the bracket and the ratings are inspected without a database client.
+
+| Command | Maps to | Notes |
+|---|---|---|
+| `rating [--player P]` | `GET /players/{id}/rating` | Elo over finished **casual** games; defaults to the logged-in player's id, not their display name |
+| `leaderboard [--limit N]` | `GET /leaderboard` | top ratings |
+| `stats --player P` | `GET /stats/players/{id}` | a player's analytics projection |
+| `stats --room ID` | `GET /stats/rooms/{id}` | a room's |
+
+### Tournaments (§5.E) — against `tournament`
 
 | Command | Notes |
 |---|---|
 | `tournament register` | joins the open tournament (or opens one), then **plays every round to the end** — it waits to be drawn, plays its room, and comes back for the next round until eliminated or champion |
-| `tournament register --id <id>` | the same, for a named tournament |
-| `tournament status [--id <id>]` | who is registered, which round, which rooms, and who advanced |
-| `tournament bracket [--id <id>]` | the bracket from the read model, including the final placements |
-| `bot --tournament` | the whole event, headless — the same loop with a random number generator in the seat |
+| `tournament register <id>` | the same, for a named tournament (`--id <id>` also accepted) |
+| `tournament status [<id>]` | who is registered, which round, which rooms, and who advanced |
+| `tournament bracket [<id>]` | the bracket from the read model, including the final placements |
+| `bot --tournament [<id>]` | the whole event, headless — the same loop with a random number generator in the seat |
+
+§5.E writes these positionally and that is the form the faculty types, so it is the form documented
+here; the `--id` spelling this repo grew is still accepted and wins when both are given. Until P9
+only `--id` worked: `tournament status <id>` silently reported on a *different* tournament, and
+`bot --tournament <id>` — the canonical invocation — played a casual game instead.
 
 One command per player is the whole demo: four terminals running `tournament register` produce a
 champion with nothing else typed. The client decides nothing about the bracket — it asks the

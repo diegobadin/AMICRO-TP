@@ -72,6 +72,23 @@ export function parseFlags(argv: string[]): Record<string, string | boolean> {
   return out;
 }
 
+/**
+ * The arguments that are not flags and were not consumed as a flag's value. `Client-Checkpoint.md`
+ * §5 writes the canonical forms positionally (`spectate <roomId>`, `tournament status <id>`), so
+ * these have to be read as well as the `--` forms — and filtering on `startsWith("--")` alone would
+ * hand back `30` from `--timeout 30` as if the faculty had typed a room id.
+ */
+export function positionals(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) { out.push(a); continue; }
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) i++;
+  }
+  return out;
+}
+
 // §6 requires every line to carry the same field set, so the faculty can parse one shape across
 // every command. Fields that do not apply to an action are present and null, not missing.
 export interface Line {
