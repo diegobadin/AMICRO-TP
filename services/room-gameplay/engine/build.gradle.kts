@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm")
     // Version comes from the root project's plugin block; declaring it twice is an error.
     kotlin("plugin.serialization")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 repositories {
