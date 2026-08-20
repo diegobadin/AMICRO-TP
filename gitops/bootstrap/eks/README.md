@@ -26,10 +26,36 @@ of that drill boring: one config + three scripts against the Learner Lab account
 ## Rehearsal runbook
 
 ```bash
-./create.sh                                   # ~15-20 min, STS preflight included
+./create.sh                                   # ~15-20 min, STS preflight included; opens the NodePorts
 export KUBECONFIG=~/.kube/unoarena-eks        # dedicated kubeconfig, kind context untouched
 GITOPS_REPO_TOKEN=<token> USE_KIND=false ../install.sh
 # wait for the platform apps, run the probes (see specs/2026-07-26-p1-platform-infra/validation.md)
 ./destroy.sh                                  # drops stateful namespaces first to free EBS
 ./sweep.sh                                    # MUST print nothing and exit 0
 ```
+
+## Reaching the demo's two URLs (P9)
+
+The demo answers on **two NodePorts** — 30080 (gateway) and 30081 (Grafana) — and until P9 nothing
+here opened either one. On kind both are published by the node at cluster creation, so the question
+never came up; the P1 rehearsal predates P4's gateway, so this path had **never run on AWS**.
+
+`create.sh` now calls `./authorize-nodeports.sh`, which adds ingress for both ports to the cluster
+security group **scoped to one source address** — the machine that ran it. The lab account is
+shared-fate and these are public subnets, so `0.0.0.0/0` is not the default.
+
+**Presenting from a different network than the rehearsal is the normal case**, and the rule follows
+the address, not the cluster. Re-run it from the presenting machine:
+
+```bash
+./authorize-nodeports.sh                      # this machine's public IP, prints both URLs
+SOURCE_CIDR=203.0.113.7/32 ./authorize-nodeports.sh
+./authorize-nodeports.sh --revoke             # drop the rules for that CIDR again
+```
+
+It is idempotent — a second run reports "already open" rather than failing on
+`InvalidPermission.Duplicate`. The rule lives on the security group EKS owns, so it goes away with
+the cluster; `sweep.sh` catches a failed teardown through the CloudFormation check either way.
+
+**If this path misbehaves on the day, the demo does not stop** — `docs/demo-runbook.md` carries the
+`kubectl port-forward` fallback for both surfaces.

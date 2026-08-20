@@ -23,6 +23,10 @@ time eksctl create cluster -f cluster.yaml --kubeconfig "$KUBECONFIG_FILE"
 # EKS has no default StorageClass — without one, the Kafka/Postgres PVCs hang Pending.
 KUBECONFIG="$KUBECONFIG_FILE" kubectl apply -f storageclass.yaml
 
+# The demo answers on two NodePorts and nothing here opened them before P9. Re-runnable on its own
+# when the presenting machine's address differs from this one's — see authorize-nodeports.sh.
+./authorize-nodeports.sh
+
 echo "== cluster up. Install the platform with:"
 echo "   export KUBECONFIG=$KUBECONFIG_FILE"
 echo "   GITOPS_REPO_TOKEN=<token> USE_KIND=false $(cd .. && pwd)/install.sh"
