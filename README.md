@@ -224,6 +224,55 @@ system. The final-delivery program that builds it phase by phase lives in
 | [`services/gateway/`](./services/gateway/) | The only way in: the route table, HS256 validation, the header whitelist that makes the trust boundary real, and `GET /rooms/{id}/stream` — Server-Sent Events whose frame ids *are* the events' sequence numbers, so a client resumes with `Last-Event-ID` and can prove it missed nothing. |
 | [`docs/observability-runbook.md`](./docs/observability-runbook.md) | The three dashboards and what each answers, the Grafana URL and where its credential lives, the one LogQL query that follows a request across the system, how to fire an alert on purpose, and the handful of readings that look like faults and are not. |
 | [`CHANGELOG-design.md`](./CHANGELOG-design.md) | Every place the running system differs from the design and architecture documents, with the reason. Nothing is quietly corrected in place. |
+| [`docs/demo-runbook.md`](./docs/demo-runbook.md) | The exam script: the 48h checklist, the timed sequence from an empty cluster, where the narration goes so a counter is never read mid-flight, and a degrade branch for every step that can fail. |
+| [`presentation/`](./presentation/) | The final deck — architecture and the decisions worth defending. |
+
+## Driving it through the Client CLI
+
+`Client-Checkpoint.md` §9 asks this README to carry the whole canonical command surface, each
+command's backend mapping, the seeding procedure, the tournament threshold, and any gap. The CLI's
+own [`README`](./clients/cli/README.md) has the detail; this is the map.
+
+**Invocation.** Native: `cd clients/cli && npm install && npm run build`, then
+`node dist/cli.js <command>`. Docker: `docker build -t unoarena-cli clients/cli` then
+`docker run --rm -e UNOARENA_API_URL=http://<host>:30080 unoarena-cli <command>`. The only
+configuration is `UNOARENA_API_URL` (the gateway — never hardcoded), plus optional
+`UNOARENA_SESSION` (one session file = one player identity) and `UNOARENA_POLL_MS`.
+
+| § | Command | Backend operation |
+|---|---|---|
+| 5.A | `register` / `login` | `POST /auth/register` · `POST /auth/login` → `identity` |
+| 5.A | `whoami` / `logout` | `GET /auth/whoami` · `POST /auth/logout` |
+| 5.A | `seed --count N [--prefix P]` | `POST /auth/register`, falling back to `/auth/login` per account |
+| 5.B | `room create [--max N]` | `POST /rooms` (with an `Idempotency-Key`) → `room-gameplay` |
+| 5.B | `room list` / `room join <id>` / `room leave [<id>]` | `GET /rooms` · `POST /rooms/{id}/players/{me}` · `DELETE /rooms/{id}/players/{me}` |
+| 5.B/5.C | `play --casual` / `play --room <id>` | list → join → else create, then `GET /rooms/{id}/stream` (SSE) + `GET /rooms/{id}/games/{n}` |
+| 5.C | `play <n>` / `draw` / `pass` / `uno` / `challenge` / `state` / `quit` | `POST /rooms/{id}/games/{n}/moves` (`state` re-reads, `quit` is local) |
+| 5.D | `spectate <roomId>` | `GET /rooms/{id}/spectate` (SSE) → `spectator` |
+| 5.E | `bot [--casual \| --room <id> \| --tournament [<id>]]` | the same surfaces, played by a seeded RNG |
+| 5.E | `tournament register [<id>]` / `status [<id>]` | `POST /tournaments` · `POST /tournaments/{id}/register` · `GET /tournaments/{id}` → `tournament` |
+| — | `tournament bracket [<id>]` | `GET /tournaments/{id}/bracket` → `analytics` (a read model, not §5) |
+
+**Seeding test accounts (§5.A).** `node dist/cli.js seed --count 8 --prefix load --json` ensures N
+accounts exist and prints credentials and tokens as JSON lines. It is safe to re-run: an account
+that already exists is logged in rather than reported as a failure, so the same command always
+yields N usable identities.
+
+**Tournament test threshold (§5.E).** Configurable and deliberately low.
+`TOURNAMENT_MIN_PLAYERS=4`, `TOURNAMENT_ROOM_SIZE=2`, `TOURNAMENT_ADVANCE_COUNT=1` in
+`gitops/apps/tournament/overlays/staging/values.yaml` — four `tournament register` processes are a
+whole event, and the bracket is best-of-three matches between pairs.
+
+**External IdP (§5.A).** Not applicable: authentication is not delegated. `identity` is ours —
+accounts, password hashing, single-active-session and the JWTs the gateway validates — so
+`register`/`seed` run against the real thing and there is no stub to describe.
+
+**Gaps, stated rather than left to be discovered (§8).** Every canonical command in §5 is
+implemented. What is *not* here: no external-IdP path (above); `--tournament` on `bot` registers
+and plays but does not create an event with a custom size; and the read-model commands `rating`,
+`leaderboard` and `stats` are extensions beyond §5 rather than part of it. Seven of the nine alert
+rules have never been observed firing and are documented as untested, and there is no tracing
+backend — both recorded in `specs/2026-08-18-p8-observability/ESTADO-FINAL.md`.
 
 **What is real — all ten deployables.** `gateway` (the single entry point: token
 validation, routing and the SSE tier), `identity` (accounts, single-active-session, JWTs),
