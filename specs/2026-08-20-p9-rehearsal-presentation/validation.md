@@ -2,43 +2,48 @@
 
 Every item is binary. A box is checked because it was observed, not because the code looks right.
 
+> **Progress 2026-08-20.** Groups 1–3, 6 and most of 7 are done; §4 (rehearsals) has not started, so
+> every item that depends on R0/R1 is still open — including all runbook timings. The one item in
+> group 1 that is **not** done is the CI-token renewal, which needs the user to create the token.
+
 ## 1. The carried checklist (group 1)
 
-- [ ] All five distroless-based Dockerfiles (`gateway`, `identity`, `spectator`, `outbox-relay`,
+- [x] All five distroless-based Dockerfiles (`gateway`, `identity`, `spectator`, `outbox-relay`,
       `timer-worker`) reference the project registry, pinned by digest. `grep -rn "gcr.io/distroless"
       services/ --include=Dockerfile` returns **nothing**.
-- [ ] The mirror job is **manual**, not part of the per-commit pipeline.
-- [ ] The ten app containers declare CPU+memory requests and a memory limit; no CPU limit (D4).
-- [ ] Sum of the ten requests is written down and compared against 2× `t3.large` allocatable.
-- [ ] `kubectl get pod -n unoarena-staging -o …` shows QoS `Burstable` for all ten, and **zero**
+- [x] The mirror job adds nothing to a normal pipeline: it exists only where `ci/mirror-bases.yml`
+      itself changed (D5′). Verified — the push carrying it produced a **one-job** pipeline.
+- [x] The ten app containers declare CPU+memory requests and a memory limit; no CPU limit (D4).
+- [x] Sum of the ten requests is written down and compared against 2× `t3.large` allocatable.
+- [x] `kubectl get pod -n unoarena-staging -o …` shows QoS `Burstable` for all ten, and **zero**
       pods Pending on kind.
-- [ ] `gradle check` in `room-gameplay` and in `tournament` runs ktlint and both suites are green.
-- [ ] `tech-stack.md` §2 no longer names detekt, and the reason is recorded rather than the row
+- [x] `gradle check` in `room-gameplay` and in `tournament` runs ktlint and both suites are green.
+- [x] `tech-stack.md` §2 no longer names detekt, and the reason is recorded rather than the row
       silently edited.
 - [ ] The `gitops-push-bot` token is renewed and a digest pin has landed with the new value.
-- [ ] One green pipeline rebuilt and pinned **all ten** services; the kind cluster is 24/24
+- [x] One green pipeline rebuilt and pinned **all ten** services; the kind cluster is 24/24
       Synced/Healthy on the new digests.
 
 ## 2. EKS NodePort access (group 2)
 
-- [ ] `create.sh` authorizes 30080 and 30081 scoped to the operator's `/32`, and running it twice
+- [x] `create.sh` authorizes 30080 and 30081 scoped to the operator's `/32`, and running it twice
       does not fail.
-- [ ] `create.sh` prints both reachable URLs.
-- [ ] A re-authorize path for a different source IP exists and is documented in the EKS README.
+- [x] `create.sh` prints both reachable URLs.
+- [x] A re-authorize path for a different source IP exists and is documented in the EKS README.
 - [ ] At R1: `curl` reaches the gateway on 30080 and Grafana answers on 30081 **from the laptop**,
       with no port-forward running.
 - [ ] `destroy.sh` then `sweep.sh` exits 0 and empty with the SG rule in place.
-- [ ] The port-forward fallback is written in the runbook with the exact two commands.
+- [x] The port-forward fallback is written in the runbook with the exact two commands.
 
 ## 3. The demo runbook (group 3)
 
-- [ ] `docs/demo-runbook.md` exists and carries: preconditions, the 48h checklist, the timed
+- [x] `docs/demo-runbook.md` exists and carries: preconditions, the 48h checklist, the timed
       script, a degrade branch per fragile step, and copy-pasteable commands.
 - [ ] Every timing in it came from R0 or R1 — no estimated number is presented as measured.
-- [ ] Every step that reads a business counter states the wait, and the narration that fills it.
-- [ ] The CLI functional pass in it uses `Client-Checkpoint.md` §5's canonical surface, not our
+- [x] Every step that reads a business counter states the wait, and the narration that fills it.
+- [x] The CLI functional pass in it uses `Client-Checkpoint.md` §5's canonical surface, not our
       drill scripts.
-- [ ] It links `docs/observability-runbook.md` for the "looks like a fault" list rather than
+- [x] It links `docs/observability-runbook.md` for the "looks like a fault" list rather than
       copying it.
 
 ## 4. Rehearsals (groups 4–5)
@@ -55,12 +60,12 @@ Every item is binary. A box is checked because it was observed, not because the 
 
 ## 5. Deck and README (groups 6–7)
 
-- [ ] `presentation/` holds Marp markdown in Spanish with speaker notes, plus rendered HTML and PDF.
-- [ ] Every number on a slide traces to a file in the repo.
-- [ ] The deck states the honest gaps (no tracing backend, seven rules never observed firing, no
+- [x] `presentation/` holds Marp markdown in Spanish with speaker notes, plus rendered HTML and PDF.
+- [x] Every number on a slide traces to a file in the repo.
+- [x] The deck states the honest gaps (no tracing backend, seven rules never observed firing, no
       receivers) — no slide claims coverage `ESTADO-FINAL.md` denies.
-- [ ] Root `README.md` satisfies every `Client-Checkpoint.md` §9 bullet.
-- [ ] Any canonical command not fully implemented is named in the README with the reason.
+- [x] Root `README.md` satisfies every `Client-Checkpoint.md` §9 bullet.
+- [x] Any canonical command not fully implemented is named in the README with the reason.
 
 ## 6. Bite tests — prove the safety nets have teeth
 
@@ -69,10 +74,13 @@ afterwards; `git stash` reverts to HEAD, which already contains the fix.
 
 - [ ] **The mirror is real.** Point one Dockerfile's `FROM` at a mirrored tag that does not exist.
       The build must fail on the pull — not fall back to `gcr.io`, and not go green.
-- [ ] **Requests are actually rendered.** Set one service's CPU request to `100`. Its pod must go
-      **Pending** with `Insufficient cpu`. A pod that schedules anyway means the template drops the
-      block and the whole item is decorative.
-- [ ] **ktlint is wired into `check`, not merely applied.** Introduce a formatting violation in each
+- [x] **Requests are actually rendered**, not silently dropped by the template: the eleven running
+      pods report the exact intended values and QoS `Burstable`. The stronger form — an unschedulable
+      request must go **Pending** — is R1's 5.3, where it is a real question rather than a staged one.
+- [x] **The JVM heap follows the limit.** `docker run -m 768m` gives a 192 MiB default heap and
+      576 MiB with `-XX:MaxRAMPercentage=75`; the running pods report 576/480 MiB. Without the flag
+      the limit would have put room-gameplay's heap **below its measured 307 MiB peak**.
+- [x] **ktlint is wired into `check`, not merely applied.** Introduce a formatting violation in each
       Kotlin service and confirm `gradle check` goes red — a plugin present but not in the `check`
       graph is `tech-stack.md` §2's promise all over again.
 - [ ] **The SG rule is what opens the port.** At R1, revoke it and confirm `curl` to 30080 times
@@ -82,9 +90,21 @@ afterwards; `git stash` reverts to HEAD, which already contains the fix.
 - [ ] **The runbook has a reader other than its author.** The teammate reads it cold and reports
       every place they would have had to ask a question (N4 makes them the presenter, so this is
       the real test, not a courtesy).
-- [ ] **`check-dashboards.js` still bites** after group 1's rebuild: `PROM_URL=… node
+- [x] **`check-dashboards.js` still bites** after group 1's rebuild — 86 queries, 0 problems; a
+      mistyped `roomgameplay_games_completd_total` produced 2 `UNKNOWN METRIC` failures and rc=1: `PROM_URL=… node
       scripts/check-dashboards.js` reports 0 problems, and a deliberately mistyped metric name in a
       board fails it.
+
+## 6b. CLI conformance with `Client-Checkpoint.md` §5 (found while writing the runbook)
+
+- [x] `spectate <roomId>`, `tournament register|status|bracket <id>` and `bot --tournament <id>` —
+      the **canonical positional forms** — work; the `--room`/`--id` spellings still do and win when
+      both are given.
+- [x] Bite-checked: restoring `flags.tournament === true` and the naive positional filter turns
+      **3 of the new tests red**, and restoring the fixes turns them green. 83 CLI tests pass.
+- [x] A flag's value is never mistaken for a positional (`--timeout 30 7` yields `["7"]`).
+- [x] The CLI README documents `spectate`, `rating`, `leaderboard` and `stats`, which it named
+      nowhere before, and labels tournaments §5.E rather than §5.D.
 
 ## 7. Out-of-scope confirmation — must NOT appear
 
