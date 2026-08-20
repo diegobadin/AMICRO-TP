@@ -415,6 +415,13 @@ What P9 inherits, and must not break:
   depend on a public registry's mood on the day. A CI supply-chain change, which is why P8 left it
   alone.
 - **Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
+- **Decide how the two NodePorts are reached on EKS — 30080 (gateway) and 30081 (Grafana).**
+  Nothing in `gitops/bootstrap/eks/` opens the node security group for either, and the P1 rehearsal
+  predates the gateway, so **the NodePort path has never been exercised on AWS**. Either the
+  rehearsal opens the SG in `create.sh`, or the demo runs both surfaces through `kubectl
+  port-forward` and the runbook says so. This is the difference between "open two URLs" and "keep
+  two port-forwards alive" in front of the faculty — worth settling at the first rehearsal, not on
+  the day.
 - **Decide whether the ten app containers get resource requests/limits.** None of them declare
   either today, while every platform component does — so they are `BestEffort` QoS, first to be
   evicted under memory pressure, and saturation cannot be expressed as a percentage of a limit

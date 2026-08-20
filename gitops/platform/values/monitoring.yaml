@@ -63,8 +63,13 @@ grafana:
   admin:
     existingSecret: grafana-admin
   # 30081 is published by the kind node and has been free since P4 collapsed the two NodePorts into
-  # the gateway. One fixed URL that behaves the same on kind and on EKS, and one less live command
-  # during the demo. Still no ingress and no TLS: same posture as the gateway on a private cluster.
+  # the gateway. One fixed URL locally, and one less live command during the demo. Still no ingress
+  # and no TLS: same posture as the gateway on a private cluster.
+  #
+  # On EKS this is a NodePort like any other and reaching it from outside needs the node security
+  # group opened for the port — which nothing in gitops/bootstrap/eks/ does, for 30080 either. The
+  # P1 rehearsal predates the gateway, so that path has never been exercised on AWS. P9's checklist
+  # carries it; until then, assume `kubectl port-forward` on a cloud cluster.
   service:
     type: NodePort
     nodePort: 30081

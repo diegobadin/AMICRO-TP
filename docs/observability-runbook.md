@@ -9,7 +9,7 @@
 
 | | |
 |---|---|
-| **Grafana** | `http://localhost:30081` — NodePort, published by the kind node since P3 and free since P4 collapsed the two NodePorts into the gateway. |
+| **Grafana** | `http://localhost:30081` — NodePort, published by the kind node since P3 and free since P4 collapsed the two NodePorts into the gateway. **On kind only.** On EKS nothing opens the node security group for 30081 (or for the gateway's 30080), and that path has never been exercised there — use `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80` on a cloud cluster until P9 settles it. |
 | **Login** | `admin` / the value of `GRAFANA_ADMIN_PASSWORD` in `~/.amicro_secrets.env`. Sealed into `monitoring` as `grafana-admin` by `gitops/secrets/seal.sh`; the chart's own generated password no longer works. |
 | **Prometheus / Alertmanager** | No node port. `kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090`. Both are reachable from Grafana as datasources (`prometheus`, `alertmanager`, `loki` — fixed uids, so dashboards survive a reinstall). |
 
