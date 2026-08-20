@@ -58,7 +58,30 @@ async function enterTournament(flags: Record<string, string | boolean>, json: bo
     emit(resultLine("tournament_create", created), json);
     return null;
   }
-  return (await openTournament()) ?? String(created.payload.tournamentId);
+  return (await settledOpenTournament()) ?? String(created.payload.tournamentId);
+}
+
+/**
+ * The lowest open tournament, once the list has stopped moving.
+ *
+ * A single re-read after creating converges everyone *except* the client that won the create race:
+ * it finishes first, so the only tournament in existence at that instant is its own, and it
+ * registers there while everybody else converges elsewhere. P9's R0 drill produced exactly that —
+ * four bots, four tournaments, three registrations on one and one on another, threshold of four
+ * never reached and every bot timing out with nothing logging a problem.
+ *
+ * Two consecutive reads agreeing is what "settled" means here, and the value returned was open on
+ * the most recent one. The creates land within tens of milliseconds, so this normally costs one gap.
+ */
+async function settledOpenTournament(attempts = 5, gapMs = 300): Promise<string | null> {
+  let previous = await openTournament();
+  for (let i = 1; i < attempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, gapMs));
+    const current = await openTournament();
+    if (current && current === previous) return current;
+    previous = current;
+  }
+  return previous;
 }
 
 /** Where this player stands right now, from the service that decides it. */

@@ -65,9 +65,20 @@ GITOPS_REPO_TOKEN=<PAT with read_repository> USE_KIND=false gitops/bootstrap/ins
 | T | What | Say while it happens |
 |---|---|---|
 | 0:00 | `install.sh` starts | One command, and it is the same one on kind and on EKS. It installs Argo CD and the Sealed Secrets controller, then applies **two** app-of-apps — platform and services — and stops. Nothing after this point is `kubectl apply`. |
-| ~3:00 _(measured on kind)_ | `install.sh` returns | The script is done; the cluster is not. What is running now is Argo reconciling git. |
-| → | `kubectl get app -n argocd -w` | Sync waves: secrets at −1, then operators, then the stateful set — Kafka, Postgres, Redis — then the ten services. The schema-owning services **restart 5–7 times here and that is correct**: they exit rather than serve against a database that is not migrated yet. |
-| ~12:25 _(measured on kind; unmeasured on EKS)_ | **24/24 Synced/Healthy** | Twenty-four Argo applications: the ten services, twelve platform components, and the two app-of-apps roots that own them. |
+| **3:06** _(R0)_ | `install.sh` returns | The script is done; the cluster is not. What is running now is Argo reconciling git. |
+| → | `kubectl get app -n argocd -w` | Sync waves: secrets at −1, then operators, then the stateful set — Kafka, Postgres, Redis — then the ten services. The schema-owning services **restart 5–7 times here and that is correct**: they exit rather than serve against a database that is not migrated yet. R0 measured **7** for each of the five, and **0** for `analytics-api`, which reads a schema it does not own and so connects lazily. |
+| **17:48** _(R0, kind)_ | **24/24 Synced/Healthy** | Twenty-four Argo applications: the ten services, twelve platform components, and the two app-of-apps roots that own them. |
+
+> **Treat that as a range, not a budget.** R0 spent **798 s of its 1068 s pulling images** — 41 pulls
+> into a node that has just been created. The number is bound by registry throughput, not by
+> Kubernetes: P8 measured 12 m 25 s for the same 24 apps, and the difference between the two runs is
+> network, not work. **EKS has no measurement at all yet** (P1's "~8 min" was a platform-only
+> install), and its nodes are always brand new. Say "somewhere between twelve and twenty minutes,
+> mostly image pulls" rather than a figure — and start the narration early.
+>
+> R0 recorded **zero** `Insufficient cpu/memory` events: the requests added in P9 cost nothing on a
+> single kind node. The ten `FailedScheduling` events it did record are all the node's own
+> not-ready taint in the first seconds, before the kubelet registers.
 
 ```bash
 kubectl get app -n argocd            # 24/24 Synced Healthy
@@ -81,6 +92,11 @@ is 24 apps on 2× `t3.large`. R1 measures it.
 
 This is the surface `Client-Checkpoint.md` §5 defines, driven the way the faculty would drive it,
 not the way our drill scripts do.
+
+**Who types what.** The casual game below is *interactive* — two people, two terminals — and that
+half cannot be rehearsed headlessly. R0 exercised it with `bot --casual` in both seats (54 and 60
+actions, 0 errors, one winner) and verified the rest of the surface directly. Rehearse the
+interactive form with a human before the day; it is the only step in this runbook that has not been.
 
 ```bash
 cd clients/cli && npm install && npm run build
@@ -124,6 +140,20 @@ done
 They converge on the lowest open tournament id, so four processes started together join one event.
 Nothing else is typed: rooms are provisioned round by round, matches are best-of-three, survivors
 are reseeded, and it ends with one champion.
+
+> **Two things R0 learned here.**
+>
+> **Start from a cluster with no open tournaments, or name the id.** A tournament left in
+> `REGISTRATION` by an earlier run absorbs the next player who registers, and the event then starts
+> with a roster that includes clients nobody is running. On a from-empty demo this cannot happen; on
+> a second run against the same cluster it will. The safe form is explicit:
+> `tournament register <id>` / `bot --tournament <id>` against a tournament created for the demo.
+>
+> **R0 hit the create race and P9 fixed it.** Four clients starting together all found nothing open
+> and all created; the one that finished first could only see *its own* tournament when it re-read,
+> so three registered on one and one on another, the threshold of four was never reached, and every
+> client timed out with nothing reporting a problem. The re-read now settles before choosing. The
+> re-run played to a champion in two rounds — `actions` 86/22/175/117, all four `ok`.
 
 ## 5. Observability — and where the waits go
 

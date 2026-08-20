@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSession } from "../src/api.js";
-import { followTournament } from "../src/tournament.js";
+import { followTournament, registerForTournament } from "../src/tournament.js";
 
 /**
  * The tournament client (P7 F8). What is worth testing here is the loop that decides when this
@@ -166,5 +166,54 @@ describe("entering a tournament", () => {
     expect(chosen).toBe("aaaa-1");
     expect(creates).toBe(0);
     expect(registered[0]).toContain("/tournaments/aaaa-1/register");
+  });
+});
+
+/**
+ * The create race, which R0 walked into on a fresh cluster: four clients start together, all find
+ * nothing open, all create. Whoever finishes first can only see its OWN tournament when it re-reads,
+ * so a single snapshot converges everybody except the create-race winner — three registrations on
+ * one tournament, one on another, a threshold of four never reached, and every client timing out
+ * with nothing reporting a problem.
+ */
+describe("converging on one tournament when everyone creates at once", () => {
+  const LOW = "1b058f71-211a-4b6f-bb7d-dbeb6f0a43b4";
+  const MINE = "5cd93bad-8e23-47bf-b383-50af1c725a5d";
+
+  it("registers against the lowest id even when the first re-read only sees its own", async () => {
+    session();
+    // The list as this client sees it: empty, then only its own, then the others have landed.
+    const lists = [[], [MINE], [LOW, MINE], [LOW, MINE]];
+    let reads = 0;
+    let registeredAgainst = "";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const reply = (payload: unknown, status = 200) =>
+          new Response(JSON.stringify(payload), {
+            status,
+            headers: { "content-type": "application/json", "x-correlation-id": "c" },
+          });
+
+        if (method === "GET" && url.endsWith("/tournaments")) {
+          const list = lists[Math.min(reads, lists.length - 1)];
+          reads += 1;
+          return reply(list.map((id) => ({ tournamentId: id, status: "REGISTRATION" })));
+        }
+        if (method === "POST" && url.endsWith("/tournaments")) return reply({ tournamentId: MINE }, 201);
+        if (method === "POST" && url.includes("/register")) {
+          registeredAgainst = url.split("/tournaments/")[1].split("/")[0];
+          return reply({}, 201);
+        }
+        return reply({}, 404);
+      }) as unknown as typeof fetch,
+    );
+
+    const chosen = await registerForTournament({}, true);
+    expect(registeredAgainst).toBe(LOW);
+    expect(chosen).toBe(LOW);
   });
 });
