@@ -32,3 +32,13 @@ serviceMonitor:
 secretName: ""
 
 env: []
+
+# Sized from usage measured under load on the kind cluster (P9): peak 140 MiB / 24m. Memory limit
+# only — a CPU limit throttles exactly when a demo bursts, and the limit is what lets the
+# golden-signals board express saturation as a percentage rather than absolute bytes.
+resources:
+  requests:
+    cpu: 50m
+    memory: 192Mi
+  limits:
+    memory: 384Mi

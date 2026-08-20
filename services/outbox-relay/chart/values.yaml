@@ -29,3 +29,14 @@ env: []
 # Extra relays, one per additional producer (P7): the same image with a different EVENT_SOURCE,
 # CE_TYPE_PREFIX, OUTBOX_KEY_COLUMN, BODY_ID_FIELD and database. Empty here; the overlay adds them.
 instances: []
+
+# Sized from usage measured under load on the kind cluster (P9): peak 18 MiB / 1m. Memory limit
+# only — a CPU limit throttles exactly when a demo bursts, and the limit is what lets the
+# golden-signals board express saturation as a percentage rather than absolute bytes.
+# Both relays share this block: the tournament instance is the primary's twin, same binary.
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    memory: 128Mi

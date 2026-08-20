@@ -32,6 +32,11 @@ spec:
               value: {{ .Values.port | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
+            # A JVM sizes its heap from the container's memory limit, and its default is 25% of it.
+            # With the limit below, that default would be a smaller heap than this service has been
+            # measured using — so the limit and the heap are set together or not at all.
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=75
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -61,3 +66,5 @@ spec:
               port: {{ .Values.port }}
             initialDelaySeconds: 3
             periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

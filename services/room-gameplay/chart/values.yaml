@@ -32,3 +32,15 @@ serviceMonitor:
 secretName: ""
 
 env: []
+
+# Sized from usage measured under load on the kind cluster (P9): peak 307 MiB / 21m. Memory limit
+# only — a CPU limit throttles exactly when a demo bursts, and the limit is what lets the
+# golden-signals board express saturation as a percentage rather than absolute bytes.
+# The JVM reads this limit: see JAVA_TOOL_OPTIONS in the deployment template, which stops the
+# default 25%-of-limit heap from landing below what this service was measured using.
+resources:
+  requests:
+    cpu: 100m
+    memory: 384Mi
+  limits:
+    memory: 768Mi
