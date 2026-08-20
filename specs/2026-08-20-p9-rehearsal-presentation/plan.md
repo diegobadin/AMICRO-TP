@@ -136,6 +136,39 @@ operator's laptop — or proves they do not, and the fallback becomes the plan w
 
 **Done when:** the runbook ran end to end with no improvisation and carries real kind timings.
 
+### 4.6 Results (2026-08-20) — **R0 DONE**
+
+`install.sh` returned at **3 m 06 s**, **24/24 Synced/Healthy at 17 m 48 s** — against P8's 12 m 25 s
+for the same 24 apps. The difference is **not** work and **not** P9's requests: R0 logged **zero**
+`Insufficient cpu/memory` events, and **798 s of the 1068 s were image pulls** (41 of them, into a
+node created that minute). The ten `FailedScheduling` events are the node's own not-ready taint in
+the first seconds. **The convergence time is registry-bound and belongs in the runbook as a range.**
+
+Everything documented as a not-a-fault reading held: the five schema-owning services restarted
+exactly **7** times, `analytics-api` **0**.
+
+Functional pass: `register`/`whoami` ok · two `bot --casual` played a full game (54 + 60 actions,
+**0 errors**, one winner) · `spectate <roomId>` **in the canonical positional form** · a four-bot
+tournament to a champion in two rounds via `bot --tournament <id>`, the form that used to play a
+casual game instead · the three business metrics read **7 / 1 / 11** after one scrape interval ·
+one `correlationId` returned **5 services** from Loki.
+
+**R0's defect — the tournament create race.** Four clients started together, all found nothing open,
+all created. The client that finished first could only see its own tournament when it re-read, so
+three registered on one and one on another; neither reached the threshold of four and all four timed
+out, with every individual call reporting `ok`. P3 and P7 each taught this lesson and the fix
+carried it as far as "re-read after creating" — a single snapshot, which converges everybody except
+the winner of the create race. The re-read now settles (two consecutive agreeing reads) before
+choosing. Bite-checked: restoring the single re-read turns the new test red.
+
+**Deviations found in the runbook**, all folded back: §3's timings were P8's rather than measured
+here; §4's casual game is interactive and cannot be rehearsed headlessly (now stated, and it is the
+one step still unrehearsed with a human); §4's tournament needed the warning that a leftover
+`REGISTRATION` tournament absorbs the next player.
+
+**Not done in R0:** the degrade branches (4.4) and the second from-empty pass (4.5). R0's defect was
+*not* a startup defect, so 4.5's trigger did not fire.
+
 ---
 
 ## 5. R1 — rehearsal on EKS (the roadmap's requirement)
