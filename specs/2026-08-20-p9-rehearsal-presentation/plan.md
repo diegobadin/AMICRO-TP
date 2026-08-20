@@ -41,6 +41,39 @@ services anyway, and because editing `ci/templates/**` pulls every service into 
 ten services, the kind cluster is back to 24/24 Synced/Healthy on the new digests, no pod is
 Pending, and `tech-stack.md` §2 matches what the builds actually run.
 
+### 1.9 Results (2026-08-20) — **DONE except 1.7**
+
+Pipeline **2776462081: success**, all ten services rebuilt and pinned, including the five now
+building from the mirrored bases. The kind cluster was repointed at this branch and reached
+**24/24 Synced/Healthy with no pod Pending**; two headless bots then played a full casual game,
+**121 actions, 0 errors**.
+
+**Measured peaks under load** (13 h of Prometheus history including P8's drill), and what was set:
+
+| Service | peak mem | peak cpu | req cpu | req mem | limit mem | now |
+|---|---|---|---|---|---|---|
+| room-gameplay | 307 MiB | 21m | 100m | 384Mi | 768Mi | 24.5% |
+| tournament | 219 MiB | 23m | 100m | 256Mi | 640Mi | 22.2% |
+| identity | 140 MiB | 24m | 50m | 192Mi | 384Mi | 19.6% |
+| gateway | 48 MiB | 8m | 50m | 96Mi | 256Mi | 13.9% |
+| spectator | 66 MiB | 29m | 50m | 96Mi | 256Mi | 12.2% |
+| ranking / analytics-workers / analytics-api | 41/35/28 MiB | ≤3m | 25m | 64Mi | 192Mi | 14–19% |
+| outbox-relay ×2 / timer-worker | ≤18 MiB | ≤1m | 25m | 32Mi | 128Mi | 6–9% |
+
+**Totals: 500m / 1312Mi requested, 3264Mi limited** across 11 containers. Platform requests today
+are 2100m / 3356Mi, so the committed total becomes **2600m / 4668Mi** against roughly 3860m /
+14100Mi allocatable on 2× `t3.large` — **67% CPU, 33% memory committed**. R2 is answered on paper;
+**5.3 still has to answer it on EKS**, where `kube-system` differs.
+
+**The landmine 1.4 nearly shipped.** Both Kotlin services ran with **no JVM heap flag**, so the JVM
+sized `MaxHeapSize` from the node: **3.83 GiB** measured. A memory limit changes that input — under
+a 768Mi limit the default 25% gives a **192 MiB** heap, *below* room-gameplay's measured 307 MiB
+peak. Verified directly with `docker run -m 768m`: 192 MiB without the flag, 576 MiB with
+`-XX:MaxRAMPercentage=75`. Live now: room-gameplay **576 MiB**, tournament **480 MiB**. A memory
+limit on a JVM container is not a config value, it is an input to the runtime.
+
+**1.7 (CI token) is not done** — creating it is the user's action.
+
 ---
 
 ## 2. Open the EKS NodePort path (E1)
