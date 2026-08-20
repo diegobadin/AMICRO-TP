@@ -237,6 +237,40 @@ the runbook's numbers are AWS numbers rather than kind numbers.
 
 **Done when:** P9 is closed the way P4–P8 were closed, and the roadmap has no unchecked phase left.
 
+### 8.5 Review pass (2026-08-20) — runbook and deck
+
+Aimed where R6 said to aim it: the runbook read as somebody who has never run it, the deck as
+somebody who did not build the system. **Eleven findings, all fixed.** The pass is now 6 for 6 at
+finding the phase's worst defect in the work the phase existed to do.
+
+| # | Finding | Why it mattered |
+|---|---|---|
+| 1 | **§4's tournament block could not run.** `tournament register` against `/tmp/t$i.json` — session files nothing had ever authenticated. Verified live: it exits `tournament_create: error (401)`. | The demo's headline step, dead on arrival, in the one part of the runbook R0 had exercised with `bot --user/--pass` instead of session files. Now seeds four accounts and logs each session in. |
+| 2 | **The 48h checklist said "EKS cluster created and empty".** At ~$0.27/h that is **~$13 of a $50 budget** burned before the exam starts, and it contradicts the EKS README's own cost rules. | Budget exhaustion deactivates the account permanently. Now an explicit *do not create it yet*; creation is a same-day step. |
+| 3 | `UNOARENA_API_URL`'s comment still said `localhost:30080` after the fallback moved to 18080. | §4 and §6 disagreed about the fallback in the same document. |
+| 4 | §6's kind fallback still quoted **12m25s** after §3 of the same file had been updated to R0's 17m48s. | A stale number three screens from its own correction. |
+| 5 | **The deck quoted 12m25s as *the* number**, in both a slide and its speaker notes. | R0 superseded it and showed the figure is registry-bound. Now a 12–18 min range in the deck, and `presentation/README.md` says *quote the range, not either figure*. |
+| 6 | §3 said "the EKS number does not exist yet" **twice, three lines apart**. | Two copies of one statement is the shape that drifts. Deduplicated. |
+| 7 | The header legend described a `(measured)`/`(unmeasured)` convention the file had stopped using. | A legend for a notation that is not there is worse than none. |
+| 8 | `spectate --room <roomId>` in the runbook — the *non*-canonical form, contradicting D8 and the CLI README. | The runbook exists to be typed by the faculty; it should show what §5.D writes. |
+| 9 | §4 said "they converge on the lowest open id"; the note under it said "name the id instead". | Instruction and advice contradicting each other. The note is now scoped to a re-run against a used cluster. |
+| 10 | **`authorize-nodeports.sh` would have authorized `/32`** if the public-IP lookup failed: an assignment's command substitution does not trip `set -e`, so the failure would have surfaced later as an opaque AWS parameter error. | Guarded, with the failure named. |
+| 11 | "11 containers" where it meant 11 pods. | Wrong noun in a line read aloud while pointing at `kubectl` output. |
+
+**Not changed, and why.**
+
+- **The mirror job's `check()` spanning two script lines** — GitLab runs a job's script entries in
+  one shell, so the function survives. Not assumed: the job ran and printed both `pin as:` lines.
+- **The 1,377-entry ktlint baseline** — deliberate (D3′), and recorded in `tech-stack.md` §2 rather
+  than hidden. Reformatting instead would move 5,870 lines with no behavioural content.
+- **No CPU limits** — D4. A CPU limit throttles exactly when a demo bursts.
+- **Thirteen slides** — not trimmed. Each maps to something the consigna or the grading lens asks
+  about, and the "what we did not do" slide is load-bearing for the honesty criterion.
+- **The runbook is EKS-first with kind as a degrade branch** — N2 locks the exam to AWS; kind is the
+  harness, not the delivery.
+- **`docs/demo-runbook.md` still does not restate the observability runbook** (D6). Two copies of
+  the "looks like a fault" list is the two-copies-of-one-rule bug in prose.
+
 ---
 
 ## What this plan deliberately does *not* include
