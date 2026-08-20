@@ -190,12 +190,19 @@ Each of these is a decision made now, not on the day.
 
 | If | Then | Cost |
 |---|---|---|
-| **The NodePorts do not answer** (SG, VPC, or a changed address) | Two port-forwards, and say why: `kubectl -n unoarena-staging port-forward svc/gateway 30080:80` and `kubectl -n monitoring port-forward svc/monitoring-grafana 30081:80`. `UNOARENA_API_URL=http://localhost:30080`. | Two processes to keep alive. Nothing else changes. |
-| **The slot is running short** | Cut the tournament (§4's last block). The casual game, the boards and the Loki trace are the spine. | `Client-Checkpoint.md` §5.E marks tournament play mandatory **but degradable**. |
+| **The NodePorts do not answer** (SG, VPC, or a changed address) | Two port-forwards on **different local ports**, and say why: `kubectl -n unoarena-staging port-forward svc/gateway 18080:80` and `kubectl -n monitoring port-forward svc/monitoring-grafana 18081:80`, then `UNOARENA_API_URL=http://localhost:18080` and Grafana on `http://localhost:18081`. | Two processes to keep alive. Nothing else changes. |
+| **The slot is running short** | Cut the tournament (§4's last block). The casual game, the boards and the Loki trace are the spine. **Say that `tournament_tournaments_completed_total` therefore reads 0** — it is one of the consigna's three business metrics, and an unexplained zero on the board it is named on reads as a broken metric rather than a skipped step. | `Client-Checkpoint.md` §5.E marks tournament play mandatory **but degradable**. |
 | **Convergence stalls below 24/24** | `kubectl get app -n argocd` for the app that is not Synced, then its pods. Do not `kubectl apply` anything — Argo owns it and `selfHeal` will undo you. | Open the async-spine board while diagnosing. |
 | **A pod is Pending on insufficient CPU/memory** | The requests added in P9 do not fit this cluster. `kubectl -n unoarena-staging patch` is undone by Argo; the honest move is to say so and scale the nodegroup. | Should be impossible — R1 checks it — but it is the one new failure mode P9 introduced. |
 | **Loki is down** | Skip the correlationId step and say Loki is deliberately **non-load-bearing**: all three boards and all nine alert rules still work, because they read Prometheus. P8 verified this by taking Loki away. | One demo step. |
 | **The cluster is unrecoverable** | Fall back to kind: `gitops/bootstrap/install.sh` on the laptop, same script, same commit, ~12m25s _(measured)_. | The demo is local, and the EKS story becomes the rehearsal evidence. |
+
+> **Why 18080 and not 30080.** R0 walked this branch and found the obvious spelling is a trap on
+> kind: the node already publishes 30080/30081 on `0.0.0.0`, so `port-forward … 30080:80` binds
+> **only `[::1]`** — it prints one `Forwarding from` line instead of two, and `localhost:30080` may
+> then reach the real NodePort rather than the forward. The fallback appears to work while
+> bypassing itself, which is the one thing a fallback must never do. Distinct ports are unambiguous
+> on kind and on EKS alike; both were verified answering `200`.
 
 ## 7. After
 
