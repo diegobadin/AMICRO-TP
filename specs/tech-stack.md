@@ -24,8 +24,8 @@ Each placeholder uses the language its bounded context names in
 |---------|----------|-----------|-------------|
 | `gateway` | Node.js / TS | vitest | eslint + tsc |
 | `identity` ⭐ | Node.js / TS | vitest | eslint + tsc |
-| `room-gameplay` | Kotlin (JVM) | JUnit5 | ktlint / detekt |
-| `tournament` | Kotlin (JVM) | JUnit5 | ktlint / detekt |
+| `room-gameplay` | Kotlin (JVM) | JUnit5 | ktlint |
+| `tournament` | Kotlin (JVM) | JUnit5 | ktlint |
 | `ranking` | Python | pytest | ruff + mypy |
 | `analytics-workers` | Python | pytest | ruff + mypy |
 | `analytics-api` | Python | pytest | ruff + mypy |
@@ -36,6 +36,18 @@ Each placeholder uses the language its bounded context names in
 ⭐ `identity` carries the **real slice** (`register` + `whoami`); the other nine are
 canned-response placeholders. The **Client CLI** (smoke-test harness) is **Node.js / TS** to
 match `identity`.
+
+> **The two Kotlin rows said "ktlint / detekt" until P9, and neither build applied either plugin** —
+> `gradle check` was `test` alone. P9 wired ktlint, so `check` now genuinely lints; **detekt is
+> struck rather than added**. One linter that is deterministic and auto-fixable is enough, and
+> adopting a second ruleset on two mature services in the phase that exists to freeze and rehearse
+> them buys nothing the exam can see.
+>
+> ktlint runs against a **baseline** (`config/ktlint/baseline.xml`, one per module, **1,377
+> entries**): the code predates the linter, and formatting it to `ktlint_official` moved **5,870
+> lines across 64 files** with no behavioural content. The baseline grandfathers exactly those and
+> nothing else — a new violation fails `check`, which is bite-checked in P9's `validation.md`. The
+> debt is listed rather than hidden, which is the point of a baseline over a suppression.
 
 ## 3. GitOps with Argo CD (deploy model)
 
