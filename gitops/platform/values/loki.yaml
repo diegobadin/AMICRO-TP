@@ -24,9 +24,8 @@ loki:
           prefix: index_
           period: 24h
   limits_config:
+    # Matches Prometheus's retention beside it. Nothing here is an archive.
     retention_period: 24h
-    # The demo replays events; a client that reconnects can legitimately resend an identical line.
-    reject_old_samples: false
 
 singleBinary:
   replicas: 1

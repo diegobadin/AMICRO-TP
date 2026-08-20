@@ -86,8 +86,22 @@
       board's "Alerts firing" count (it is not a fault) and kept in the detail panel with the
       reason, because an always-on alert is the alerting form of pairing a gauge with a success
       counter: it makes silence mean healthy rather than broken.
-- [ ] Every rule in the shipped set has been observed in `firing` at least once (§7/§8 does this).
-- [ ] The alert-state panel on the async-spine board shows a firing rule without leaving Grafana.
+- [~] Every rule observed `firing` at least once — **2 of 9**, recorded honestly rather than
+      claimed. The two chosen are the ones that matter most, and each was produced by recreating a
+      real outage rather than by editing a threshold:
+
+      | Rule | How it was fired | Result |
+      |---|---|---|
+      | `UnoArenaOutboxRelayNotReading` | tournament relay pointed at a database host that does not exist — pod stays **1/1 Running** and stops draining | `firing`, `job="outbox-relay-tournament"`, cleared on restore |
+      | `UnoArenaTimerTicksFailing` | timer worker given a wrong `INTERNAL_TOKEN`, then a two-player room left to lapse its 30 s turn — **P7's outage, reproduced** | `tick-failed … unexpected status 401` ×91, `firing`, cleared on restore |
+
+      The remaining seven are unfired. `UnoArenaTargetDown` and `UnoArenaContainerCrashLooping` need
+      a broken image or a dead node; `UnoArenaConsumerNeverStarted` needs a broker that accepts
+      connections but never elects. Each is reachable in a drill and none is cheap, so they are
+      listed as untested rather than described as covered.
+- [x] The alert-state panel on the async-spine board shows a firing rule without leaving Grafana —
+      `count(ALERTS{alertstate="firing", alertname!="Watchdog"})`, verified moving to 1 and back to 0
+      across both outages above.
 
 The nine rules and the failure each is derived from:
 

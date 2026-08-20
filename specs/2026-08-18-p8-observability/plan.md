@@ -234,6 +234,42 @@ list. This pass is 4 for 4 at finding the phase's worst defect.
 
 ---
 
+## F9.8 — Self-review pass (post-drill)
+
+Read as a PR reviewer approving this for production. Five for five: the pass found the phase's
+worst defect again, and it was in the work this phase existed to do.
+
+| # | Finding | Change |
+|---|---|---|
+| **R1** | **Two of the nine alert rules could not fire at all.** `UnoArenaConsumerLagging` triggered above `500` lag — but a complete drill (a casual game plus a four-player tournament) publishes **179 events in total**, so a consumer that died outright could never reach the threshold. `UnoArenaCommandsContended` triggered above `10/min` against a measured **0**. Both were plausible production numbers written into a system that runs at demo scale. This is D7's own rule — *a rule that has never fired is the alerting form of a gauge that was never `Set`* — broken structurally by the rules written to satisfy it. | Retuned from measured data: **25** and **5**, with the measurement written into each rule's description so the next person can see where the number came from. |
+| **R2** | **A Loki setting justified by a comment describing something the setting does not do.** `reject_old_samples: false` was commented "the demo replays events; a client that reconnects can legitimately resend an identical line" — but that option governs the *age of a log line's timestamp*, not duplicate lines. The reasoning was wrong, and once corrected the setting had no reason to exist: nothing here ships week-old logs. | Both removed. Configuration nobody can justify is configuration nobody can review. |
+| **R3** | **The plan told itself to do this and then did not.** Task 6.4 says "tune every threshold against the **real** drill numbers, not guessed ones" — the thresholds were written before the drill and never revisited until this pass. R1 is that omission's cost. | Noted rather than fixed: the lesson is that a plan step whose input does not exist yet needs re-reading after it does. |
+
+### Not changed, and why
+
+- **`or vector(0)` on every panel query.** It makes a mistyped metric name render as a confident
+  zero — considered removing it for that reason. Kept: `check-dashboards.js` closes exactly that
+  hole by checking every name against Prometheus and, failing that, against the source that
+  declares it, and a fresh cluster showing "No data" to a grader reads as an outage.
+- **`import * as metrics` and `import { log }` from the same module** in `spectator/src/server.ts`.
+  Two imports of one module is a reviewer's eyebrow. Kept: the helper moved only because the
+  consumer needs it and `server.ts` imports the consumer, and rewriting 11 unrelated call sites to
+  `metrics.log(...)` would be a bigger diff than the change it serves.
+- **`spectator` now logs one line per projected event.** Considered gating it behind a flag on
+  volume grounds. Kept: `ranking` and `analytics-workers` have always logged per message, and an
+  asymmetry between the three consumers is worse than the volume — which the collector already
+  reduced far more by dropping health probes, 98% of the gateway's output.
+- **No `absent()`-style rule for a workload scaled to zero.** A Deployment at zero replicas loses
+  its scrape target rather than reporting `up 0`, so no rule of ours sees it. Left uncovered: that
+  is the case GitOps `selfHeal` prevents, and an `absent()` rule would fire during every rollout.
+  Written into the findings so nobody "tests" the alerts by scaling something down and concludes
+  they are broken.
+- **Seven of nine rules have not been observed firing.** Two were, on purpose, and they are the two
+  that matter most: the relay that is up and silent, and P7's 401ing timer worker. The rest are
+  recorded as unfired rather than claimed — see `validation.md` §4.
+- **Resource requests/limits and the missing ktlint/detekt** — real, found here, and neither is
+  observability. Routed to P9's checklist rather than smuggled into this phase.
+
 ## What this plan deliberately does *not* include
 
 - **No tracing backend.** No OpenTelemetry collector, no Jaeger, no spans.

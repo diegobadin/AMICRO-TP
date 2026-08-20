@@ -82,17 +82,20 @@ spec:
 
         - alert: UnoArenaConsumerLagging
           expr: >-
-            ranking_consumer_lag > 500
-            or analytics_consumer_lag > 500
-            or spectator_consumer_lag > 500
+            ranking_consumer_lag > 25
+            or analytics_consumer_lag > 25
+            or spectator_consumer_lag > 25
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "{{ $labels.job }} is behind on {{ $labels.topic }}"
             description: >-
-              Lag that climbs and does not come back. Threshold set above a normal tournament burst
-              so a busy demo does not fire it.
+              Lag that climbs and does not come back. Threshold set from the measured drill rather
+              than guessed: a full run — a casual game plus a four-player tournament — publishes
+              **179 events in total**, and lag never leaves 0. An earlier value of 500 was higher
+              than the entire event volume of a demo, so it could not have fired at all; 25 is a
+              real stall here and still well clear of a burst.
 
         - alert: UnoArenaTimerTicksFailing
           expr: rate(timerworker_ticks_total{result="failed"}[5m]) > 0
@@ -110,7 +113,7 @@ spec:
     - name: unoarena.tournament
       rules:
         - alert: UnoArenaCommandsContended
-          expr: rate(tournament_commands_contended_total[5m]) * 60 > 10
+          expr: rate(tournament_commands_contended_total[5m]) * 60 > 5
           for: 5m
           labels:
             severity: warning
@@ -120,7 +123,9 @@ spec:
               A few during a registration rush is the design working — the command returns 409 and
               the client retries. Sustained means the retry budget is too small for the contention.
               What must never happen is a lost race reported as success, which is the defect P7's
-              review pass found.
+              review pass found. Threshold from the drill: four clients converging on one tournament
+              produced **0** contended commands, so anything sustained above a handful per minute is
+              real. The earlier value of 10/min was above what this system can generate at all.
 
         - alert: UnoArenaReconcilerFailing
           expr: rate(tournament_reconcile_failures_total[10m]) > 0
