@@ -67,6 +67,11 @@ the busiest service, by a change whose entire purpose was to make it safer.
 pod had restarted after that tournament ran. The runbook's own claim that "a `0` on a business panel
 is a real zero" was too strong and is now qualified.
 
+**A numbered hand that would not take a number.** The one step no drill can cover: two humans, two
+terminals. Both typed `5` at a numbered hand, got a usage line, and lost the turn to the 30-second
+clock — the game ended in a **double forfeit with no card ever played**, with every rule working
+exactly as designed. Fixed (14.11), and the runbook now names the clock and the lever.
+
 **A fallback that bypasses itself.** The runbook's port-forward fallback, `port-forward svc/gateway
 30080:80`, binds **only `[::1]`** on kind because the node already publishes `0.0.0.0:30080` — so
 `localhost:30080` may reach the real NodePort instead. It appeared to work while not being under
@@ -89,9 +94,6 @@ more were stale numbers that a *later* measurement in the same document had alre
 
 ## Known gaps, deliberate
 
-- **The interactive two-human casual game has never been rehearsed.** It needs two people typing;
-  both rehearsals used `bot --casual` in both seats, which is a different code path. It is the one
-  step in the runbook nobody has performed.
 - **The tournament-cut degrade branch is verified by analysis, not by a clean run.** No alert fires
   because of the cut — measured: the idle tournament relay keeps reading (`rate ≈ 0.88/s`) and
   `tournament_consumer_starts_total` is 1 from boot, so the two liveness rules that could plausibly

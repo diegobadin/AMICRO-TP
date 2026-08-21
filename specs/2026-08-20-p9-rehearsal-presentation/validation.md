@@ -95,7 +95,10 @@ afterwards; `git stash` reverts to HEAD, which already contains the fix.
 - [x] **The SG rule is what opens the port.** Revoked → `http 000`; re-authorized → `http 200`.
       A second authorize run reported `already open`, so it is idempotent as designed.
 - [~] **The degrade branch lands.** Port-forward: walked, and it found a defect. Tournament-cut:
-      reasoned through, not run clean end to end.
+      verified by measurement (no alert can fire because of the cut), not by a clean run.
+- [x] **A human plays a game.** Two people, two terminals — and it **failed**: a numbered hand would
+      not take a number, both players lost their turns to the 30 s clock, double forfeit, no card
+      played. Fixed and unit-tested (14.11); **needs one more two-human run to confirm.**
 - [ ] **The runbook has a reader other than its author.** The teammate reads it cold and reports
       every place they would have had to ask a question (N4 makes them the presenter, so this is
       the real test, not a courtesy).
