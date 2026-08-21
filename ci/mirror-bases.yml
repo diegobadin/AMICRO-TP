@@ -4,10 +4,14 @@
 # complete operation after 0 attempts", i.e. it does not retry a base-image pull at all. Every
 # retry was a human clicking the job.
 #
-# The job exists only in pipelines where THIS FILE changed. That is the whole gate: a mirror that
+# The job exists only in PUSH pipelines where this file changed. That is the gate: a mirror that
 # re-resolves upstream on every pipeline reintroduces the dependency it removes, and refreshing a
-# base means editing the pinned source digest below anyway. Normal pipelines are unchanged — no
-# extra job, no extra manual gate.
+# base means editing the pinned source digest below anyway.
+#
+# GitLab evaluates `rules: changes:` as ALWAYS TRUE outside a push — api, web and schedule — so a
+# manually triggered pipeline does include this job. P9's closure run is where that showed up: 44
+# jobs instead of 43. Harmless, because copying the same digest to the same tag is idempotent and
+# the check below still has to pass, but it is not "never runs unless you edited it".
 #
 # Sources are pinned by digest, not by tag: the mirror copies a known image rather than whatever
 # `latest` meant on the day it ran. `--all` copies the whole index, which preserves the digest, so

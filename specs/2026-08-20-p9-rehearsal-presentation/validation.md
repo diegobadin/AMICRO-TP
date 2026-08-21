@@ -12,8 +12,10 @@ Every item is binary. A box is checked because it was observed, not because the 
 - [x] All five distroless-based Dockerfiles (`gateway`, `identity`, `spectator`, `outbox-relay`,
       `timer-worker`) reference the project registry, pinned by digest. `grep -rn "gcr.io/distroless"
       services/ --include=Dockerfile` returns **nothing**.
-- [x] The mirror job adds nothing to a normal pipeline: it exists only where `ci/mirror-bases.yml`
-      itself changed (D5′). Verified — the push carrying it produced a **one-job** pipeline.
+- [x] The mirror job adds nothing to a **push** pipeline: it exists only where `ci/mirror-bases.yml`
+      itself changed (D5′). Verified — the push carrying it produced a **one-job** pipeline, and the
+      ten-service push that followed did not include it. **A manually triggered run does include it**
+      (`changes:` is always true off-push), which is how the closure pipeline came to 44 jobs.
 - [x] The ten app containers declare CPU+memory requests and a memory limit; no CPU limit (D4).
 - [x] Sum of the ten requests is written down and compared against 2× `t3.large` allocatable.
 - [x] `kubectl get pod -n unoarena-staging -o …` shows QoS `Burstable` for all ten, and **zero**
