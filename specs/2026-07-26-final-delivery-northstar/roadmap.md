@@ -395,7 +395,14 @@ What P9 inherits, and must not break:
 - **Loki is non-load-bearing and must stay that way** — with it down, all three boards and all nine
   rules still work. Verified by taking it away.
 
-## P9 — Demo rehearsal + presentation
+## P9 — Demo rehearsal + presentation — **SHIPPED (pending merge)**
+
+> Spec: `specs/2026-08-20-p9-rehearsal-presentation/`. **All five carried items below are paid.**
+> Two rehearsals done: R0 on kind (24/24 from empty in 17 m 48 s) and **R1 on a freshly created EKS
+> cluster** — 24/24 in **8 m 53 s**, both NodePorts answering from the operator's laptop with no
+> port-forward, torn down and swept clean for ≈$0.30. The review pass found **eleven** more.
+> Still open: the CI-token renewal, the interactive two-human casual game, the exam date, and the
+> FF-merge itself.
 
 - Ships: timed empty-cluster runbook (the exact demo script), CLI functional pass (the faculty's
   test, self-run), presentation deck (final architecture + key decisions, from the ADRs and
@@ -405,7 +412,7 @@ What P9 inherits, and must not break:
 
 ### Carried into P9's checklist
 
-- **Mirror the `gcr.io/distroless` bases into the project registry.** **Six** rejections of the
+- **DONE (14.1). Mirror the `gcr.io/distroless` bases into the project registry.** **Six** rejections of the
   GitLab shared runners across P6, P7 and P8. The sixth is the one that should settle it: it hit
   **P8's closure run on `main`**, on `build:timer-worker` — a service P8 never touched — and took
   **three attempts** to pass, failing identically twice:
@@ -414,21 +421,21 @@ What P9 inherits, and must not break:
   all; the retry has to be a human clicking the job. A retry is not a fix, and the exam should not
   depend on a public registry's mood on the day. A CI supply-chain change, which is why P8 left it
   alone.
-- **Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
-- **Decide how the two NodePorts are reached on EKS — 30080 (gateway) and 30081 (Grafana).**
+- **STILL OPEN — needs the user to create it. Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
+- **DONE and PROVEN ON AWS (14.5). Decide how the two NodePorts are reached on EKS — 30080 (gateway) and 30081 (Grafana).**
   Nothing in `gitops/bootstrap/eks/` opens the node security group for either, and the P1 rehearsal
   predates the gateway, so **the NodePort path has never been exercised on AWS**. Either the
   rehearsal opens the SG in `create.sh`, or the demo runs both surfaces through `kubectl
   port-forward` and the runbook says so. This is the difference between "open two URLs" and "keep
   two port-forwards alive" in front of the faculty — worth settling at the first rehearsal, not on
   the day.
-- **Decide whether the ten app containers get resource requests/limits.** None of them declare
+- **DONE (14.2, 14.3). Decide whether the ten app containers get resource requests/limits.** None of them declare
   either today, while every platform component does — so they are `BestEffort` QoS, first to be
   evicted under memory pressure, and saturation cannot be expressed as a percentage of a limit
   (P8's golden-signals board shows absolute bytes and says why). Academic on a single-node kind
   cluster; less so on the 2× t3.large EKS rehearsal, and a plausible thing for a grader to ask
   about.
-- **`gradle check` runs no linter.** `tech-stack.md` §2 lists ktlint/detekt for `room-gameplay` and
+- **DONE (14.4). `gradle check` runs no linter.** `tech-stack.md` §2 lists ktlint/detekt for `room-gameplay` and
   `tournament`, and neither `build.gradle.kts` applies either plugin, so `check` is just `test`.
   Either wire them or correct the table.
 
