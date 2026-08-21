@@ -106,9 +106,26 @@ more were stale numbers that a *later* measurement in the same document had alre
 
 ## Closure
 
-**PENDING.** Still to happen: the `gitops-push-bot` token renewal, the exam date, the FF-merge of
-`feat/p9-rehearsal-presentation` to `main`, and the closure pipeline. **Both Argo roots must be
-repointed at `main` before the branch is deleted** — the drill cluster tracks the branch today.
+FF-merged to `main` at **`c476485`** (34 commits, no merge commit). Both Argo roots were repointed at
+`main` **before** the branch was retired, and the cluster stayed **24/24 Synced/Healthy** across the
+change. `git log main..branch` was empty — no orphan pin commits to discard.
+
+The roadmap's usual surprise applied: the last commit carries `[skip ci]`, so the push produced a
+**skipped** pipeline and the "green `main` pipeline" criterion had nothing behind it until one was
+triggered deliberately. That run is **2779795976: success — 43 success + 1 manual**, and it pinned
+**ten** fresh digests back to `main`.
+
+**It is 44 jobs, not P8's 43**, and the extra one is informative: `mirror:bases` ran. GitLab
+evaluates `rules: changes:` as **always true** outside a push (api, web, schedule), so a manually
+triggered pipeline includes a job gated that way. Harmless — copying the same digest to the same tag
+is idempotent and the byte-identity check still has to pass — but "it only runs when you edit it"
+was true of pushes only, and the claim is now corrected in three places.
+
+**No `gcr.io/distroless` failure occurred**, on a run that rebuilt all ten services. That is the
+first closure run since P6 for which that is true, and it is what 14.1 was for.
+
+The token renewal and the exam date remain the user's, and the two-human casual game needs one more
+run to confirm 14.11.
 
 ## Next
 
