@@ -93,9 +93,22 @@ This is the surface `Client-Checkpoint.md` §5 defines, driven the way the facul
 not the way our drill scripts do.
 
 **Who types what.** The casual game below is *interactive* — two people, two terminals — and that
-half cannot be rehearsed headlessly. R0 exercised it with `bot --casual` in both seats (54 and 60
-actions, 0 errors, one winner) and verified the rest of the surface directly. Rehearse the
-interactive form with a human before the day; it is the only step in this runbook that has not been.
+half cannot be rehearsed headlessly. R0 and R1 exercised it with `bot --casual` in both seats;
+**the first two-human run was P9's, and it failed**, which is why the paragraph below exists.
+
+> **The clock is real, and it is 30 seconds.** `TURN_TIMEOUT_SECONDS=30` with
+> `IDLE_TIMEOUTS_BEFORE_FORFEIT=3` (`gitops/apps/room-gameplay/overlays/staging/values.yaml`). Three
+> lapsed turns and the player **forfeits**. In P9's first two-person game both players spent their
+> turns discovering the syntax, and it ended in a double forfeit with **no card ever played** — the
+> rules working exactly as designed, and a demo nobody would want to watch.
+>
+> Two things follow. **Play the numbered card by typing its number** — `5`, not `play 5`; both
+> players reached for the bare number, and since P9 that is what it means. `d`, `u`, `c`, `s` and
+> `q` are the short forms of draw, uno, challenge, state and quit.
+>
+> **And rehearse it once before the day.** If the pace still feels tight, raise
+> `TURN_TIMEOUT_SECONDS` in the overlay **before** the demo — it is a committed value Argo syncs, so
+> it is a prep step, not something to change live. The overlay says as much next to it.
 
 ```bash
 cd clients/cli && npm install && npm run build

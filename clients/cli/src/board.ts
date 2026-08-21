@@ -80,7 +80,7 @@ export function board(view: GameView, me: string, now: number = Date.now()): str
   if (view.yourTurn) {
     // Only the actions that are legal right now. `pass` before drawing is a 409, and offering it
     // teaches the player to expect an error — the drill harness fell for exactly that.
-    const actions = ["play <n> [R|G|B|Y]", view.drewThisTurn ? "pass" : "draw", "uno", "challenge", "state", "quit"];
+    const actions = ["<n> or play <n> [R|G|B|Y]", view.drewThisTurn ? "pass" : "draw", "uno", "challenge", "state", "quit"];
     if (view.hand.length === 2) {
       lines.push("   down to your last two - play it as 'play <n> uno' or an opponent can catch you");
     }

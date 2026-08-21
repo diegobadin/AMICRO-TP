@@ -172,6 +172,23 @@ export async function enterGame(
   return { roomId: started.roomId, player, view: started.view };
 }
 
+/**
+ * What the player typed, as a command.
+ *
+ * The turn board prints a NUMBERED hand, so a bare `5` is the natural way to play the fifth card —
+ * and it was not a command. Both humans in P9's first two-person game typed it, got the usage line,
+ * and lost the turn to the 30-second clock; the game ended in a double forfeit with no card ever
+ * played. `c` and `s` were typed and refused in the same game. The number IS the command; `play` is
+ * its long form. `p` is deliberately absent: it would have to guess between `play` and `pass`.
+ */
+export function normaliseInput(input: string): string[] {
+  const typed = input.trim().split(/\s+/);
+  const alias: Record<string, string> = { d: "draw", u: "uno", c: "challenge", s: "state", q: "quit" };
+  if (/^\d+$/.test(typed[0])) return ["play", ...typed];
+  if (alias[typed[0]]) return [alias[typed[0]], ...typed.slice(1)];
+  return typed;
+}
+
 export async function play(flags: Record<string, string | boolean>, json: boolean): Promise<number> {
   const started = await enterGame(flags, json);
   if (!started) return 1;
@@ -341,7 +358,7 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
     };
 
     rl.on("line", async (input) => {
-      const [cmd, a, b, rest] = input.trim().split(/\s+/);
+      const [cmd, a, b, rest] = normaliseInput(input);
       if (closed) return;
       switch (cmd) {
         case "play": {
@@ -386,7 +403,13 @@ function interactive(roomId: string, player: string, initial: GameView, json: bo
         case "state": await refresh(true); break;
         case "quit": finish(0); break;
         case "": break;
-        default: process.stdout.write("  play <n> [R|G|B|Y] | draw | uno | challenge | pass | state | quit\n");
+        // The same rule the turn board follows: offer only what is legal right now. This line used
+        // to list `pass` unconditionally, which is a 409 before a draw and teaches the player to
+        // expect one — the very thing the board was built to avoid.
+        default:
+          process.stdout.write(
+            `  <n> or play <n> [R|G|B|Y] | ${view.drewThisTurn ? "pass" : "draw"} | uno | challenge | state | quit\n`,
+          );
       }
     });
 
