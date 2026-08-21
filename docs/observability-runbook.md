@@ -103,7 +103,16 @@ kubectl -n argocd patch application unoarena-platform-root --type merge \
   `GameCompleted`, and the skip is counted with its reason rather than being silent.
 - **Empty tournaments sitting in `REGISTRATION`** are clients that lost the create race and
   converged elsewhere. They are joinable and harmless.
-- **A `0` on a business panel is a real zero.** Every query ends in `or vector(0)` so a fresh
+- **A `0` on a business panel is a real zero — *for the current process*.** These are in-process
+  Prometheus counters, so a container restart resets them to 0 while the domain fact stays in the
+  database. Measured on P9's kind cluster: `tournament_tournaments_completed_total` read **0** while
+  `select status, count(*) from tournaments` still returned `COMPLETED|1`, because every pod in the
+  namespace had restarted after that tournament finished. **The log and the database are the
+  authority; the counter is a view of one process's lifetime.** If a business panel disagrees with
+  something you just watched happen, check `kubectl get pod` restart counts before believing either.
+  (P9 added memory limits, so an OOMKill is now a possible cause where previously it was not —
+  headroom is 6–25%, but the failure mode is new.)
+- **A `0` on a business panel is otherwise a real zero.** Every query ends in `or vector(0)` so a fresh
   cluster reads zero instead of "No data" — and `clients/cli/scripts/check-dashboards.js` is what
   stops that from hiding a mistyped metric name, by checking every name against Prometheus and,
   when a tagged counter has no series yet, against the source that declares it.

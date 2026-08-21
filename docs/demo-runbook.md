@@ -188,8 +188,16 @@ prints only the first, so if that instance is ever replaced, re-run it for the c
 **If a reading looks wrong, open [`observability-runbook.md`](./observability-runbook.md) §"Things
 that look like faults and are not"** rather than debugging live. The short list: the `Watchdog`
 alert always fires by design, schema-owning services restart 5–7× on a cold start, `ranking`
-logging `outcome: ignored` is correct, empty tournaments in `REGISTRATION` are clients that lost a
-create race, and a `0` on a business panel is a real zero.
+logging `outcome: ignored` is correct, and empty tournaments in `REGISTRATION` are clients that lost
+a create race.
+
+> **The one reading that can lie.** Business counters are **in-process**: a container restart resets
+> them to 0 while the fact stays in the database. P9 measured exactly that on kind —
+> `tournament_tournaments_completed_total` at **0** with `COMPLETED|1` in Postgres, because every pod
+> had restarted after the tournament ran. On a demo this only bites if something restarts between
+> the action and the reading, but if the headline board disagrees with what the room just watched,
+> **check restart counts before believing the board**. The log is the authority; the counter is one
+> process's lifetime.
 
 **Say the gaps before being asked.** Seven of the nine alert rules have never been observed firing
 and are listed as untested; there is no tracing backend; there are no alert receivers. All three
@@ -202,7 +210,7 @@ Each of these is a decision made now, not on the day.
 | If | Then | Cost |
 |---|---|---|
 | **The NodePorts do not answer** (SG, VPC, or a changed address) | Two port-forwards on **different local ports**, and say why: `kubectl -n unoarena-staging port-forward svc/gateway 18080:80` and `kubectl -n monitoring port-forward svc/monitoring-grafana 18081:80`, then `UNOARENA_API_URL=http://localhost:18080` and Grafana on `http://localhost:18081`. | Two processes to keep alive. Nothing else changes. |
-| **The slot is running short** | Cut the tournament (§4's last block). The casual game, the boards and the Loki trace are the spine. **Say that `tournament_tournaments_completed_total` therefore reads 0** — it is one of the consigna's three business metrics, and an unexplained zero on the board it is named on reads as a broken metric rather than a skipped step. | `Client-Checkpoint.md` §5.E marks tournament play mandatory **but degradable**. |
+| **The slot is running short** | Cut the tournament (§4's last block). The casual game, the boards and the Loki trace are the spine. **Say that `tournament_tournaments_completed_total` therefore reads 0** — it is one of the consigna's three business metrics, and an unexplained zero on the board it is named on reads as a broken metric rather than a skipped step. **No alert fires because of the cut**: P9 verified that the idle tournament relay keeps reading its outbox (`rate ≈ 0.88/s` with nothing to drain) and that `tournament_consumer_starts_total` is 1 from boot, so the two liveness rules that could plausibly have fired stay quiet. The other seven key on errors or lag, which need activity to trigger. | `Client-Checkpoint.md` §5.E marks tournament play mandatory **but degradable**. |
 | **Convergence stalls below 24/24** | `kubectl get app -n argocd` for the app that is not Synced, then its pods. Do not `kubectl apply` anything — Argo owns it and `selfHeal` will undo you. | Open the async-spine board while diagnosing. |
 | **A pod is Pending on insufficient CPU/memory** | The requests added in P9 do not fit this cluster. `kubectl -n unoarena-staging patch` is undone by Argo; the honest move is to say so and scale the nodegroup. | Should be impossible — R1 checks it — but it is the one new failure mode P9 introduced. |
 | **Loki is down** | Skip the correlationId step and say Loki is deliberately **non-load-bearing**: all three boards and all nine alert rules still work, because they read Prometheus. P8 verified this by taking Loki away. | One demo step. |
