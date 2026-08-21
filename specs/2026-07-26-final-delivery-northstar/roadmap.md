@@ -395,14 +395,16 @@ What P9 inherits, and must not break:
 - **Loki is non-load-bearing and must stay that way** — with it down, all three boards and all nine
   rules still work. Verified by taking it away.
 
-## P9 — Demo rehearsal + presentation — **SHIPPED (pending merge)**
+## P9 — Demo rehearsal + presentation — **SHIPPED and CLOSED**
 
-> Spec: `specs/2026-08-20-p9-rehearsal-presentation/`. **All five carried items below are paid.**
-> Two rehearsals done: R0 on kind (24/24 from empty in 17 m 48 s) and **R1 on a freshly created EKS
+> Spec: `specs/2026-08-20-p9-rehearsal-presentation/`; deltas in `CHANGELOG-design.md` §14.
+> FF-merged at **`c476485`**, closure run **2779795976** (43 success + 1 manual), branch deleted.
+> Two rehearsals: R0 on kind (24/24 from empty in 17 m 48 s) and **R1 on a freshly created EKS
 > cluster** — 24/24 in **8 m 53 s**, both NodePorts answering from the operator's laptop with no
-> port-forward, torn down and swept clean for ≈$0.30. The review pass found **eleven** more.
-> Still open: the CI-token renewal, the interactive two-human casual game, the exam date, and the
-> FF-merge itself.
+> port-forward, torn down and swept clean for ≈$0.30. All five carried items are paid.
+>
+> **This was the last phase. The program is complete.** What remains is not engineering: the exam
+> date, the 48 h hand-over of the repo link, and one more two-human casual game to confirm 14.11.
 
 - Ships: timed empty-cluster runbook (the exact demo script), CLI functional pass (the faculty's
   test, self-run), presentation deck (final architecture + key decisions, from the ADRs and
@@ -442,6 +444,11 @@ What P9 inherits, and must not break:
 ## Dependency sketch
 
 ```
-P0 → P1 → P2 → P3 → P4 ═(casual gate)═> P5 → P6 → P7 → P9
+P0 → P1 → P2 → P3 → P4 ═(casual gate)═> P5 → P6 → P7 → P9   ✔ all shipped
                                           └────→ P8 ──↗
 ```
+
+**The program is closed.** Every phase has its own triad and `ESTADO-FINAL.md` under `specs/`, and
+every deviation from the design is in `CHANGELOG-design.md` §8–§14. The two documents that matter on
+the day are `docs/demo-runbook.md` (the script) and `docs/observability-runbook.md` (the readings
+that look like faults and are not); the deck is `presentation/final-deck.md`.

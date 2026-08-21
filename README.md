@@ -6,6 +6,29 @@
 
 ---
 
+## Start here — final delivery
+
+This repository holds the design, the architecture **and the running system**. The whole thing comes
+up from an empty Kubernetes cluster with one command, and the ten services are independently built,
+tested and digest-pinned. If you are reading this to evaluate the final delivery:
+
+| To see | Go to |
+|---|---|
+| **What the system does and how it is decomposed** | [Architecture](#architecture) and [`docs/architecture/`](./docs/architecture/) |
+| **How to bring it up from an empty cluster** | [`gitops/bootstrap/install.sh`](./gitops/bootstrap/) — one command, kind or EKS |
+| **How to drive it through the Client CLI** | [Driving it through the Client CLI](#driving-it-through-the-client-cli) — every canonical command mapped to its backend operation |
+| **The observability, and the three business metrics** | [`docs/observability-runbook.md`](./docs/observability-runbook.md) |
+| **The delivery pipeline** | [`devops-checkpoint/README.md`](./devops-checkpoint/README.md) |
+| **Every place the running system differs from the design, and why** | [`CHANGELOG-design.md`](./CHANGELOG-design.md) |
+| **How the live demo is run, timed, and degraded if something fails** | [`docs/demo-runbook.md`](./docs/demo-runbook.md) |
+
+Measured, not estimated: an empty EKS cluster reaches **24 of 24 Argo applications Synced/Healthy in
+8 minutes 53 seconds**, one `correlationId` returns log lines from **five services** in a single
+query, and the widest pipeline run is **44 jobs**. Where a number appears in this repository, the
+rehearsal that produced it is named next to it.
+
+---
+
 ## Deliverables
 
 | # | Document | Description |
