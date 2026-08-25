@@ -14,9 +14,10 @@ Entrega final — arquitectura y decisiones
 <!--
 El sistema completo corre desde un cluster vacío con un solo comando. Diez servicios
 independientes, veinticuatro aplicaciones de Argo, observabilidad incluida.
-Números para tener a mano: de cluster vacío a 24/24 en algo entre 12 y 18 minutos — dos
-mediciones en kind, 12m25s y 17m48s, y la diferencia es descarga de imágenes, no trabajo:
-798 de los 1068 segundos de la última fueron pulls. 11 targets de scrape, pipeline de 43 jobs.
+Números para tener a mano: de cluster vacío a 24/24 en 8m53s sobre EKS — el target del examen —
+y entre 12 y 18 minutos en kind. La diferencia es descarga de imágenes, no trabajo: 798 de los
+1068 segundos de la medición más lenta en kind fueron pulls, y dos nodos EC2 en us-east-1 bajan
+en paralelo. 11 targets de scrape, pipeline de 44 jobs.
 -->
 
 ---
@@ -150,7 +151,9 @@ test → build → deliver → deploy-staging → integration-staging → (prod)
 
 <!--
 El runner no tiene credenciales de cluster: Argo tira, el pipeline sólo commitea un digest.
-Pipeline más ancho: 43 jobs, 42 success + 1 manual.
+Pipeline más ancho: 44 jobs, 43 success + 1 manual — 43 en un push normal, porque GitLab evalúa
+`changes:` como siempre verdadero fuera de un push y el job del espejo entra en una corrida
+disparada a mano.
 Desde P9 las bases distroless están espejadas en el registry del proyecto: gcr.io rechazó a los
 runners seis veces entre P6 y P8, y kaniko no reintenta el pull de la base ("after 0 attempts").
 -->
@@ -184,10 +187,10 @@ Preferimos un panel que nombre la ausencia.
 |---|---|
 | Desplegables reales | **10** (ninguno con `digest: ""`) |
 | Aplicaciones de Argo | **24** |
-| De cluster vacío a 24/24 | **12–18 min** _(kind, dos mediciones)_ — dominado por pulls |
+| De cluster vacío a 24/24 | **8 m 53 s** _(EKS, R1)_ — kind: 12–18 min, dominado por pulls |
 | Targets de scrape | **11** |
 | Servicios en una query de `correlationId` | **5** |
-| Pipeline más ancho | **43 jobs** — 42 success + 1 manual |
+| Pipeline más ancho | **44 jobs** — 43 success + 1 manual |
 | Eventos que publica un demo entero | **179** |
 
 <!--
@@ -227,6 +230,9 @@ CHANGELOG-design.md, que registra cada lugar donde el sistema difiere del diseñ
 
 <!--
 Cerrar acá: el sistema está completo y probado desde vacío; lo que sigue es operación, no diseño.
+Probado sobre el target real: creamos un cluster EKS desde cero, instalamos el sistema entero en
+8m53s, manejamos la CLI de la cátedra contra él y lo destruimos por unos US$0,30 — el ensayo R1,
+en specs/2026-08-20-p9-rehearsal-presentation/.
 Si preguntan por límites de recursos: los diez contenedores declaran requests y un límite de
 memoria desde P9, dimensionados desde uso medido, y los dos servicios Kotlin fijan el heap de la
 JVM junto con ese límite — porque una JVM lee el límite del contenedor y por defecto toma el 25%.
