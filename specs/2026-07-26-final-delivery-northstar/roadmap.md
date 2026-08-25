@@ -423,7 +423,9 @@ What P9 inherits, and must not break:
   all; the retry has to be a human clicking the job. A retry is not a fix, and the exam should not
   depend on a public registry's mood on the day. A CI supply-chain change, which is why P8 left it
   alone.
-- **STILL OPEN — needs the user to create it. Renew the `gitops-push-bot` CI token**, which expires **2026-09-30**.
+- **DONE (user, 2026-08-21). Renew the `gitops-push-bot` CI token.** The old one expired 2026-09-30;
+  the replacement is Maintainer, scoped to `write_repository` alone, and expires **2027-08-21**.
+  This was the last carried item in the program — nothing here is open now.
 - **DONE and PROVEN ON AWS (14.5). Decide how the two NodePorts are reached on EKS — 30080 (gateway) and 30081 (Grafana).**
   Nothing in `gitops/bootstrap/eks/` opens the node security group for either, and the P1 rehearsal
   predates the gateway, so **the NodePort path has never been exercised on AWS**. Either the

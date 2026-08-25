@@ -24,7 +24,9 @@ the deadline that matters; everything below hangs off it.
 - [ ] **Repo link handed over** — `https://gitlab.com/itba-73-40-microservicios/alumnos/2026-s1/grupo-4/amicro-tp`
 - [ ] **`main` is green** and every staging overlay carries a real digest:
       `grep -L 'digest: "sha256:' gitops/apps/*/overlays/staging/values.yaml` prints nothing.
-- [ ] **`gitops-push-bot` CI token still valid** (expires **2026-09-30** — renew if the exam is near it).
+- [ ] **`gitops-push-bot` CI token still valid** — renewed 2026-08-21 and now expires **2027-08-21**,
+      so any plausible exam date is covered. To check rather than trust this line:
+      `glab api projects/83816735/access_tokens` prints name, expiry and scopes, never the secret.
 - [ ] **Secrets present on the presenting machine**: `~/.amicro_secrets.env`,
       `~/.amicro_sealing_key` **and** `~/.amicro_sealing_cert.pem`. Without the cert half, every
       committed SealedSecret stays sealed forever on a cluster that has never existed.
